@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= pageTitle %></title>
+    <link rel="stylesheet" href="/css/app-shell.css" />
+    <link rel="stylesheet" href="/css/account-menu.css" />
+    <link rel="stylesheet" href="/css/account-profile.css" />
+</head>
+<body class="app-page">
+    <div class="app-layout profile-layout">
+        <%- include('partials/app-header', { currentAccount }) %>
+        <section class="app-panel">
+            <h1 class="app-title">My Profile</h1>
+            <p class="app-copy">Review and update your personal account details here. Email stays fixed as the account login, while your name, mobile number, and Telegram Chat ID can be updated anytime.</p>
+            <% if (errorMessage) { %><div class="app-error"><%= errorMessage %></div><% } %>
+            <% if (infoMessage) { %><div class="app-info"><%= infoMessage %></div><% } %>
+            <div class="profile-grid">
+                <div class="profile-item">
+                    <div class="profile-label">Role</div>
+                    <div class="profile-value"><%= currentAccount?.isAdmin ? 'Administrator' : 'Standard User' %></div>
+                </div>
+                <div class="profile-item">
+                    <div class="profile-label">Account Created</div>
+                    <div class="profile-value"><%= currentAccount?.createdAt ? new Date(currentAccount.createdAt).toLocaleString('en-IN') : '-' %></div>
+                </div>
+            </div>
+            <form class="profile-form" method="post" action="/account/profile">
+                <label for="fullName">Full Name</label>
+                <input id="fullName" name="fullName" type="text" value="<%= currentAccount?.fullName || '' %>" required />
+                <label for="email">Email</label>
+                <input id="email" type="email" value="<%= currentAccount?.email || '' %>" disabled />
+                <label for="mobileNo">Mobile No</label>
+                <input id="mobileNo" name="mobileNo" type="tel" value="<%= currentAccount?.mobileNo || '' %>" required />
+                <div class="profile-label-row">
+                    <label for="telegramChatId" class="profile-label-inline">Telegram Chat ID</label>
+                    <span class="profile-help-wrap" tabindex="0">
+                        <span class="profile-help-icon" aria-hidden="true">i</span>
+                        <span class="profile-help-bubble">Search for <strong>@OptionyzeBot</strong> and click on start to receive msgs from Strategy Updates. Then open Telegram and message a bot like <strong>@userinfobot</strong> or <strong>@RawDataBot</strong>, copy your numeric chat ID from the reply, and paste it here.</span>
+                    </span>
+                </div>
+                <div class="profile-input-group">
+                    <input id="telegramChatId" name="telegramChatId" type="text" inputmode="numeric" value="<%= currentAccount?.telegramChatId || '' %>" placeholder="Add your Telegram Chat ID or leave blank to remove it" />
+                    <button id="btnTestTelegram" class="profile-ghost-btn" type="button">Test</button>
+                </div>
+                <div id="telegramTestStatus" class="profile-inline-status"></div>
+                <button class="profile-submit" type="submit">Save Profile</button>
+            </form>
+        </section>
+    </div>
+    <script>
+        const objTelegramInput = document.getElementById("telegramChatId");
+        const objTestButton = document.getElementById("btnTestTelegram");
+        const objTestStatus = document.getElementById("telegramTestStatus");
+
+        function setTelegramStatus(pMessage, pTone) {
+            if (!objTestStatus) {
+                return;
+            }
+
+            objTestStatus.textContent = pMessage;
+            objTestStatus.className = "profile-inline-status show " + pTone;
+        }
+
+        objTestButton?.addEventListener("click", async () => {
+            const vTelegramChatId = String(objTelegramInput?.value || "").trim();
+            if (!vTelegramChatId) {
+                setTelegramStatus("Please enter Telegram Chat ID first.", "error");
+                objTelegramInput?.focus();
+                return;
+            }
+
+            objTestButton.disabled = true;
+            setTelegramStatus("Sending Telegram test message...", "info");
+
+            try {
+                const objResponse = await fetch("/account/profile/test-telegram", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ telegramChatId: vTelegramChatId })
+                });
+                const objResult = await objResponse.json().catch(() => ({}));
+                if (!objResponse.ok || objResult.status !== "success") {
+                    throw new Error(objResult.message || "Unable to send Telegram test message.");
+                }
+
+                setTelegramStatus(objResult.message || "Telegram test message sent successfully.", "info");
+            }
+            catch (objError) {
+                setTelegramStatus(objError instanceof Error ? objError.message : "Unable to send Telegram test message.", "error");
+            }
+            finally {
+                objTestButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
+
+

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= pageTitle %></title>
+    <link rel="stylesheet" href="/css/app-shell.css" />
+    <link rel="stylesheet" href="/css/account-menu.css" />
+    <link rel="stylesheet" href="/css/mngusers.css" />
+</head>
+<body class="app-page">
+    <div class="app-layout mngusers-layout" id="mngUsersApp" data-current-account-id="<%= currentAccount?.accountId || '' %>">
+        <%- include('partials/app-header', { currentAccount }) %>
+
+        <section class="mngusers-hero">
+            <div class="app-panel">
+                <div class="mngusers-badge">Admin Workspace</div>
+                <h1>Manage Users</h1>
+                <p class="app-copy">Control account access, admin rights, and password reset flows from one PostgreSQL-backed admin screen. The user setup is now intentionally minimal and focused on essential login details only.</p>
+                <div id="pageStatus" class="mngusers-page-status"></div>
+            </div>
+            <div class="app-panel">
+                <div class="mngusers-stats">
+                    <div class="app-stat mngusers-stat"><div class="mngusers-stat-label">Total</div><div class="mngusers-stat-value" id="statTotal">0</div></div>
+                    <div class="app-stat mngusers-stat"><div class="mngusers-stat-label">Active</div><div class="mngusers-stat-value" id="statActive">0</div></div>
+                    <div class="app-stat mngusers-stat"><div class="mngusers-stat-label">Admins</div><div class="mngusers-stat-value" id="statAdmins">0</div></div>
+                    <div class="app-stat mngusers-stat"><div class="mngusers-stat-label">Pwd Reset</div><div class="mngusers-stat-value" id="statForced">0</div></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="app-panel">
+            <div class="mngusers-toolbar">
+                <input id="searchInput" type="text" placeholder="Search by name, email, or mobile" />
+                <button id="btnRefresh" class="app-link-btn" type="button">Refresh</button>
+                <button id="btnAddUser" class="app-solid-btn" type="button">Add User</button>
+            </div>
+            <p id="resultCount" class="app-copy">0 shown</p>
+            <div class="mngusers-table-wrap">
+                <table class="mngusers-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Login</th>
+                            <th>Access</th>
+                            <th>Password State</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <tr><td colspan="5" class="mngusers-empty">Loading users...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="mngusers-overlay" id="overlay"></div>
+    <section class="app-panel mngusers-modal" id="userModal" aria-hidden="true">
+        <div class="mngusers-modal-head">
+            <div>
+                <h2 id="modalTitle" class="mngusers-modal-title">Add User</h2>
+                <p id="modalHint" class="app-copy">Create a new account with only the essential login details.</p>
+            </div>
+            <button id="btnCloseModal" class="app-link-btn" type="button">Close</button>
+        </div>
+        <div id="modalMessage" class="mngusers-form-message"></div>
+        <form id="userForm">
+            <div class="mngusers-modal-grid">
+                <div><label for="fullName">Full Name</label><input id="fullName" name="fullName" type="text" required /></div>
+                <div><label for="email">Email</label><input id="email" name="email" type="email" required /></div>
+                <div class="mngusers-span-2"><label for="mobileNo">Mobile No</label><input id="mobileNo" name="mobileNo" type="tel" required /></div>
+                <div class="mngusers-span-2"><label for="telegramChatId">Telegram Chat ID</label><input id="telegramChatId" name="telegramChatId" type="text" inputmode="numeric" required /></div>
+                <div class="mngusers-span-2" id="passwordFields">
+                    <div class="mngusers-modal-grid">
+                        <div><label for="password">Password</label><input id="password" name="password" type="password" /></div>
+                        <div><label for="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" /></div>
+                    </div>
+                </div>
+                <div class="mngusers-span-2 mngusers-inline-checks">
+                    <label class="mngusers-check"><input id="isActive" type="checkbox" checked /> Active</label>
+                    <label class="mngusers-check"><input id="isAdmin" type="checkbox" /> Admin</label>
+                    <label class="mngusers-check"><input id="mustChangePassword" type="checkbox" /> Force password change</label>
+                </div>
+            </div>
+            <div class="mngusers-modal-actions">
+                <button id="btnCancelModal" class="app-link-btn" type="button">Cancel</button>
+                <button class="app-solid-btn" type="submit">Save User</button>
+            </div>
+        </form>
+    </section>
+
+    <script src="/js/mngusers.js"></script>
+</body>
+</html>
