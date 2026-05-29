@@ -335,7 +335,7 @@ export class RollingOptionsPtDeService {
             }
             const vMark = objLiveContract?.markPrice || Number((objSnapshot.spotPrice * Math.max(0.002, Math.abs(vTargetDelta) * 0.012)).toFixed(2));
             const vEntryDelta = objLiveContract ? Math.abs(objLiveContract.delta) : vTargetDelta;
-            if (this.wouldOptionTriggerImmediately(objRuleValues, pConfig.action === "buy" ? "BUY" : "SELL", vEntryDelta)) {
+            if (!pUseReEntryDelta && this.wouldOptionTriggerImmediately(objRuleValues, pConfig.action === "buy" ? "BUY" : "SELL", vEntryDelta)) {
                 await logRollingOptionsPtDeEvent({
                     userId: pUserId,
                     eventType: "manual_action",
@@ -583,10 +583,12 @@ export class RollingOptionsPtDeService {
 
         const objNextSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
         if (!objNextSummary.hasOpenOption && objNextSummary.futureQty > 0) {
-            const vQty = objConfig.redOptionQty !== undefined
-                ? Math.max(0, Math.floor(Number(objConfig.redOptionQty || 0)))
-                : this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.redOptionQtyPct);
-            await this.openOptionPositions(pUserId, objConfig, vQty, "Strategy initial option entry", "R");
+            const vQty = Math.max(0, Math.floor(Number(objConfig.optionQty || 0)));
+            if (vQty > 0) {
+                const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+                const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
+                await this.openOptionPositions(pUserId, objConfig, vQty, "Strategy initial option entry", vRuleColor);
+            }
         }
 
         await this.syncRuntime(pUserId, objConfig, objState, {
@@ -789,39 +791,34 @@ export class RollingOptionsPtDeService {
         const vActiveRuleColor = pConfig.renkoEnabled
             ? (vCurrentRenkoColor === "G" ? "G" : "R")
             : (vStoredRuleColor === "G" ? "G" : "R");
-        const bUseRedFlow = vActiveRuleColor === "R";
         const vCloseReason = pReason === "sl" ? "SL triggered" : "TP triggered";
 
-        await this.closePositions([pPosition], pConfig, vCloseReason);
+        const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const objOpenOptions = objOpenPositions.filter((objRow) => objRow.instrumentType === "OPTION" && objRow.status === "OPEN");
+        await this.closePositions(objOpenOptions.length > 0 ? objOpenOptions : [pPosition], pConfig, vCloseReason);
 
-        if (bUseRedFlow) {
-            if (pReason === "sl" && pConfig.addOneLotFuture) {
-                await this.openFuturePosition(pUserId, pConfig, 1, "SL add one future");
-            }
+        const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
+        const vBaseQty = objSummary.futureQty;
 
-            const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
-            if (objSummary.futureQty > 0) {
-                const vReplacementQty = pConfig.redOptionQty !== undefined
-                    ? Math.max(0, Math.floor(Number(pConfig.redOptionQty || 0)))
-                    : this.getRenkoOptionQty(objSummary.futureQty, pConfig.redOptionQtyPct);
-                if (!(vReplacementQty > 0)) {
-                    return;
-                }
-                await this.openOptionPositions(
-                    pUserId,
-                    pConfig,
-                    vReplacementQty,
-                    pReason === "sl" ? "SL replacement option" : "TP replacement option",
-                    "R",
-                    true
-                );
-            }
+        const vReplacementQty = vActiveRuleColor === "G"
+            ? (pConfig.greenOptionQty !== undefined
+                ? Math.max(0, Math.floor(Number(pConfig.greenOptionQty || 0)))
+                : (vBaseQty > 0 ? this.getRenkoOptionQty(vBaseQty, pConfig.greenOptionQtyPct) : 1))
+            : (pConfig.redOptionQty !== undefined
+                ? Math.max(0, Math.floor(Number(pConfig.redOptionQty || 0)))
+                : (vBaseQty > 0 ? this.getRenkoOptionQty(vBaseQty, pConfig.redOptionQtyPct) : 1));
+        if (!(vReplacementQty > 0)) {
             return;
         }
 
-        if (pReason === "sl") {
-            await this.openGreenRenkoFuturePosition(pUserId, pConfig, "SL GREEN future entry");
-        }
+        await this.openOptionPositions(
+            pUserId,
+            pConfig,
+            vReplacementQty,
+            pReason === "sl" ? "SL replacement option" : "TP replacement option",
+            vActiveRuleColor === "G" ? "G" : "R",
+            true
+        );
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {

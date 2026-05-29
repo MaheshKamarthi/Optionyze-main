@@ -52,7 +52,7 @@ function getApiBaseUrl(): string {
 }
 
 function getPublicSocketUrl(): string {
-    return "wss://public-socket.india.delta.exchange";
+    return "wss://socket.india.delta.exchange";
 }
 
 function toExpiryDateForDelta(pDateValue: string): string {

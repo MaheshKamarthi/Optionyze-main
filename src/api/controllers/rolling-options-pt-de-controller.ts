@@ -777,6 +777,8 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
             closedAt: "",
             metadata: {
                 expiryMode: String(objUiState.expiryMode1 || "1"),
+                deltaTakeProfit: normalizeNumber(objUiState.greenTpDelta, 0.15),
+                deltaStopLoss: normalizeNumber(objUiState.greenSlDelta, 0.85),
                 takeProfitDelta: normalizeNumber(objUiState.greenTpDelta, 0.15),
                 stopLossDelta: normalizeNumber(objUiState.greenSlDelta, 0.85),
                 reEntryDelta: normalizeNumber(objUiState.greenReDelta, 0.53),
@@ -831,6 +833,74 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     });
 
     res.json({ status: "success", data: { positions: objSavedPositions, runtime: objRuntime } });
+}
+
+export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Response): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vColor = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
+    const objUiState = await getMergedUiState(vUserId);
+    const objConfig = buildConfigFromUiState(objUiState);
+
+    const vTakeProfitDelta = vColor === "G"
+        ? Number(objConfig.greenDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15)
+        : Number(objConfig.redDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15);
+    const vStopLossDelta = vColor === "G"
+        ? Number(objConfig.greenDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85)
+        : Number(objConfig.redDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85);
+    const vReEntryDelta = vColor === "G"
+        ? Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53)
+        : Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53);
+
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    let vUpdated = 0;
+
+    for (const objPosition of objOpenPositions) {
+        if (objPosition.instrumentType !== "OPTION" || objPosition.status !== "OPEN") {
+            continue;
+        }
+        const vRuleColor = String(objPosition.metadata?.ruleColor || "").trim().toUpperCase();
+        if (vRuleColor !== vColor) {
+            continue;
+        }
+
+        await saveRollingOptionsPtDePosition({
+            ...objPosition,
+            metadata: {
+                ...(objPosition.metadata || {}),
+                ruleColor: vColor,
+                deltaTakeProfit: vTakeProfitDelta,
+                deltaStopLoss: vStopLossDelta,
+                takeProfitDelta: vTakeProfitDelta,
+                stopLossDelta: vStopLossDelta,
+                reEntryDelta: vReEntryDelta
+            },
+            updatedAt: ""
+        });
+        vUpdated += 1;
+    }
+
+    await logRollingOptionsPtDeEvent({
+        userId: vUserId,
+        eventType: "manual_action",
+        severity: "info",
+        title: `Rule Settings Updated (${vColor === "G" ? "Green" : "Red"})`,
+        message: `Updated ${vUpdated} open option position(s) with the latest rule settings.`,
+        payload: {
+            qty: vUpdated,
+            reason: vColor === "G" ? "update_green_rules" : "update_red_rules",
+            ruleColor: vColor,
+            stopLossDelta: vStopLossDelta,
+            takeProfitDelta: vTakeProfitDelta,
+            reEntryDelta: vReEntryDelta
+        }
+    });
+
+    res.json({
+        status: "success",
+        data: {
+            updatedCount: vUpdated
+        }
+    });
 }
 
 export async function exitRollingOptionsPtDeManualPositions(req: Request, res: Response): Promise<void> {

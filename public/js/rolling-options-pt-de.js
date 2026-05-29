@@ -42,6 +42,8 @@
         sellFutureButton: document.getElementById("btnRollingDemoSellFuture"),
         buyFutureButton: document.getElementById("btnRollingDemoBuyFuture"),
         execStrategyButton: document.getElementById("btnRollingDemoExecStrategy"),
+        updateGreenRulesButton: document.getElementById("btnRollingDemoUpdateGreenRules"),
+        updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
         openOptionButton: document.getElementById("btnRollingDemoOpenOption"),
         exitOptionButton: document.getElementById("btnRollingDemoExitOption"),
         clearOpenPositionsButton: document.getElementById("btnRollingDemoClearOpenPositions"),
@@ -852,6 +854,18 @@
 
     ids.execStrategyButton?.addEventListener("click", function () {
         void runServerAction("/api/rollingoptions-pt-de/strategy/execute");
+    });
+
+    ids.updateGreenRulesButton?.addEventListener("click", function () {
+        void runServerAction("/api/rollingoptions-pt-de/rules/update", {
+            color: "G"
+        });
+    });
+
+    ids.updateRedRulesButton?.addEventListener("click", function () {
+        void runServerAction("/api/rollingoptions-pt-de/rules/update", {
+            color: "R"
+        });
     });
 
     ids.exitOptionButton?.addEventListener("click", function () {

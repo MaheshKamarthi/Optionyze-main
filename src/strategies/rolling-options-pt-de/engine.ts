@@ -286,6 +286,20 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         const vNumber = Number(pValue);
         return Number.isFinite(vNumber) ? Math.max(0, Math.round(vNumber)) : pFallback;
     };
+    const isValidIsoDate = (pValue: string): boolean => {
+        const vRaw = String(pValue || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(vRaw)) {
+            return false;
+        }
+        const objDate = new Date(`${vRaw}T00:00:00`);
+        if (Number.isNaN(objDate.getTime())) {
+            return false;
+        }
+        const vYear = String(objDate.getFullYear()).padStart(4, "0");
+        const vMonth = String(objDate.getMonth() + 1).padStart(2, "0");
+        const vDay = String(objDate.getDate()).padStart(2, "0");
+        return `${vYear}-${vMonth}-${vDay}` === vRaw;
+    };
 
     const vSymbol = String(pUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
     const vAction = String(pUiState.action1 || "sell").trim().toLowerCase() === "buy" ? "buy" : "sell";
@@ -297,7 +311,10 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         : "spot_price";
 
     const vExpiryMode = String(pUiState.expiryMode1 || "1") as "1" | "2" | "4" | "5" | "6" | "7";
-    const vEffectiveExpiryDate = resolveExpiryDateByMode(vExpiryMode);
+    const vSelectedExpiryDate = String(pUiState.expiryDate1 || "").trim();
+    const vEffectiveExpiryDate = isValidIsoDate(vSelectedExpiryDate)
+        ? vSelectedExpiryDate
+        : resolveExpiryDateByMode(vExpiryMode);
 
     const vFutureQty = Math.max(1, Math.floor(Number(pUiState.manualFutQty || 1)));
     const vRedQtyRaw = Number(pUiState.redOptQty);

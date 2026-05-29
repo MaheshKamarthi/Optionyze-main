@@ -38,7 +38,8 @@ import {
     runRollingOptionsPtDeStrategyExecution,
     saveRollingOptionsPtDeProfileController,
     setRollingOptionsPtDeManualRenkoSignal,
-    toggleRollingOptionsPtDeAutoTrader
+    toggleRollingOptionsPtDeAutoTrader,
+    updateRollingOptionsPtDeRuleSettings
 } from "../controllers/rolling-options-pt-de-controller";
 import {
     disableRollingOptionsLtDeAutoTrader,
@@ -256,6 +257,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-pt-de/manual/option", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsPtDeManualOption(req, res);
+    });
+    objRouter.post("/rollingoptions-pt-de/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsPtDeRuleSettings(req, res);
     });
     objRouter.post("/rollingoptions-pt-de/manual/exit", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await exitRollingOptionsPtDeManualPositions(req, res);
