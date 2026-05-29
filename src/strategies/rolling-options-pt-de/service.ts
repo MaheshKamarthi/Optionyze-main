@@ -583,10 +583,16 @@ export class RollingOptionsPtDeService {
 
         const objNextSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
         if (!objNextSummary.hasOpenOption && objNextSummary.futureQty > 0) {
-            const vQty = Math.max(0, Math.floor(Number(objConfig.optionQty || 0)));
+            const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+            const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
+            const vQty = vRuleColor === "G"
+                ? (objConfig.greenOptionQty !== undefined
+                    ? Math.max(0, Math.floor(Number(objConfig.greenOptionQty || 0)))
+                    : this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.greenOptionQtyPct))
+                : (objConfig.redOptionQty !== undefined
+                    ? Math.max(0, Math.floor(Number(objConfig.redOptionQty || 0)))
+                    : this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.redOptionQtyPct));
             if (vQty > 0) {
-                const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
-                const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
                 await this.openOptionPositions(pUserId, objConfig, vQty, "Strategy initial option entry", vRuleColor);
             }
         }
