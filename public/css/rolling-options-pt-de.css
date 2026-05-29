@@ -499,18 +499,22 @@
     }
 }
 
-.rolling-demo-table-closed thead th:nth-child(5),
-.rolling-demo-table-closed thead th:nth-child(6),
+.rolling-demo-table-closed thead th:nth-child(1),
+.rolling-demo-table-closed thead th:nth-child(2),
 .rolling-demo-table-closed thead th:nth-child(7),
 .rolling-demo-table-closed thead th:nth-child(8),
 .rolling-demo-table-closed thead th:nth-child(9),
 .rolling-demo-table-closed thead th:nth-child(10),
-.rolling-demo-table-closed tbody td:nth-child(5),
-.rolling-demo-table-closed tbody td:nth-child(6),
+.rolling-demo-table-closed thead th:nth-child(11),
+.rolling-demo-table-closed thead th:nth-child(12),
+.rolling-demo-table-closed tbody td:nth-child(1),
+.rolling-demo-table-closed tbody td:nth-child(2),
 .rolling-demo-table-closed tbody td:nth-child(7),
 .rolling-demo-table-closed tbody td:nth-child(8),
 .rolling-demo-table-closed tbody td:nth-child(9),
-.rolling-demo-table-closed tbody td:nth-child(10) {
+.rolling-demo-table-closed tbody td:nth-child(10),
+.rolling-demo-table-closed tbody td:nth-child(11),
+.rolling-demo-table-closed tbody td:nth-child(12) {
     text-align:right;
 }
 

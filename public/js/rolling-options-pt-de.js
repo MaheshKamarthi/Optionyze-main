@@ -531,14 +531,19 @@
         }
 
         if (!Array.isArray(rows) || rows.length === 0) {
-            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"10\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
+            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
             return;
         }
 
         const closedRowsHtml = rows.map(function (row) {
             const tradeType = String(row.action || "-");
+            const currentDelta = String(row.instrumentType || "").toUpperCase() === "OPTION"
+                ? (row.exitDelta ?? row.entryDelta)
+                : null;
             return `
                 <tr>
+                    <td>${escapeHtml(formatNumericValue(row.entryDelta, 2))}</td>
+                    <td>${escapeHtml(formatNumericValue(currentDelta, 2))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.closedAt))}</td>
                     <td>${escapeHtml(row.contractName || row.symbol || "-")}</td>
@@ -556,7 +561,7 @@
         const totalPnl = sumNumeric(rows, "pnl");
         ids.closedPositionsBody.innerHTML = `${closedRowsHtml}
             <tr class="rolling-demo-total-row">
-                <td colspan="8">Total</td>
+                <td colspan="10">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
             </tr>
