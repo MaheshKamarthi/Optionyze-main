@@ -270,7 +270,7 @@ export class RollingOptionsPtDeService {
             contractName: `${pConfig.contractName} FUT`,
             instrumentType: "FUTURE",
             optionSide: "",
-            action: pConfig.action === "sell" ? "BUY" : "SELL",
+            action: pConfig.futureAction ?? (pConfig.action === "sell" ? "BUY" : "SELL"),
             strike: null,
             expiryDate: pConfig.expiryDate,
             qty: pQty,

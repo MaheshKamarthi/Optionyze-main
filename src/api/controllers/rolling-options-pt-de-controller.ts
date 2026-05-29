@@ -46,6 +46,7 @@ function getDefaultUiState(): Record<string, unknown> {
         symbol: "BTC",
         manualFutQty: 1,
         manualFutOrderType: "market_order",
+        manualFutAction: "SELL",
         action1: "sell",
         legSide1: "ce",
         expiryMode1: "1",

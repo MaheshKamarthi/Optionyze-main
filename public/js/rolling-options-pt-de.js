@@ -4,6 +4,7 @@
         lotSize: document.getElementById("txtCoveredCallLotSize"),
         manualFutQty: document.getElementById("txtManualFutQty"),
         manualFutOrderType: document.getElementById("ddlManualFutOrderType"),
+        manualFutAction: document.getElementById("ddlManualFutAction"),
         action1: document.getElementById("ddlActionCoveredCall1"),
         legSide1: document.getElementById("ddlLegSideCoveredCall1"),
         expiryMode1: document.getElementById("ddlExpiryModeCoveredCall1"),
@@ -39,8 +40,7 @@
         closedPositionsBody: document.getElementById("rollingDemoClosedPositionsBody"),
         refreshOpenPositionsButton: document.getElementById("btnRollingDemoRefreshOpenPositions"),
         clearClosedFiltersButton: document.getElementById("btnRollingDemoClearClosedFilters"),
-        sellFutureButton: document.getElementById("btnRollingDemoSellFuture"),
-        buyFutureButton: document.getElementById("btnRollingDemoBuyFuture"),
+        placeFutureButton: document.getElementById("btnRollingDemoPlaceFuture"),
         execStrategyButton: document.getElementById("btnRollingDemoExecStrategy"),
         updateGreenRulesButton: document.getElementById("btnRollingDemoUpdateGreenRules"),
         updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
@@ -330,6 +330,7 @@
             symbol: String(ids.symbol?.value || "BTC"),
             manualFutQty: parseNumberInput(ids.manualFutQty, 1),
             manualFutOrderType: String(ids.manualFutOrderType?.value || "market_order"),
+            manualFutAction: String(ids.manualFutAction?.value || "SELL"),
             action1: String(ids.action1?.value || "sell"),
             legSide1: String(ids.legSide1?.value || "ce"),
             expiryMode1: String(ids.expiryMode1?.value || "1"),
@@ -380,6 +381,7 @@
         setFieldValue("symbol", uiState.symbol);
         setFieldValue("manualFutQty", uiState.manualFutQty);
         setFieldValue("manualFutOrderType", uiState.manualFutOrderType);
+        setFieldValue("manualFutAction", uiState.manualFutAction);
         setFieldValue("action1", uiState.action1);
         setFieldValue("legSide1", uiState.legSide1);
         setFieldValue("expiryMode1", uiState.expiryMode1);
@@ -841,15 +843,10 @@
         void runServerAction("/api/rollingoptions-pt-de/auto-trader");
     });
 
-    ids.sellFutureButton?.addEventListener("click", function () {
+    ids.placeFutureButton?.addEventListener("click", function () {
+        const vAction = String(ids.manualFutAction?.value || "SELL").trim().toUpperCase();
         void runServerAction("/api/rollingoptions-pt-de/manual/future", {
-            action: "SELL"
-        });
-    });
-
-    ids.buyFutureButton?.addEventListener("click", function () {
-        void runServerAction("/api/rollingoptions-pt-de/manual/future", {
-            action: "BUY"
+            action: vAction === "BUY" ? "BUY" : "SELL"
         });
     });
 
@@ -915,6 +912,7 @@
     [
         ids.manualFutQty,
         ids.manualFutOrderType,
+        ids.manualFutAction,
         ids.action1,
         ids.legSide1,
         ids.expiryDate1,

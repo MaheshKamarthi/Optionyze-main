@@ -302,6 +302,7 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
     };
 
     const vSymbol = String(pUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
+    const vFutureAction = String(pUiState.manualFutAction || "SELL").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
     const vAction = String(pUiState.action1 || "sell").trim().toLowerCase() === "buy" ? "buy" : "sell";
     const vLegSideRaw = String(pUiState.legSide1 || "ce").trim().toLowerCase();
     const vLegSide = vLegSideRaw === "both" || vLegSideRaw === "pe" ? vLegSideRaw : "ce";
@@ -340,6 +341,7 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         lotSize: vSymbol === "ETH" ? 0.01 : 0.001,
         futureQty: vFutureQty,
         futureOrderType: String(pUiState.manualFutOrderType || "market_order").trim() === "limit_order" ? "limit_order" : "market_order",
+        futureAction: vFutureAction,
         action: vAction,
         legSide: vLegSide,
         expiryMode: vExpiryMode,
