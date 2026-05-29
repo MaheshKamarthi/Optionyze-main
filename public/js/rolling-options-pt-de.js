@@ -14,8 +14,8 @@
         deltaTp1: document.getElementById("txtDeltaTPCoveredCall1"),
         deltaSl1: document.getElementById("txtDeltaSLCoveredCall1"),
         reEnter1: document.getElementById("chkReLegCoveredCall1"),
-        redOptQtyPct: document.getElementById("txtRedOptQtyPctCoveredCall"),
-        greenOptQtyPct: document.getElementById("txtGreenOptQtyPctCoveredCall"),
+        redOptQty: document.getElementById("txtRedOptQtyCoveredCall"),
+        greenOptQty: document.getElementById("txtGreenOptQtyCoveredCall"),
         greenReDelta: document.getElementById("txtReGreenDCoveredCall"),
         greenTpDelta: document.getElementById("txtReGreenTPCoveredCall"),
         greenSlDelta: document.getElementById("txtReGreenSLCoveredCall"),
@@ -31,6 +31,7 @@
         oneLotValue: document.getElementById("rollingDemoOneLotValue"),
         totalMarginValue: document.getElementById("rollingDemoTotalMarginValue"),
         engineStatus: document.getElementById("rollingDemoEngineStatus"),
+        pageStatus: document.getElementById("rollingDemoPageStatus"),
         openCount: document.getElementById("rollingDemoOpenCount"),
         autoTraderButton: document.getElementById("btnRollingDemoAutoTrader"),
         lastSignal: document.getElementById("rollingDemoLastSignal"),
@@ -280,6 +281,24 @@
             .replaceAll("'", "&#39;");
     }
 
+    function setStatus(message, tone) {
+        if (!ids.pageStatus) {
+            return;
+        }
+
+        const vMessage = String(message || "").trim();
+        ids.pageStatus.textContent = vMessage;
+        ids.pageStatus.className = "rolling-live-status";
+        if (!vMessage) {
+            return;
+        }
+
+        ids.pageStatus.classList.add("show");
+        if (tone) {
+            ids.pageStatus.classList.add(tone);
+        }
+    }
+
     function sumNumeric(rows, key) {
         return rows.reduce(function (sum, row) {
             const value = Number(row?.[key] || 0);
@@ -319,8 +338,8 @@
             deltaTp1: parseNumberInput(ids.deltaTp1, 0.15),
             deltaSl1: parseNumberInput(ids.deltaSl1, 0.85),
             reEnter1: Boolean(ids.reEnter1?.checked),
-            redOptQtyPct: parseNumberInput(ids.redOptQtyPct, 100),
-            greenOptQtyPct: parseNumberInput(ids.greenOptQtyPct, 100),
+            redOptQty: parseNumberInput(ids.redOptQty, 1),
+            greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
             greenTpDelta: parseNumberInput(ids.greenTpDelta, 0.15),
             greenSlDelta: parseNumberInput(ids.greenSlDelta, 0.85),
@@ -369,8 +388,8 @@
         setFieldValue("deltaTp1", uiState.deltaTp1);
         setFieldValue("deltaSl1", uiState.deltaSl1);
         setFieldValue("reEnter1", uiState.reEnter1);
-        setFieldValue("redOptQtyPct", uiState.redOptQtyPct);
-        setFieldValue("greenOptQtyPct", uiState.greenOptQtyPct);
+        setFieldValue("redOptQty", uiState.redOptQty ?? uiState.redOptQtyPct);
+        setFieldValue("greenOptQty", uiState.greenOptQty ?? uiState.greenOptQtyPct);
         setFieldValue("greenReDelta", uiState.greenReDelta);
         setFieldValue("greenTpDelta", uiState.greenTpDelta);
         setFieldValue("greenSlDelta", uiState.greenSlDelta);
@@ -695,19 +714,28 @@
             body: JSON.stringify(payload || {})
         });
 
-        if (!objResponse.ok) {
-            throw new Error(`Request failed for ${url}`);
-        }
-
-        return objResponse.json().catch(function () {
+        const objResult = await objResponse.json().catch(function () {
             return {};
         });
+
+        if (!objResponse.ok) {
+            throw new Error(String(objResult?.message || `Request failed (${objResponse.status}) for ${url}`));
+        }
+
+        return objResult;
     }
 
     async function runServerAction(url, payload) {
-        await flushProfileSave();
-        await postJson(url, payload);
-        await loadServerPanels();
+        setStatus("", "");
+        try {
+            await flushProfileSave();
+            await postJson(url, payload);
+            await loadServerPanels();
+        }
+        catch (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Request failed.", "danger");
+        }
     }
 
     async function deleteOpenPosition(positionId) {
@@ -877,8 +905,8 @@
         ids.deltaTp1,
         ids.deltaSl1,
         ids.reEnter1,
-        ids.redOptQtyPct,
-        ids.greenOptQtyPct,
+        ids.redOptQty,
+        ids.greenOptQty,
         ids.greenReDelta,
         ids.greenTpDelta,
         ids.greenSlDelta,
@@ -901,23 +929,34 @@
     });
 
     ids.closedFromDate?.addEventListener("change", function () {
-        void loadClosedPositions();
+        void loadClosedPositions().catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to load closed positions.", "danger");
+        });
     });
     ids.closedToDate?.addEventListener("change", function () {
-        void loadClosedPositions();
+        void loadClosedPositions().catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to load closed positions.", "danger");
+        });
     });
 
     loadProfile().then(function () {
         gHasLoadedProfile = true;
         queueProfileSave();
         return loadServerPanels();
-    }).catch(function () {
+    }).catch(function (objError) {
+        console.error(objError);
+        setStatus(objError instanceof Error ? objError.message : "Unable to load Rolling Options profile.", "danger");
         applySymbolDefaults();
         applyExpiryModeDefaults();
         updateRenkoFeedVisualState();
     });
 
     setInterval(function () {
-        void Promise.all([loadStatus(), loadOpenPositions(), loadClosedPositions(), loadEvents()]);
+        void Promise.all([loadStatus(), loadOpenPositions(), loadClosedPositions(), loadEvents()]).catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to refresh Rolling Options data.", "danger");
+        });
     }, 15000);
 })();

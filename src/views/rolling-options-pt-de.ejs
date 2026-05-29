@@ -12,6 +12,8 @@
     <div class="app-layout rolling-demo-layout">
         <%- include('partials/app-header', { currentAccount }) %>
 
+        <div class="rolling-live-status" id="rollingDemoPageStatus"></div>
+
         <section class="rolling-demo-hero">
             <div class="app-panel rolling-demo-card">
                 <h1 class="rolling-demo-title">Rolling Options - Demo</h1>
@@ -125,8 +127,8 @@
 
                 <div class="rolling-demo-subgrid">
                     <div class="rolling-demo-field">
-                        <label for="txtGreenOptQtyPctCoveredCall">Green Opt Qty %</label>
-                        <input type="number" min="0" step="1" id="txtGreenOptQtyPctCoveredCall" value="100" />
+                        <label for="txtGreenOptQtyCoveredCall">Green Opt Qty</label>
+                        <input type="number" min="0" step="1" id="txtGreenOptQtyCoveredCall" value="1" />
                     </div>
                     <div class="rolling-demo-field">
                         <label for="txtReGreenDCoveredCall">Re Green D</label>
@@ -149,8 +151,8 @@
                         <button class="rolling-demo-btn warn" type="button" id="btnRollingDemoExitOption">EXIT OPTION</button>
                     </div>
                     <div class="rolling-demo-field rolling-demo-field-new-row">
-                        <label for="txtRedOptQtyPctCoveredCall">Red Opt Qty %</label>
-                        <input type="number" min="0" step="1" id="txtRedOptQtyPctCoveredCall" value="100" />
+                        <label for="txtRedOptQtyCoveredCall">Red Opt Qty</label>
+                        <input type="number" min="0" step="1" id="txtRedOptQtyCoveredCall" value="1" />
                     </div>
                     <div class="rolling-demo-field">
                         <label for="txtReDeltaCoveredCall1">Re Red D</label>

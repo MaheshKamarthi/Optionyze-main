@@ -22,7 +22,14 @@ export function loadLocalEnv(): void {
         }
 
         const vKey = vLine.slice(0, vIndex).trim();
-        if (!vKey || Object.prototype.hasOwnProperty.call(process.env, vKey)) {
+        if (!vKey) {
+            continue;
+        }
+
+        const vExistingValue = Object.prototype.hasOwnProperty.call(process.env, vKey)
+            ? process.env[vKey]
+            : undefined;
+        if (vExistingValue !== undefined && String(vExistingValue).trim().length > 0) {
             continue;
         }
 

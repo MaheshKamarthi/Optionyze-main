@@ -123,8 +123,9 @@ export class RollingOptionsPtDeService {
             deltaTp1: 0.15,
             deltaSl1: 0.85,
             reEnter1: false,
+            redOptQty: 1,
             redOptQtyPct: 100,
-            greenOptQtyPct: 100,
+            greenOptQty: 1,
             greenReDelta: 0.53,
             greenTpDelta: 0.15,
             greenSlDelta: 0.85,
@@ -549,7 +550,9 @@ export class RollingOptionsPtDeService {
         pReason: string
     ): Promise<void> {
         const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
-        const vFutureQty = this.getRenkoOptionQty(objSummary.futureQty, pConfig.greenOptionQtyPct);
+        const vFutureQty = pConfig.greenOptionQty !== undefined
+            ? Math.max(0, Math.floor(Number(pConfig.greenOptionQty || 0)))
+            : this.getRenkoOptionQty(objSummary.futureQty, pConfig.greenOptionQtyPct);
 
         if (!(vFutureQty > 0)) {
             await logRollingOptionsPtDeEvent({
@@ -557,10 +560,10 @@ export class RollingOptionsPtDeService {
                 eventType: "manual_action",
                 severity: "info",
                 title: "Renko GREEN Futures Skipped",
-                message: "Skipped GREEN Renko future entry because Green Opt Qty % is 0.",
+                message: "Skipped GREEN Renko future entry because Green Opt Qty is 0.",
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_green_future_skipped_zero_qty_pct"
+                    reason: "renko_green_future_skipped_zero_qty"
                 }
             });
             return;
@@ -580,7 +583,9 @@ export class RollingOptionsPtDeService {
 
         const objNextSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
         if (!objNextSummary.hasOpenOption && objNextSummary.futureQty > 0) {
-            const vQty = this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.redOptionQtyPct);
+            const vQty = objConfig.redOptionQty !== undefined
+                ? Math.max(0, Math.floor(Number(objConfig.redOptionQty || 0)))
+                : this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.redOptionQtyPct);
             await this.openOptionPositions(pUserId, objConfig, vQty, "Strategy initial option entry", "R");
         }
 
@@ -702,18 +707,23 @@ export class RollingOptionsPtDeService {
             return;
         }
 
-        const vQtyPct = pColorCode === "R" ? pConfig.redOptionQtyPct : pConfig.greenOptionQtyPct;
-        const vQty = this.getRenkoOptionQty(objSummary.futureQty, vQtyPct);
+        const vQty = pColorCode === "R"
+            ? (pConfig.redOptionQty !== undefined
+                ? Math.max(0, Math.floor(Number(pConfig.redOptionQty || 0)))
+                : this.getRenkoOptionQty(objSummary.futureQty, pConfig.redOptionQtyPct))
+            : (pConfig.greenOptionQty !== undefined
+                ? Math.max(0, Math.floor(Number(pConfig.greenOptionQty || 0)))
+                : this.getRenkoOptionQty(objSummary.futureQty, pConfig.greenOptionQtyPct));
         if (!(vQty > 0)) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
                 title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because the configured qty % is 0.`,
+                message: `Skipped ${vColorLabel} Renko option entry because the configured qty is 0.`,
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_zero_qty_pct",
+                    reason: "renko_option_skipped_zero_qty",
                     renkoColor: pColorCode
                 }
             });
@@ -791,7 +801,9 @@ export class RollingOptionsPtDeService {
 
             const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
             if (objSummary.futureQty > 0) {
-                const vReplacementQty = this.getRenkoOptionQty(objSummary.futureQty, pConfig.redOptionQtyPct);
+                const vReplacementQty = pConfig.redOptionQty !== undefined
+                    ? Math.max(0, Math.floor(Number(pConfig.redOptionQty || 0)))
+                    : this.getRenkoOptionQty(objSummary.futureQty, pConfig.redOptionQtyPct);
                 if (!(vReplacementQty > 0)) {
                     return;
                 }

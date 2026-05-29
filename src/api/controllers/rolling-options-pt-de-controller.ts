@@ -56,8 +56,8 @@ function getDefaultUiState(): Record<string, unknown> {
         deltaTp1: 0.15,
         deltaSl1: 0.85,
         reEnter1: false,
-        redOptQtyPct: 100,
-        greenOptQtyPct: 100,
+        redOptQty: 1,
+        greenOptQty: 1,
         greenReDelta: 0.53,
         greenTpDelta: 0.15,
         greenSlDelta: 0.85,
@@ -105,11 +105,25 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
         ...getDefaultUiState(),
         ...(objProfile?.uiState || {})
     };
-    if (!Number.isFinite(Number(objUiState.redOptQtyPct))) {
-        objUiState.redOptQtyPct = Number(objUiState.autoOptQtyPct || 100);
+    if (!Number.isFinite(Number(objUiState.redOptQty))) {
+        const vLegacyPct = Number(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct);
+        const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));
+        objUiState.redOptQty = Number.isFinite(vLegacyPct)
+            ? Math.max(0, Math.round(vBaseQty * vLegacyPct / 100))
+            : 1;
     }
-    if (!Number.isFinite(Number(objUiState.greenOptQtyPct))) {
-        objUiState.greenOptQtyPct = 100;
+    else {
+        objUiState.redOptQty = Math.max(0, Math.floor(Number(objUiState.redOptQty)));
+    }
+    if (!Number.isFinite(Number(objUiState.greenOptQty))) {
+        const vLegacyPct = Number(objUiState.greenOptQtyPct);
+        const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));
+        objUiState.greenOptQty = Number.isFinite(vLegacyPct)
+            ? Math.max(0, Math.round(vBaseQty * vLegacyPct / 100))
+            : 1;
+    }
+    else {
+        objUiState.greenOptQty = Math.max(0, Math.floor(Number(objUiState.greenOptQty)));
     }
     if (!Number.isFinite(Number(objUiState.greenReDelta))) {
         objUiState.greenReDelta = normalizeNumber(objUiState.reDelta1, 0.53);

@@ -10,7 +10,9 @@ export interface RollingOptionsPtDeConfig {
     expiryDate: string;
     optionQty: number;
     redOptionQtyPct: number;
+    redOptionQty?: number;
     greenOptionQtyPct: number;
+    greenOptionQty?: number;
     newDelta: number;
     redReDelta?: number;
     redDeltaTakeProfit?: number;

@@ -299,19 +299,39 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
     const vExpiryMode = String(pUiState.expiryMode1 || "1") as "1" | "2" | "4" | "5" | "6" | "7";
     const vEffectiveExpiryDate = resolveExpiryDateByMode(vExpiryMode);
 
+    const vFutureQty = Math.max(1, Math.floor(Number(pUiState.manualFutQty || 1)));
+    const vRedQtyRaw = Number(pUiState.redOptQty);
+    const vLegacyRedPct = Number(pUiState.redOptQtyPct ?? pUiState.autoOptQtyPct);
+    const vRedOptionQtyPct = normalizeQtyPct(vLegacyRedPct, 100);
+    const vRedOptionQty = Number.isFinite(vRedQtyRaw)
+        ? Math.max(0, Math.floor(vRedQtyRaw))
+        : (Number.isFinite(vLegacyRedPct)
+            ? Math.max(0, Math.round(vFutureQty * vLegacyRedPct / 100))
+            : 1);
+    const vGreenQtyRaw = Number(pUiState.greenOptQty);
+    const vLegacyGreenPct = Number(pUiState.greenOptQtyPct);
+    const vGreenOptionQtyPct = normalizeQtyPct(vLegacyGreenPct, 100);
+    const vGreenOptionQty = Number.isFinite(vGreenQtyRaw)
+        ? Math.max(0, Math.floor(vGreenQtyRaw))
+        : (Number.isFinite(vLegacyGreenPct)
+            ? Math.max(0, Math.round(vFutureQty * vLegacyGreenPct / 100))
+            : 1);
+
     return {
         symbol: vSymbol,
         contractName: vSymbol === "ETH" ? "ETHUSD" : "BTCUSD",
         lotSize: vSymbol === "ETH" ? 0.01 : 0.001,
-        futureQty: Math.max(1, Math.floor(Number(pUiState.manualFutQty || 1))),
+        futureQty: vFutureQty,
         futureOrderType: String(pUiState.manualFutOrderType || "market_order").trim() === "limit_order" ? "limit_order" : "market_order",
         action: vAction,
         legSide: vLegSide,
         expiryMode: vExpiryMode,
         expiryDate: vEffectiveExpiryDate,
         optionQty: Math.max(1, Math.floor(Number(pUiState.manualOptQty1 || 1))),
-        redOptionQtyPct: normalizeQtyPct(pUiState.redOptQtyPct ?? pUiState.autoOptQtyPct, 100),
-        greenOptionQtyPct: normalizeQtyPct(pUiState.greenOptQtyPct, 100),
+        redOptionQtyPct: vRedOptionQtyPct,
+        redOptionQty: vRedOptionQty,
+        greenOptionQtyPct: vGreenOptionQtyPct,
+        greenOptionQty: vGreenOptionQty,
         newDelta: Number(pUiState.newDelta1 || 0.53),
         redReDelta: Number(pUiState.reRedDelta ?? pUiState.reDelta1 ?? 0.53),
         redDeltaTakeProfit: Number(pUiState.redTpDelta ?? pUiState.deltaTp1 ?? 0.15),
