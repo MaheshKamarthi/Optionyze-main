@@ -24,6 +24,7 @@
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
+        demoBalance: document.getElementById("txtRollingDemoDemoBalance"),
         optionsPnl: document.getElementById("txtRollingDemoOptionsPnl"),
         closedFromDate: document.getElementById("txtClsFromDate"),
         closedToDate: document.getElementById("txtClsToDate"),
@@ -31,6 +32,8 @@
         renkoFeedBadge: document.querySelector(".rolling-demo-switch")?.nextElementSibling,
         oneLotValue: document.getElementById("rollingDemoOneLotValue"),
         totalMarginValue: document.getElementById("rollingDemoTotalMarginValue"),
+        blockedMarginValue: document.getElementById("rollingDemoBlockedMarginValue"),
+        healthValue: document.getElementById("rollingDemoHealthValue"),
         engineStatus: document.getElementById("rollingDemoEngineStatus"),
         pageStatus: document.getElementById("rollingDemoPageStatus"),
         openCount: document.getElementById("rollingDemoOpenCount"),
@@ -235,6 +238,48 @@
             : "-";
     }
 
+    function updateBalanceMetrics(rows = gLatestOpenPositions) {
+        const demoBalance = parseNumberInput(ids.demoBalance, 0);
+        if (!Number.isFinite(demoBalance) || demoBalance <= 0) {
+            if (ids.blockedMarginValue) {
+                ids.blockedMarginValue.textContent = "-";
+            }
+            if (ids.healthValue) {
+                ids.healthValue.textContent = "-";
+                ids.healthValue.style.color = "";
+            }
+            return;
+        }
+
+        const blockedMargin = Array.isArray(rows)
+            ? rows.reduce(function (sum, row) {
+                const rate = Number(row?.entryPrice ?? row?.markPrice ?? 0);
+                const lotSize = Number(row?.lotSize || 0);
+                const qty = Number(row?.qty || 0);
+                if (!Number.isFinite(rate) || !Number.isFinite(lotSize) || !Number.isFinite(qty)) {
+                    return sum;
+                }
+                return sum + (rate * lotSize * qty);
+            }, 0)
+            : 0;
+
+        if (ids.blockedMarginValue) {
+            ids.blockedMarginValue.textContent = blockedMargin > 0
+                ? formatNumericValue(blockedMargin, 3)
+                : "-";
+        }
+
+        if (ids.healthValue) {
+            const healthPct = (blockedMargin / demoBalance) * 100;
+            ids.healthValue.textContent = Number.isFinite(healthPct)
+                ? `${formatNumericValue(healthPct, 2)}%`
+                : "-";
+            ids.healthValue.style.color = Number.isFinite(healthPct)
+                ? (healthPct <= 100 ? "#198754" : (healthPct <= 150 ? "#fd7e14" : "#dc3545"))
+                : "";
+        }
+    }
+
     function formatDisplayDateTime(dateValue) {
         const parsedDate = dateValue ? new Date(dateValue) : null;
         if (!(parsedDate instanceof Date) || Number.isNaN(parsedDate.getTime())) {
@@ -350,7 +395,7 @@
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
-            optionsPnl: parseNumberInput(ids.optionsPnl, 0),
+            demoBalance: parseNumberInput(ids.demoBalance, 10000),
             telegramAlertsEnabled: Boolean(ids.telegramAlertsEnabled?.checked),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
@@ -401,6 +446,7 @@
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
+        setFieldValue("demoBalance", uiState.demoBalance);
         setFieldValue("optionsPnl", uiState.optionsPnl);
         setFieldValue("telegramAlertsEnabled", uiState.telegramAlertsEnabled);
         setFieldValue("closedFromDate", uiState.closedFromDate);
@@ -426,6 +472,7 @@
         const lastSignal = String(runtimeState?.lastSignal || "-").trim() || "-";
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
+        const optionsPnl = Number(runtimeState?.optionsPnl);
 
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
@@ -446,6 +493,10 @@
             ids.lastSignal.dataset.lastSignalText = lastSignal;
         }
 
+        if (ids.optionsPnl) {
+            ids.optionsPnl.value = Number.isFinite(optionsPnl) ? optionsPnl.toFixed(3) : "0.000";
+        }
+
         updateOneLotMetric(runtimeState);
     }
 
@@ -459,6 +510,7 @@
             gPreviousOpenPositionLtps = new Map();
             ids.openPositionsBody.innerHTML = "<tr><td colspan=\"15\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
             updateTotalMarginMetric([]);
+            updateBalanceMetrics([]);
             return;
         }
 
@@ -525,6 +577,7 @@
         `;
         gPreviousOpenPositionLtps = nextLtps;
         updateTotalMarginMetric(rows);
+        updateBalanceMetrics(rows);
     }
 
     function renderClosedPositions(rows) {
@@ -799,6 +852,10 @@
         queueProfileSave();
     });
 
+    ids.demoBalance?.addEventListener("input", function () {
+        updateBalanceMetrics(gLatestOpenPositions);
+    });
+
     ids.lastSignal?.addEventListener("click", function () {
         void toggleManualRenkoSignal();
     });
@@ -930,7 +987,7 @@
         ids.addOneLotFuture,
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
-        ids.optionsPnl,
+        ids.demoBalance,
         ids.closedFromDate,
         ids.closedToDate
     ].forEach(function (objField) {

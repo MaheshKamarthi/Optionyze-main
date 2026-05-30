@@ -35,6 +35,7 @@ import {
 } from "../../storage/rolling-options-pt-de-runtime-store";
 import type { RollingOptionsPtDeService } from "../../strategies/rolling-options-pt-de/service";
 import { gRollingOptionsTelegramEventTypes, logRollingOptionsPtDeEvent } from "../../strategies/rolling-options-pt-de/event-logger";
+import { syncOptionsPnlWithClosedPositions } from "../../strategies/rolling-options-pt-de/options-pnl";
 
 function getUserIdFromReq(pReq: Request): string {
     const vUserId = String(pReq.authAccount?.accountId || pReq.body?.userId || pReq.query?.userId || "demo-paper").trim();
@@ -66,6 +67,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedEnabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
+        demoBalance: 10000,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
         telegramAlertTypes: [
@@ -98,6 +100,27 @@ function getLotSizeForSymbol(pSymbol: string): number {
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
     return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function calculatePaperNotional(pQty: number, pLotSize: number, pPrice: number): number {
+    const vQty = Math.max(0, Number(pQty || 0));
+    const vLotSize = Math.max(0, Number(pLotSize || 0));
+    const vPrice = Math.max(0, Number(pPrice || 0));
+    if (!(vQty > 0) || !(vLotSize > 0) || !(vPrice > 0)) {
+        return 0;
+    }
+    return vQty * vLotSize * vPrice;
+}
+
+function calculateBlockedMargin(pPositions: RollingOptionsPtDePositionRecord[]): number {
+    const arrPositions = Array.isArray(pPositions) ? pPositions : [];
+    return arrPositions.reduce((sum, objRow) => {
+        if (!objRow || objRow.status !== "OPEN") {
+            return sum;
+        }
+        const vPrice = Number(objRow.entryPrice ?? objRow.markPrice ?? 0);
+        return sum + calculatePaperNotional(Number(objRow.qty || 0), Number(objRow.lotSize || 0), vPrice);
+    }, 0);
 }
 
 async function getMergedUiState(pUserId: string): Promise<Record<string, unknown>> {
@@ -135,6 +158,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     if (!Number.isFinite(Number(objUiState.greenSlDelta))) {
         objUiState.greenSlDelta = normalizeNumber(objUiState.deltaSl1, 0.85);
     }
+    objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     return {
         ...objUiState,
@@ -533,11 +557,19 @@ export async function getRollingOptionsPtDeStatus(req: Request, res: Response): 
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     const objClosedPositions = await listRollingOptionsPtDeClosedPositions(vUserId);
     const objStatus = objRuntime || await getDefaultRuntimeState(vUserId);
+    const vOptionsPnl = objClosedPositions.reduce((sum, objRow) => {
+        if (objRow.instrumentType !== "OPTION") {
+            return sum;
+        }
+        const vPnl = Number(objRow.pnl || 0);
+        return sum + (Number.isFinite(vPnl) ? vPnl : 0);
+    }, 0);
 
     res.json({
         status: "success",
         data: {
             ...objStatus,
+            optionsPnl: Number((Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0).toFixed(3)),
             counts: {
                 openPositions: objOpenPositions.length,
                 closedPositions: objClosedPositions.length
@@ -679,6 +711,30 @@ export async function executeRollingOptionsPtDeManualFuture(req: Request, res: R
     const vEntryPrice = objSnapshot.futuresPrice;
     const vNow = objSnapshot.ts;
 
+    const vDemoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 0));
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    const vBlockedMargin = calculateBlockedMargin(objOpenPositions);
+    const vAdditionalMargin = calculatePaperNotional(vQty, vLotSize, vEntryPrice);
+    if (!(vDemoBalance > 0) || vBlockedMargin + vAdditionalMargin > vDemoBalance) {
+        await logRollingOptionsPtDeEvent({
+            userId: vUserId,
+            eventType: "manual_action",
+            severity: "warning",
+            title: "Insufficient Demo Balance",
+            message: "Skipped manual future entry because demo balance is insufficient.",
+            payload: {
+                symbol: vSymbol,
+                reason: "insufficient_demo_balance",
+                requiredMargin: vBlockedMargin + vAdditionalMargin,
+                blockedMargin: vBlockedMargin,
+                demoBalance: vDemoBalance,
+                additionalMargin: vAdditionalMargin
+            }
+        });
+        res.status(400).json({ status: "error", message: "Insufficient demo balance." });
+        return;
+    }
+
     const objPosition: RollingOptionsPtDePositionRecord = {
         ...createPositionBase(vUserId),
         status: "OPEN",
@@ -750,9 +806,42 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     const objSides: Array<"CE" | "PE"> = vLegSide === "BOTH" ? ["CE", "PE"] : [vLegSide === "PE" ? "PE" : "CE"];
     const vNow = objSnapshot.ts;
     const objSavedPositions: RollingOptionsPtDePositionRecord[] = [];
+    const objPlannedQuotes: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
 
     for (const vOptionSide of objSides) {
         const objQuote = await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta);
+        objPlannedQuotes.push({ side: vOptionSide, quote: objQuote });
+    }
+
+    const vDemoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 0));
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    const vBlockedMargin = calculateBlockedMargin(objOpenPositions);
+    const vAdditionalMargin = objPlannedQuotes.reduce((sum, objPlanned) => {
+        return sum + calculatePaperNotional(vQty, vLotSize, objPlanned.quote.entryPrice);
+    }, 0);
+    if (!(vDemoBalance > 0) || vBlockedMargin + vAdditionalMargin > vDemoBalance) {
+        await logRollingOptionsPtDeEvent({
+            userId: vUserId,
+            eventType: "manual_action",
+            severity: "warning",
+            title: "Insufficient Demo Balance",
+            message: "Skipped manual option entry because demo balance is insufficient.",
+            payload: {
+                symbol: vSymbol,
+                reason: "insufficient_demo_balance",
+                requiredMargin: vBlockedMargin + vAdditionalMargin,
+                blockedMargin: vBlockedMargin,
+                demoBalance: vDemoBalance,
+                additionalMargin: vAdditionalMargin
+            }
+        });
+        res.status(400).json({ status: "error", message: "Insufficient demo balance." });
+        return;
+    }
+
+    for (const objPlanned of objPlannedQuotes) {
+        const vOptionSide = objPlanned.side;
+        const objQuote = objPlanned.quote;
         const objPosition: RollingOptionsPtDePositionRecord = {
             ...createPositionBase(vUserId),
             status: "OPEN",
@@ -991,6 +1080,7 @@ export async function resetRollingOptionsPtDeStrategy(
 export async function clearRollingOptionsPtDeClosedPositionsController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vDeletedCount = await clearRollingOptionsPtDeClosedPositions(vUserId);
+    await syncOptionsPnlWithClosedPositions(vUserId);
     await logRollingOptionsPtDeEvent({
         userId: vUserId,
         eventType: "manual_action",

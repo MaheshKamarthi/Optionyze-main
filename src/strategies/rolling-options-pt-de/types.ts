@@ -5,6 +5,7 @@ export interface RollingOptionsPtDeConfig {
     futureQty: number;
     futureOrderType: "limit_order" | "market_order";
     futureAction?: "BUY" | "SELL";
+    demoBalance?: number;
     action: "buy" | "sell";
     legSide: "ce" | "pe" | "both";
     expiryMode: "1" | "2" | "4" | "5" | "6" | "7";

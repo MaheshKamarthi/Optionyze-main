@@ -27,7 +27,7 @@ import {
     getLiveMarketSnapshot,
     getLiveOptionTicker
 } from "./market-data";
-import { applyClosedOptionPnlToProfile } from "./options-pnl";
+import { syncOptionsPnlWithClosedPositions } from "./options-pnl";
 import type {
     RollingOptionsPtDeConfig,
     RollingOptionsPtDeEngineState,
@@ -253,13 +253,82 @@ export class RollingOptionsPtDeService {
         return saveRollingOptionsPtDeRuntime(objRuntime);
     }
 
+    private getDemoBalanceLimit(pConfig: RollingOptionsPtDeConfig): number | null {
+        const vBalance = Number(pConfig.demoBalance);
+        if (!Number.isFinite(vBalance) || vBalance <= 0) {
+            return null;
+        }
+        return vBalance;
+    }
+
+    private calculatePaperNotional(pQty: number, pLotSize: number, pPrice: number): number {
+        const vQty = Math.max(0, Number(pQty || 0));
+        const vLotSize = Math.max(0, Number(pLotSize || 0));
+        const vPrice = Math.max(0, Number(pPrice || 0));
+        if (!(vQty > 0) || !(vLotSize > 0) || !(vPrice > 0)) {
+            return 0;
+        }
+        return vQty * vLotSize * vPrice;
+    }
+
+    private calculateBlockedMarginFromPositions(pPositions: RollingOptionsPtDePositionRecord[]): number {
+        const arrPositions = Array.isArray(pPositions) ? pPositions : [];
+        return arrPositions.reduce((sum, objRow) => {
+            if (!objRow || objRow.status !== "OPEN") {
+                return sum;
+            }
+            const vPrice = Number(objRow.entryPrice ?? objRow.markPrice ?? 0);
+            return sum + this.calculatePaperNotional(Number(objRow.qty || 0), Number(objRow.lotSize || 0), vPrice);
+        }, 0);
+    }
+
+    private async hasSufficientDemoBalance(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pAdditionalBlockedMargin: number,
+        pReason: string
+    ): Promise<boolean> {
+        const vDemoBalance = this.getDemoBalanceLimit(pConfig);
+        if (vDemoBalance === null) {
+            return true;
+        }
+
+        const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const vBlockedMargin = this.calculateBlockedMarginFromPositions(objOpenPositions);
+        const vRequired = vBlockedMargin + Math.max(0, Number(pAdditionalBlockedMargin || 0));
+        if (vRequired <= vDemoBalance) {
+            return true;
+        }
+
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "warning",
+            title: "Insufficient Demo Balance",
+            message: `Skipped ${pReason} because required margin ${vRequired.toFixed(3)} exceeds demo balance ${vDemoBalance.toFixed(3)}.`,
+            payload: {
+                symbol: pConfig.symbol,
+                reason: "insufficient_demo_balance",
+                requiredMargin: vRequired,
+                blockedMargin: vBlockedMargin,
+                demoBalance: vDemoBalance,
+                additionalMargin: Math.max(0, Number(pAdditionalBlockedMargin || 0))
+            }
+        });
+        return false;
+    }
+
     private async openFuturePosition(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
         pQty: number,
         pReason: string
-    ): Promise<RollingOptionsPtDePositionRecord> {
+    ): Promise<RollingOptionsPtDePositionRecord | null> {
         const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), pConfig);
+        const vAdditionalMargin = this.calculatePaperNotional(pQty, pConfig.lotSize, objSnapshot.futuresPrice);
+        if (!(await this.hasSufficientDemoBalance(pUserId, pConfig, vAdditionalMargin, pReason))) {
+            return null;
+        }
         const objPosition = await saveRollingOptionsPtDePosition({
             positionId: crypto.randomUUID(),
             userId: pUserId,
@@ -328,6 +397,21 @@ export class RollingOptionsPtDeService {
         const vStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
         const objSaved: RollingOptionsPtDePositionRecord[] = [];
 
+        const objPlannedLegs: Array<{
+            optionSide: "CE" | "PE";
+            contractName: string;
+            strike: number;
+            expiryDate: string;
+            markPrice: number;
+            entryDelta: number;
+            productSymbol: string;
+            productDelta: number;
+            productGamma: number;
+            productTheta: number;
+            productVega: number;
+            usedNextDayExpiryFallback: boolean;
+        }> = [];
+
         for (const vOptionSide of vOptionSides) {
             const objLiveContract = await findBestLiveOptionContract(pConfig, vOptionSide, vTargetDelta);
             if (objLiveContract?.contractSymbol) {
@@ -351,6 +435,35 @@ export class RollingOptionsPtDeService {
                 });
                 continue;
             }
+
+            objPlannedLegs.push({
+                optionSide: vOptionSide,
+                contractName: objLiveContract?.contractSymbol || `${pConfig.contractName} ${vOptionSide}`,
+                strike: objLiveContract?.strike || vStrike,
+                expiryDate: objLiveContract?.expiryDate || pConfig.expiryDate,
+                markPrice: vMark,
+                entryDelta: vEntryDelta,
+                productSymbol: objLiveContract?.contractSymbol || "",
+                productDelta: objLiveContract?.delta || vTargetDelta,
+                productGamma: objLiveContract?.gamma || 0,
+                productTheta: objLiveContract?.theta || 0,
+                productVega: objLiveContract?.vega || 0,
+                usedNextDayExpiryFallback: Boolean(objLiveContract?.usedNextDayFallback)
+            });
+        }
+
+        if (objPlannedLegs.length === 0) {
+            return [];
+        }
+
+        const vAdditionalMargin = objPlannedLegs.reduce((sum, objLeg) => {
+            return sum + this.calculatePaperNotional(pQty, pConfig.lotSize, objLeg.markPrice);
+        }, 0);
+        if (!(await this.hasSufficientDemoBalance(pUserId, pConfig, vAdditionalMargin, pReason))) {
+            return [];
+        }
+
+        for (const objLeg of objPlannedLegs) {
             objSaved.push(await saveRollingOptionsPtDePosition({
                 positionId: crypto.randomUUID(),
                 userId: pUserId,
@@ -358,20 +471,20 @@ export class RollingOptionsPtDeService {
                 cycleId: `cycle_${Date.now()}`,
                 status: "OPEN",
                 symbol: pConfig.symbol,
-                contractName: objLiveContract?.contractSymbol || `${pConfig.contractName} ${vOptionSide}`,
+                contractName: objLeg.contractName,
                 instrumentType: "OPTION",
-                optionSide: vOptionSide,
+                optionSide: objLeg.optionSide,
                 action: pConfig.action === "buy" ? "BUY" : "SELL",
-                strike: objLiveContract?.strike || vStrike,
-                expiryDate: objLiveContract?.expiryDate || pConfig.expiryDate,
+                strike: objLeg.strike,
+                expiryDate: objLeg.expiryDate,
                 qty: pQty,
                 lotSize: pConfig.lotSize,
-                entryPrice: vMark,
+                entryPrice: objLeg.markPrice,
                 exitPrice: null,
-                markPrice: vMark,
-                entryDelta: vEntryDelta,
-                exitDelta: vEntryDelta,
-                charges: estimatePositionCharges("OPTION", pQty, pConfig.lotSize, vMark),
+                markPrice: objLeg.markPrice,
+                entryDelta: objLeg.entryDelta,
+                exitDelta: objLeg.entryDelta,
+                charges: estimatePositionCharges("OPTION", pQty, pConfig.lotSize, objLeg.markPrice),
                 pnl: 0,
                 openedReason: pReason,
                 closedReason: "",
@@ -384,15 +497,15 @@ export class RollingOptionsPtDeService {
                     reEnter: pConfig.reEnter,
                     ruleColor: objRuleValues.colorCode,
                     entrySpotPrice: objSnapshot.spotPrice,
-                    productSymbol: objLiveContract?.contractSymbol || "",
-                    productDelta: objLiveContract?.delta || vTargetDelta,
-                    productGamma: objLiveContract?.gamma || 0,
-                    productTheta: objLiveContract?.theta || 0,
-                    productVega: objLiveContract?.vega || 0,
+                    productSymbol: objLeg.productSymbol,
+                    productDelta: objLeg.productDelta,
+                    productGamma: objLeg.productGamma,
+                    productTheta: objLeg.productTheta,
+                    productVega: objLeg.productVega,
                     expiryMode: pConfig.expiryMode,
                     requestedExpiryDate: pConfig.expiryDate,
-                    resolvedExpiryDate: objLiveContract?.expiryDate || pConfig.expiryDate,
-                    usedNextDayExpiryFallback: Boolean(objLiveContract?.usedNextDayFallback),
+                    resolvedExpiryDate: objLeg.expiryDate,
+                    usedNextDayExpiryFallback: objLeg.usedNextDayExpiryFallback,
                     source: objSnapshot.priceSource === "public" ? "server-strategy-live" : "server-strategy-simulated"
                 },
                 createdAt: objSnapshot.ts,
@@ -511,7 +624,7 @@ export class RollingOptionsPtDeService {
         }
 
         if (objClosed.length > 0) {
-            await applyClosedOptionPnlToProfile(objClosed[0].userId, objClosed);
+            await syncOptionsPnlWithClosedPositions(objClosed[0].userId);
             await logRollingOptionsPtDeEvent({
                 userId: objClosed[0].userId,
                 eventType: pReason.toLowerCase().includes("sl")

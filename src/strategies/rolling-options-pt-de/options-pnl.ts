@@ -2,40 +2,40 @@ import {
     loadRollingOptionsPtDeProfile,
     saveRollingOptionsPtDeProfile
 } from "../../storage/rolling-options-pt-de-profile-store";
+import { listRollingOptionsPtDeClosedPositions } from "../../storage/rolling-options-pt-de-position-store";
 import type { RollingOptionsPtDePositionRecord } from "../../storage/rolling-options-pt-de-position-store";
+
+export async function syncOptionsPnlWithClosedPositions(pUserId: string): Promise<number> {
+    const objClosedPositions = await listRollingOptionsPtDeClosedPositions(pUserId);
+    const vOptionsPnl = objClosedPositions.reduce((pSum, objPosition) => {
+        if (objPosition.instrumentType !== "OPTION") {
+            return pSum;
+        }
+        const vPnl = Number(objPosition.pnl || 0);
+        return pSum + (Number.isFinite(vPnl) ? vPnl : 0);
+    }, 0);
+
+    const vNormalized = Number((Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0).toFixed(3));
+    const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
+    const objUiState = {
+        ...(objProfile?.uiState || {})
+    };
+    await saveRollingOptionsPtDeProfile({
+        userId: pUserId,
+        uiState: {
+            ...objUiState,
+            optionsPnl: vNormalized
+        },
+        updatedAt: ""
+    });
+
+    return vNormalized;
+}
 
 export async function applyClosedOptionPnlToProfile(
     pUserId: string,
     pPositions: RollingOptionsPtDePositionRecord[]
 ): Promise<number> {
-    const vOptionPnlDelta = pPositions.reduce((pSum, objPosition) => {
-        if (objPosition.instrumentType !== "OPTION") {
-            return pSum;
-        }
-
-        const vPnl = Number(objPosition.pnl || 0);
-        return pSum + (Number.isFinite(vPnl) ? vPnl : 0);
-    }, 0);
-
-    if (!Number.isFinite(vOptionPnlDelta) || vOptionPnlDelta === 0) {
-        return 0;
-    }
-
-    const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
-    const objUiState = {
-        ...(objProfile?.uiState || {})
-    };
-    const vCurrentOptionsPnl = Number(objUiState.optionsPnl || 0);
-    const vNextOptionsPnl = Number(((Number.isFinite(vCurrentOptionsPnl) ? vCurrentOptionsPnl : 0) + vOptionPnlDelta).toFixed(3));
-
-    await saveRollingOptionsPtDeProfile({
-        userId: pUserId,
-        uiState: {
-            ...objUiState,
-            optionsPnl: vNextOptionsPnl
-        },
-        updatedAt: ""
-    });
-
-    return vOptionPnlDelta;
+    void pPositions;
+    return syncOptionsPnlWithClosedPositions(pUserId);
 }

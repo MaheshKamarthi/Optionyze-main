@@ -202,15 +202,23 @@
                     </div>
                     <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Blocked Margin</div>
-                        <div class="rolling-demo-metric-value">-</div>
+                        <div class="rolling-demo-metric-value" id="rollingDemoBlockedMarginValue">-</div>
                     </div>
                     <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Available Balance</div>
-                        <div class="rolling-demo-metric-value">-</div>
+                        <input
+                            class="rolling-demo-metric-input"
+                            type="number"
+                            min="0"
+                            max="999999999"
+                            step="0.01"
+                            id="txtRollingDemoDemoBalance"
+                            value="10000"
+                        />
                     </div>
                     <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Health</div>
-                        <div class="rolling-demo-metric-value">-</div>
+                        <div class="rolling-demo-metric-value" id="rollingDemoHealthValue">-</div>
                     </div>
                     <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Options PnL</div>
@@ -221,6 +229,7 @@
                             max="999999999"
                             step="0.001"
                             id="txtRollingDemoOptionsPnl"
+                            readonly
                             value="0.000"
                         />
                     </div>

@@ -334,6 +334,8 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         : (Number.isFinite(vLegacyGreenPct)
             ? Math.max(0, Math.round(vFutureQty * vLegacyGreenPct / 100))
             : 1);
+    const vDemoBalanceRaw = Number(pUiState.demoBalance ?? 10000);
+    const vDemoBalance = Number.isFinite(vDemoBalanceRaw) ? Math.max(0, vDemoBalanceRaw) : 10000;
 
     return {
         symbol: vSymbol,
@@ -342,6 +344,7 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         futureQty: vFutureQty,
         futureOrderType: String(pUiState.manualFutOrderType || "market_order").trim() === "limit_order" ? "limit_order" : "market_order",
         futureAction: vFutureAction,
+        demoBalance: vDemoBalance,
         action: vAction,
         legSide: vLegSide,
         expiryMode: vExpiryMode,
