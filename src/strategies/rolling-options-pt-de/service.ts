@@ -1063,11 +1063,38 @@ export class RollingOptionsPtDeService {
                 const objLiveTicker = vProductSymbol ? await getLiveOptionTicker(vProductSymbol) : null;
                 const vCurrentDelta = Math.abs(Number(objLiveTicker?.delta || objPosition.exitDelta || objPosition.entryDelta || 0.53));
                 const vMarkPrice = Number(objLiveTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
+                const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+                const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
+                const vAction = String(objPosition.action || "").trim().toUpperCase();
+                const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+                const vSlMove = vRuleColor === "R"
+                    ? clamp01(Number(objConfig.redStopLossPct ?? 85) / 100)
+                    : clamp01(Number(objConfig.greenStopLossPct ?? 85) / 100);
+                const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
+                const objNextMeta = { ...objMeta } as Record<string, unknown>;
+
+                if ((vRuleColor === "G" || vRuleColor === "R") && Number.isFinite(vSlMove) && vSlMove > 0 && (vAction === "BUY" || vAction === "SELL")) {
+                    const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
+                    const vPrevBest = Number(objNextMeta.trailBestDelta);
+                    const vBestDelta = Number.isFinite(vPrevBest)
+                        ? (vAction === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
+                        : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
+                    const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
+                    const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
+                    const vNextSl = vAction === "BUY"
+                        ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
+                        : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
+                    objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
+                    objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
+                    objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                }
+
                 await saveRollingOptionsPtDePosition({
                     ...objPosition,
                     markPrice: vMarkPrice,
                     exitDelta: vCurrentDelta,
                     pnl: getPositionPnl(objPosition, vMarkPrice),
+                    metadata: objNextMeta,
                     updatedAt: ""
                 });
 
@@ -1075,7 +1102,7 @@ export class RollingOptionsPtDeService {
                     continue;
                 }
 
-                const objDecision = shouldTriggerOption(objPosition, vCurrentDelta);
+                const objDecision = shouldTriggerOption({ ...objPosition, metadata: objNextMeta }, vCurrentDelta);
                 if (objDecision.shouldAct && objDecision.reason) {
                     await this.handleOptionTrigger(pUserId, objConfig, objPosition, objDecision.reason);
                     break;
