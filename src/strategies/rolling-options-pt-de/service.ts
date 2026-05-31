@@ -393,6 +393,8 @@ export class RollingOptionsPtDeService {
             ? ["CE", "PE"]
             : [pConfig.legSide === "pe" ? "PE" : "CE"];
         const objRuleValues = this.getRuleValues(pConfig, pColorCode);
+        const vAction = pConfig.action === "buy" ? "BUY" : "SELL";
+        const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
         const vTargetDelta = pUseReEntryDelta ? objRuleValues.reDelta : pConfig.newDelta;
         const vStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
         const objSaved: RollingOptionsPtDePositionRecord[] = [];
@@ -404,6 +406,8 @@ export class RollingOptionsPtDeService {
             expiryDate: string;
             markPrice: number;
             entryDelta: number;
+            takeProfitDelta: number;
+            stopLossDelta: number;
             productSymbol: string;
             productDelta: number;
             productGamma: number;
@@ -419,7 +423,29 @@ export class RollingOptionsPtDeService {
             }
             const vMark = objLiveContract?.markPrice || Number((objSnapshot.spotPrice * Math.max(0.002, Math.abs(vTargetDelta) * 0.012)).toFixed(2));
             const vEntryDelta = objLiveContract ? Math.abs(objLiveContract.delta) : vTargetDelta;
-            if (!pUseReEntryDelta && this.wouldOptionTriggerImmediately(objRuleValues, pConfig.action === "buy" ? "BUY" : "SELL", vEntryDelta)) {
+            const vBaseDelta = Math.abs(Number(vEntryDelta || 0));
+            let vTakeProfitDelta = Number(objRuleValues.takeProfitDelta || 0);
+            let vStopLossDelta = Number(objRuleValues.stopLossDelta || 0);
+
+            if (pColorCode === "G" || pColorCode === "R") {
+                const vTpMove = clamp01(Number((pColorCode === "G" ? pConfig.greenTakeProfitPct : pConfig.redTakeProfitPct) ?? 15) / 100);
+                const vSlMove = clamp01(Number((pColorCode === "G" ? pConfig.greenStopLossPct : pConfig.redStopLossPct) ?? 85) / 100);
+                if (vAction === "BUY") {
+                    vTakeProfitDelta = clamp01(vBaseDelta + vTpMove);
+                    vStopLossDelta = clamp01(vBaseDelta - vSlMove);
+                }
+                else {
+                    vTakeProfitDelta = clamp01(vBaseDelta - vTpMove);
+                    const vRawStopLoss = vBaseDelta + vSlMove;
+                    const vAbsoluteStopLoss = clamp01(Number((pColorCode === "G" ? pConfig.greenStopLossPct : pConfig.redStopLossPct) ?? 85) / 100);
+                    vStopLossDelta = vRawStopLoss > 1 ? vAbsoluteStopLoss : clamp01(vRawStopLoss);
+                }
+            }
+
+            if (!pUseReEntryDelta && this.wouldOptionTriggerImmediately({
+                takeProfitDelta: vTakeProfitDelta,
+                stopLossDelta: vStopLossDelta
+            }, vAction, vBaseDelta)) {
                 await logRollingOptionsPtDeEvent({
                     userId: pUserId,
                     eventType: "manual_action",
@@ -443,6 +469,8 @@ export class RollingOptionsPtDeService {
                 expiryDate: objLiveContract?.expiryDate || pConfig.expiryDate,
                 markPrice: vMark,
                 entryDelta: vEntryDelta,
+                takeProfitDelta: vTakeProfitDelta,
+                stopLossDelta: vStopLossDelta,
                 productSymbol: objLiveContract?.contractSymbol || "",
                 productDelta: objLiveContract?.delta || vTargetDelta,
                 productGamma: objLiveContract?.gamma || 0,
@@ -474,7 +502,7 @@ export class RollingOptionsPtDeService {
                 contractName: objLeg.contractName,
                 instrumentType: "OPTION",
                 optionSide: objLeg.optionSide,
-                action: pConfig.action === "buy" ? "BUY" : "SELL",
+                action: vAction,
                 strike: objLeg.strike,
                 expiryDate: objLeg.expiryDate,
                 qty: pQty,
@@ -491,8 +519,10 @@ export class RollingOptionsPtDeService {
                 openedAt: objSnapshot.ts,
                 closedAt: "",
                 metadata: {
-                    deltaTakeProfit: objRuleValues.takeProfitDelta,
-                    deltaStopLoss: objRuleValues.stopLossDelta,
+                    deltaTakeProfit: objLeg.takeProfitDelta,
+                    deltaStopLoss: objLeg.stopLossDelta,
+                    takeProfitDelta: objLeg.takeProfitDelta,
+                    stopLossDelta: objLeg.stopLossDelta,
                     reEntryDelta: objRuleValues.reDelta,
                     reEnter: pConfig.reEnter,
                     ruleColor: objRuleValues.colorCode,

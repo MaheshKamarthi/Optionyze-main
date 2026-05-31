@@ -12,14 +12,14 @@
         manualOptQty1: document.getElementById("txtManualOptQtyCoveredCall1"),
         newDelta1: document.getElementById("txtNewDeltaCoveredCall1"),
         reDelta1: document.getElementById("txtReDeltaCoveredCall1"),
-        deltaTp1: document.getElementById("txtDeltaTPCoveredCall1"),
-        deltaSl1: document.getElementById("txtDeltaSLCoveredCall1"),
+        redTpPct: document.getElementById("txtDeltaTPCoveredCall1"),
+        redSlPct: document.getElementById("txtDeltaSLCoveredCall1"),
         reEnter1: document.getElementById("chkReLegCoveredCall1"),
         redOptQty: document.getElementById("txtRedOptQtyCoveredCall"),
         greenOptQty: document.getElementById("txtGreenOptQtyCoveredCall"),
         greenReDelta: document.getElementById("txtReGreenDCoveredCall"),
-        greenTpDelta: document.getElementById("txtReGreenTPCoveredCall"),
-        greenSlDelta: document.getElementById("txtReGreenSLCoveredCall"),
+        greenTpPct: document.getElementById("txtReGreenTPCoveredCall"),
+        greenSlPct: document.getElementById("txtReGreenSLCoveredCall"),
         addOneLotFuture: document.getElementById("chkAddOneLotFutIfNegFut"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
@@ -383,14 +383,14 @@
             manualOptQty1: parseNumberInput(ids.manualOptQty1, 1),
             newDelta1: parseNumberInput(ids.newDelta1, 0.53),
             reDelta1: parseNumberInput(ids.reDelta1, 0.53),
-            deltaTp1: parseNumberInput(ids.deltaTp1, 0.15),
-            deltaSl1: parseNumberInput(ids.deltaSl1, 0.85),
+            redTpPct: parseNumberInput(ids.redTpPct, 15),
+            redSlPct: parseNumberInput(ids.redSlPct, 85),
             reEnter1: Boolean(ids.reEnter1?.checked),
             redOptQty: parseNumberInput(ids.redOptQty, 1),
             greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
-            greenTpDelta: parseNumberInput(ids.greenTpDelta, 0.15),
-            greenSlDelta: parseNumberInput(ids.greenSlDelta, 0.85),
+            greenTpPct: parseNumberInput(ids.greenTpPct, 15),
+            greenSlPct: parseNumberInput(ids.greenSlPct, 85),
             addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
@@ -434,14 +434,14 @@
         setFieldValue("manualOptQty1", uiState.manualOptQty1);
         setFieldValue("newDelta1", uiState.newDelta1);
         setFieldValue("reDelta1", uiState.reDelta1);
-        setFieldValue("deltaTp1", uiState.deltaTp1);
-        setFieldValue("deltaSl1", uiState.deltaSl1);
+        setFieldValue("redTpPct", uiState.redTpPct ?? (Number.isFinite(Number(uiState.deltaTp1)) ? (Number(uiState.deltaTp1) <= 2 ? Number(uiState.deltaTp1) * 100 : Number(uiState.deltaTp1)) : ""));
+        setFieldValue("redSlPct", uiState.redSlPct ?? (Number.isFinite(Number(uiState.deltaSl1)) ? (Number(uiState.deltaSl1) <= 2 ? Number(uiState.deltaSl1) * 100 : Number(uiState.deltaSl1)) : ""));
         setFieldValue("reEnter1", uiState.reEnter1);
         setFieldValue("redOptQty", uiState.redOptQty ?? uiState.redOptQtyPct);
         setFieldValue("greenOptQty", uiState.greenOptQty ?? uiState.greenOptQtyPct);
         setFieldValue("greenReDelta", uiState.greenReDelta);
-        setFieldValue("greenTpDelta", uiState.greenTpDelta);
-        setFieldValue("greenSlDelta", uiState.greenSlDelta);
+        setFieldValue("greenTpPct", uiState.greenTpPct ?? (Number.isFinite(Number(uiState.greenTpDelta)) ? Number(uiState.greenTpDelta) * 100 : ""));
+        setFieldValue("greenSlPct", uiState.greenSlPct ?? (Number.isFinite(Number(uiState.greenSlDelta)) ? Number(uiState.greenSlDelta) * 100 : ""));
         setFieldValue("addOneLotFuture", uiState.addOneLotFuture);
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
@@ -508,7 +508,7 @@
         if (!Array.isArray(rows) || rows.length === 0) {
             gLatestOpenPositions = [];
             gPreviousOpenPositionLtps = new Map();
-            ids.openPositionsBody.innerHTML = "<tr><td colspan=\"15\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
+            ids.openPositionsBody.innerHTML = "<tr><td colspan=\"17\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
             return;
@@ -523,6 +523,12 @@
             const currentDelta = String(row.instrumentType || "").toUpperCase() === "OPTION"
                 ? (row.exitDelta ?? row.entryDelta)
                 : null;
+            const tpDelta = row.metadata && typeof row.metadata === "object"
+                ? (row.metadata.deltaTakeProfit ?? row.metadata.takeProfitDelta)
+                : null;
+            const slDelta = row.metadata && typeof row.metadata === "object"
+                ? (row.metadata.deltaStopLoss ?? row.metadata.stopLossDelta)
+                : null;
             const positionId = String(row.positionId || "");
             const ltpBlinkClass = getLtpBlinkClass(positionId, row.markPrice);
             const currentLtp = Number(row.markPrice);
@@ -533,6 +539,8 @@
                 <tr>
                     <td>${escapeHtml(formatNumericValue(row.entryDelta, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(currentDelta, 2))}</td>
+                    <td>${escapeHtml(formatNumericValue(tpDelta, 2))}</td>
+                    <td>${escapeHtml(formatNumericValue(slDelta, 2))}</td>
                     <td>${escapeHtml(row.contractName || row.symbol || "-")}</td>
                     <td>${escapeHtml(tradeType || "-")}</td>
                     <td>${escapeHtml(formatNumericValue(row.lotSize, 3))}</td>
@@ -569,7 +577,7 @@
         const totalPnl = sumNumeric(rows, "pnl");
         ids.openPositionsBody.innerHTML = `${openRowsHtml}
             <tr class="rolling-demo-total-row">
-                <td colspan="9">Total</td>
+                <td colspan="11">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
                 <td colspan="4">-</td>
@@ -976,14 +984,14 @@
         ids.manualOptQty1,
         ids.newDelta1,
         ids.reDelta1,
-        ids.deltaTp1,
-        ids.deltaSl1,
+        ids.redTpPct,
+        ids.redSlPct,
         ids.reEnter1,
         ids.redOptQty,
         ids.greenOptQty,
         ids.greenReDelta,
-        ids.greenTpDelta,
-        ids.greenSlDelta,
+        ids.greenTpPct,
+        ids.greenSlPct,
         ids.addOneLotFuture,
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,

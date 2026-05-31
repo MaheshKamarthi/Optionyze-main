@@ -138,12 +138,12 @@
                         <input type="number" min="0.0" max="2.0" step="0.01" id="txtReGreenDCoveredCall" value="0.53" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtReGreenTPCoveredCall">Green TP</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtReGreenTPCoveredCall" value="0.15" />
+                        <label for="txtReGreenTPCoveredCall">Green TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtReGreenTPCoveredCall" value="15" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtReGreenSLCoveredCall">Green SL</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtReGreenSLCoveredCall" value="0.85" />
+                        <label for="txtReGreenSLCoveredCall">Green SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtReGreenSLCoveredCall" value="85" />
                     </div>
                     <div class="rolling-demo-field">
                         <label>&nbsp;</label>
@@ -166,12 +166,12 @@
                         <input type="number" min="0.0" max="2.0" step="0.01" id="txtReDeltaCoveredCall1" value="0.53" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtDeltaTPCoveredCall1">Red TP</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtDeltaTPCoveredCall1" value="0.15" />
+                        <label for="txtDeltaTPCoveredCall1">Red TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtDeltaTPCoveredCall1" value="15" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtDeltaSLCoveredCall1">Red SL</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtDeltaSLCoveredCall1" value="0.85" />
+                        <label for="txtDeltaSLCoveredCall1">Red SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtDeltaSLCoveredCall1" value="85" />
                     </div>
                     <div class="rolling-demo-field">
                         <label>&nbsp;</label>
@@ -271,6 +271,8 @@
                             <tr>
                                 <th>Delta</th>
                                 <th>C Delta</th>
+                                <th>TP Delta</th>
+                                <th>SL Delta</th>
                                 <th>Symbol</th>
                                 <th>Tr Type</th>
                                 <th>Lot Sz</th>
@@ -288,7 +290,7 @@
                         </thead>
                         <tbody id="rollingDemoOpenPositionsBody">
                             <tr>
-                                <td colspan="15" class="rolling-demo-empty">No open paper positions yet. Server-side wiring will populate this table later.</td>
+                                <td colspan="17" class="rolling-demo-empty">No open paper positions yet. Server-side wiring will populate this table later.</td>
                             </tr>
                         </tbody>
                     </table>

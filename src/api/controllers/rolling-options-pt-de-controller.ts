@@ -59,10 +59,14 @@ function getDefaultUiState(): Record<string, unknown> {
         deltaSl1: 0.85,
         reEnter1: false,
         redOptQty: 1,
+        redTpPct: 15,
+        redSlPct: 85,
         greenOptQty: 1,
         greenReDelta: 0.53,
         greenTpDelta: 0.15,
         greenSlDelta: 0.85,
+        greenTpPct: 15,
+        greenSlPct: 85,
         addOneLotFuture: false,
         renkoFeedEnabled: true,
         renkoFeedPts: 10,
@@ -157,6 +161,22 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     }
     if (!Number.isFinite(Number(objUiState.greenSlDelta))) {
         objUiState.greenSlDelta = normalizeNumber(objUiState.deltaSl1, 0.85);
+    }
+    if (!Number.isFinite(Number(objUiState.greenTpPct))) {
+        const vLegacy = normalizeNumber(objUiState.greenTpDelta, 0.15);
+        objUiState.greenTpPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.greenSlPct))) {
+        const vLegacy = normalizeNumber(objUiState.greenSlDelta, 0.85);
+        objUiState.greenSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.redTpPct))) {
+        const vLegacy = normalizeNumber((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1, 0.15);
+        objUiState.redTpPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.redSlPct))) {
+        const vLegacy = normalizeNumber((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1, 0.85);
+        objUiState.redSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
@@ -839,9 +859,31 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
         return;
     }
 
+    const vGreenTpPctLegacy = Number(objUiState.greenTpDelta);
+    const vGreenSlPctLegacy = Number(objUiState.greenSlDelta);
+    const vGreenTpPct = Math.max(0, Math.min(100, normalizeNumber(
+        objUiState.greenTpPct,
+        Number.isFinite(vGreenTpPctLegacy) ? (vGreenTpPctLegacy <= 2 ? vGreenTpPctLegacy * 100 : vGreenTpPctLegacy) : 15
+    )));
+    const vGreenSlPct = Math.max(0, Math.min(100, normalizeNumber(
+        objUiState.greenSlPct,
+        Number.isFinite(vGreenSlPctLegacy) ? (vGreenSlPctLegacy <= 2 ? vGreenSlPctLegacy * 100 : vGreenSlPctLegacy) : 85
+    )));
+    const vGreenTpDelta = Number((vGreenTpPct / 100).toFixed(4));
+    const vGreenSlDelta = Number((vGreenSlPct / 100).toFixed(4));
+
     for (const objPlanned of objPlannedQuotes) {
         const vOptionSide = objPlanned.side;
         const objQuote = objPlanned.quote;
+        const vBaseDelta = Math.abs(Number(objQuote.entryDelta || 0.53));
+        const vTpMove = Math.min(1, Math.max(0, vGreenTpDelta));
+        const vSlMove = Math.min(1, Math.max(0, vGreenSlDelta));
+        const vTakeProfitDelta = vAction === "BUY"
+            ? Math.min(1, Math.max(0, vBaseDelta + vTpMove))
+            : Math.min(1, Math.max(0, vBaseDelta - vTpMove));
+        const vStopLossDelta = vAction === "BUY"
+            ? Math.min(1, Math.max(0, vBaseDelta - vSlMove))
+            : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vGreenSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
         const objPosition: RollingOptionsPtDePositionRecord = {
             ...createPositionBase(vUserId),
             status: "OPEN",
@@ -867,10 +909,10 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
             closedAt: "",
             metadata: {
                 expiryMode: String(objUiState.expiryMode1 || "1"),
-                deltaTakeProfit: normalizeNumber(objUiState.greenTpDelta, 0.15),
-                deltaStopLoss: normalizeNumber(objUiState.greenSlDelta, 0.85),
-                takeProfitDelta: normalizeNumber(objUiState.greenTpDelta, 0.15),
-                stopLossDelta: normalizeNumber(objUiState.greenSlDelta, 0.85),
+                deltaTakeProfit: vTakeProfitDelta,
+                deltaStopLoss: vStopLossDelta,
+                takeProfitDelta: vTakeProfitDelta,
+                stopLossDelta: vStopLossDelta,
                 reEntryDelta: normalizeNumber(objUiState.greenReDelta, 0.53),
                 reEnter: Boolean(objUiState.reEnter1),
                 ruleColor: "G",
@@ -953,15 +995,32 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
             continue;
         }
 
+        const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
+        const vTpMove = vColor === "G"
+            ? Math.min(1, Math.max(0, Number(objConfig.greenTakeProfitPct ?? 15) / 100))
+            : Math.min(1, Math.max(0, Number(objConfig.redTakeProfitPct ?? 15) / 100));
+        const vSlMove = vColor === "G"
+            ? Math.min(1, Math.max(0, Number(objConfig.greenStopLossPct ?? 85) / 100))
+            : Math.min(1, Math.max(0, Number(objConfig.redStopLossPct ?? 85) / 100));
+        const vIsBuy = String(objPosition.action || "").trim().toUpperCase() === "BUY";
+        const vPositionTakeProfitDelta = vIsBuy
+            ? Math.min(1, Math.max(0, vEntryDelta + vTpMove))
+            : Math.min(1, Math.max(0, vEntryDelta - vTpMove));
+        const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
+        const vAbsoluteStopLoss = vColor === "G"
+            ? Math.min(1, Math.max(0, Number(objConfig.greenStopLossPct ?? 85) / 100))
+            : Math.min(1, Math.max(0, Number(objConfig.redStopLossPct ?? 85) / 100));
+        const vPositionStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vAbsoluteStopLoss : Math.min(1, Math.max(0, vRawStopLoss));
+
         await saveRollingOptionsPtDePosition({
             ...objPosition,
             metadata: {
                 ...(objPosition.metadata || {}),
                 ruleColor: vColor,
-                deltaTakeProfit: vTakeProfitDelta,
-                deltaStopLoss: vStopLossDelta,
-                takeProfitDelta: vTakeProfitDelta,
-                stopLossDelta: vStopLossDelta,
+                deltaTakeProfit: vPositionTakeProfitDelta,
+                deltaStopLoss: vPositionStopLossDelta,
+                takeProfitDelta: vPositionTakeProfitDelta,
+                stopLossDelta: vPositionStopLossDelta,
                 reEntryDelta: vReEntryDelta
             },
             updatedAt: ""

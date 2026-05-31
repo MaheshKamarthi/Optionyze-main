@@ -200,8 +200,9 @@ export function shouldTriggerOption(
     pCurrentDelta: number
 ): { shouldAct: boolean; reason: "" | "sl" | "tp"; } {
     const vTransType = String(pPosition.action || "").toUpperCase();
-    const vDeltaSl = Number((pPosition.metadata?.deltaStopLoss as number) || 0);
-    const vDeltaTp = Number((pPosition.metadata?.deltaTakeProfit as number) || 0);
+    const objMeta = (pPosition.metadata || {}) as Record<string, unknown>;
+    const vDeltaSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
+    const vDeltaTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
     const vAbsDelta = Math.abs(pCurrentDelta);
     const bHasSl = Number.isFinite(vDeltaSl) && vDeltaSl > 0;
     const bHasTp = Number.isFinite(vDeltaTp) && vDeltaTp > 0;
@@ -336,6 +337,20 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
             : 1);
     const vDemoBalanceRaw = Number(pUiState.demoBalance ?? 10000);
     const vDemoBalance = Number.isFinite(vDemoBalanceRaw) ? Math.max(0, vDemoBalanceRaw) : 10000;
+    const vRedTpPctLegacy = Number(pUiState.redTpDelta ?? pUiState.deltaTp1);
+    const vRedSlPctLegacy = Number(pUiState.redSlDelta ?? pUiState.deltaSl1);
+    const vRedTpPctRaw = Number(pUiState.redTpPct ?? (vRedTpPctLegacy <= 2 ? vRedTpPctLegacy * 100 : vRedTpPctLegacy) ?? 15);
+    const vRedSlPctRaw = Number(pUiState.redSlPct ?? (vRedSlPctLegacy <= 2 ? vRedSlPctLegacy * 100 : vRedSlPctLegacy) ?? 85);
+    const vRedTakeProfitPct = Number.isFinite(vRedTpPctRaw) ? Math.max(0, Math.min(100, vRedTpPctRaw)) : 15;
+    const vRedStopLossPct = Number.isFinite(vRedSlPctRaw) ? Math.max(0, Math.min(100, vRedSlPctRaw)) : 85;
+    const vRedDeltaTakeProfit = Number((vRedTakeProfitPct / 100).toFixed(4));
+    const vRedDeltaStopLoss = Number((vRedStopLossPct / 100).toFixed(4));
+    const vGreenTpPctRaw = Number(pUiState.greenTpPct ?? (Number(pUiState.greenTpDelta) <= 2 ? Number(pUiState.greenTpDelta) * 100 : pUiState.greenTpDelta) ?? 15);
+    const vGreenSlPctRaw = Number(pUiState.greenSlPct ?? (Number(pUiState.greenSlDelta) <= 2 ? Number(pUiState.greenSlDelta) * 100 : pUiState.greenSlDelta) ?? 85);
+    const vGreenTakeProfitPct = Number.isFinite(vGreenTpPctRaw) ? Math.max(0, Math.min(100, vGreenTpPctRaw)) : 15;
+    const vGreenStopLossPct = Number.isFinite(vGreenSlPctRaw) ? Math.max(0, Math.min(100, vGreenSlPctRaw)) : 85;
+    const vGreenDeltaTakeProfit = Number((vGreenTakeProfitPct / 100).toFixed(4));
+    const vGreenDeltaStopLoss = Number((vGreenStopLossPct / 100).toFixed(4));
 
     return {
         symbol: vSymbol,
@@ -356,14 +371,18 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         greenOptionQty: vGreenOptionQty,
         newDelta: Number(pUiState.newDelta1 || 0.53),
         redReDelta: Number(pUiState.reRedDelta ?? pUiState.reDelta1 ?? 0.53),
-        redDeltaTakeProfit: Number(pUiState.redTpDelta ?? pUiState.deltaTp1 ?? 0.15),
-        redDeltaStopLoss: Number(pUiState.redSlDelta ?? pUiState.deltaSl1 ?? 0.85),
+        redDeltaTakeProfit: vRedDeltaTakeProfit,
+        redDeltaStopLoss: vRedDeltaStopLoss,
+        redTakeProfitPct: vRedTakeProfitPct,
+        redStopLossPct: vRedStopLossPct,
         greenReDelta: Number(pUiState.greenReDelta ?? pUiState.reDelta1 ?? 0.53),
-        greenDeltaTakeProfit: Number(pUiState.greenTpDelta ?? pUiState.deltaTp1 ?? 0.15),
-        greenDeltaStopLoss: Number(pUiState.greenSlDelta ?? pUiState.deltaSl1 ?? 0.85),
+        greenDeltaTakeProfit: vGreenDeltaTakeProfit,
+        greenDeltaStopLoss: vGreenDeltaStopLoss,
+        greenTakeProfitPct: vGreenTakeProfitPct,
+        greenStopLossPct: vGreenStopLossPct,
         reDelta: Number(pUiState.reRedDelta ?? pUiState.reDelta1 ?? 0.53),
-        deltaTakeProfit: Number(pUiState.redTpDelta ?? pUiState.deltaTp1 ?? 0.15),
-        deltaStopLoss: Number(pUiState.redSlDelta ?? pUiState.deltaSl1 ?? 0.85),
+        deltaTakeProfit: vRedDeltaTakeProfit,
+        deltaStopLoss: vRedDeltaStopLoss,
         reEnter: Boolean(pUiState.reEnter1),
         addOneLotFuture: Boolean(pUiState.addOneLotFuture),
         renkoEnabled: Boolean(pUiState.renkoFeedEnabled ?? true),
