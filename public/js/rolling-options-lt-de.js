@@ -26,8 +26,8 @@
         pageStatus: document.getElementById("rollingLivePageStatus"),
         importStatus: document.getElementById("rollingLiveImportStatus"),
         autoTraderButton: document.getElementById("btnRollingLiveAutoTrader"),
-        sellFutureButton: document.getElementById("btnRollingLiveSellFuture"),
-        buyFutureButton: document.getElementById("btnRollingLiveBuyFuture"),
+        manualFutAction: document.getElementById("ddlRollingLiveFutAction"),
+        placeFutureButton: document.getElementById("btnRollingLivePlaceFuture"),
         execStrategyButton: document.getElementById("btnRollingLiveExecStrategy"),
         openOptionButton: document.getElementById("btnRollingLiveOpenOption"),
         exitOptionButton: document.getElementById("btnRollingLiveExitOption"),
@@ -326,6 +326,7 @@
             symbol: normalizeSymbolValue(ids.symbol?.value || "BTC"),
             manualFutQty: parseNumberInput(ids.futQty, 1),
             manualFutOrderType: String(ids.futureOrderType?.value || "market_order"),
+            manualFutAction: String(ids.manualFutAction?.value || "SELL"),
             action1: String(ids.optionAction?.value || "sell"),
             legSide1: String(ids.optionLegSide?.value || "ce"),
             expiryMode1: String(ids.optionExpiryMode?.value || "1"),
@@ -373,6 +374,7 @@
         setFieldValue(ids.symbol, normalizeSymbolValue(uiState.symbol));
         setFieldValue(ids.futQty, uiState.manualFutQty);
         setFieldValue(ids.futureOrderType, uiState.manualFutOrderType);
+        setFieldValue(ids.manualFutAction, uiState.manualFutAction ?? "SELL");
         setFieldValue(ids.optionAction, uiState.action1);
         setFieldValue(ids.optionLegSide, uiState.legSide1);
         setFieldValue(ids.optionExpiryMode, uiState.expiryMode1);
@@ -505,8 +507,7 @@
             ids.autoTraderButton.disabled = !gSelectedApiProfileId || gConnectionState !== "connected";
         }
         [
-            ids.sellFutureButton,
-            ids.buyFutureButton,
+            ids.placeFutureButton,
             ids.openOptionButton,
             ids.exitOptionButton,
             ids.importButton,
@@ -1327,6 +1328,7 @@
     });
     ids.futQty?.addEventListener("input", queueProfileSave);
     ids.futureOrderType?.addEventListener("change", queueProfileSave);
+    ids.manualFutAction?.addEventListener("change", queueProfileSave);
     ids.optionAction?.addEventListener("change", queueProfileSave);
     ids.optionLegSide?.addEventListener("change", queueProfileSave);
     ids.optionExpiryMode?.addEventListener("change", function () {
@@ -1411,36 +1413,21 @@
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to change live auto trader state.", "danger");
         });
     });
-    ids.sellFutureButton?.addEventListener("click", function () {
-        void placeManualFuture("SELL").then(function (objResult) {
+    ids.placeFutureButton?.addEventListener("click", function () {
+        const vAction = String(ids.manualFutAction?.value || "SELL").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
+        void placeManualFuture(vAction).then(function (objResult) {
             const objData = objResult?.data || {};
             const objOrder = objData.order || {};
             const arrTracked = Array.isArray(objData.trackedOpenPositions) ? objData.trackedOpenPositions : null;
             const vOrderId = String(objOrder.id || objOrder.order_id || "").trim();
-            const vMessage = objResult?.message || "SELL future live order placed.";
+            const vMessage = objResult?.message || "Future live order placed.";
             if (arrTracked) {
                 renderOpenPositions(arrTracked);
             }
             setStatus(ids.pageStatus, vOrderId ? `${vMessage} Order ID: ${vOrderId}` : vMessage, "success");
             return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
-            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place SELL FUT order.", "danger");
-        });
-    });
-    ids.buyFutureButton?.addEventListener("click", function () {
-        void placeManualFuture("BUY").then(function (objResult) {
-            const objData = objResult?.data || {};
-            const objOrder = objData.order || {};
-            const arrTracked = Array.isArray(objData.trackedOpenPositions) ? objData.trackedOpenPositions : null;
-            const vOrderId = String(objOrder.id || objOrder.order_id || "").trim();
-            const vMessage = objResult?.message || "BUY future live order placed.";
-            if (arrTracked) {
-                renderOpenPositions(arrTracked);
-            }
-            setStatus(ids.pageStatus, vOrderId ? `${vMessage} Order ID: ${vOrderId}` : vMessage, "success");
-            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
-        }).catch(function (objError) {
-            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place BUY FUT order.", "danger");
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place FUT order.", "danger");
         });
     });
     ids.openOptionButton?.addEventListener("click", function () {
