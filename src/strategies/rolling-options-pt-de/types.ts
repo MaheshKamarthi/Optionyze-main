@@ -69,6 +69,8 @@ export interface RollingOptionsPtDeEngineState {
     consecutiveFailures: number;
     lastError: string;
     lastCycleAt: string | null;
+    manualCloseBlocksOptionEntry?: boolean;
+    positionMismatchDetected?: boolean;
     renko: RollingOptionsPtDeRenkoState;
     market: {
         lastSpotPrice: number | null;

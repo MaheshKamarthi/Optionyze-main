@@ -517,6 +517,15 @@ function mapLiveClosedPosition(pRow: DeltaOrderHistoryRow, pIndex: number) {
     const vCreatedAt = String(pRow.created_at || pRow.updated_at || "").trim();
     const vUpdatedAt = String(pRow.updated_at || pRow.created_at || "").trim();
     const vPnl = toFiniteNumber(pRow.meta_data?.pnl, Number.NaN);
+    const objMeta = (pRow.meta_data && typeof pRow.meta_data === "object") ? pRow.meta_data as Record<string, unknown> : {};
+    const vEntryDelta = toFiniteNumber(
+        objMeta.entry_delta ?? objMeta.entryDelta ?? objMeta.delta_entry ?? objMeta.delta,
+        Number.NaN
+    );
+    const vCurrentDelta = toFiniteNumber(
+        objMeta.current_delta ?? objMeta.currentDelta ?? objMeta.exit_delta ?? objMeta.exitDelta ?? objMeta.delta,
+        Number.NaN
+    );
 
     return {
         rowId: String(pRow.id ?? pRow.order_id ?? `fill-${pIndex}`),
@@ -529,6 +538,8 @@ function mapLiveClosedPosition(pRow: DeltaOrderHistoryRow, pIndex: number) {
         price: vPrice,
         charges: vCommission,
         pnl: Number.isFinite(vPnl) ? vPnl : null,
+        entryDelta: Number.isFinite(vEntryDelta) ? Math.abs(vEntryDelta) : null,
+        currentDelta: Number.isFinite(vCurrentDelta) ? Math.abs(vCurrentDelta) : null,
         startAt: vCreatedAt,
         endAt: vUpdatedAt,
         orderType: formatOrderType(pRow.meta_data?.order_type)
@@ -603,12 +614,12 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         reEnter1: false,
         redOptQtyPct: 100,
         reRedDelta: 0.53,
-        redTpDelta: 0.15,
-        redSlDelta: 0.85,
+        redTpPct: 15,
+        redSlPct: 85,
         greenOptQtyPct: 100,
         greenReDelta: 0.53,
-        greenTpDelta: 0.15,
-        greenSlDelta: 0.85,
+        greenTpPct: 15,
+        greenSlPct: 85,
         addOneLotFuture: false,
         renkoFeedPts: 10,
         closedFromDate: "",
@@ -645,20 +656,24 @@ function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record
     if (!Number.isFinite(Number(objUiState.reRedDelta))) {
         objUiState.reRedDelta = normalizeLiveNumber(objUiState.reDelta1, 0.53);
     }
-    if (!Number.isFinite(Number(objUiState.redTpDelta))) {
-        objUiState.redTpDelta = normalizeLiveNumber(objUiState.deltaTp1, 0.15);
+    const vRedTpLegacy = normalizeLiveNumber(objUiState.redTpDelta ?? objUiState.deltaTp1, 0.15);
+    const vRedSlLegacy = normalizeLiveNumber(objUiState.redSlDelta ?? objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.redTpPct))) {
+        objUiState.redTpPct = vRedTpLegacy <= 2 ? (vRedTpLegacy * 100) : vRedTpLegacy;
     }
-    if (!Number.isFinite(Number(objUiState.redSlDelta))) {
-        objUiState.redSlDelta = normalizeLiveNumber(objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.redSlPct))) {
+        objUiState.redSlPct = vRedSlLegacy <= 2 ? (vRedSlLegacy * 100) : vRedSlLegacy;
     }
     if (!Number.isFinite(Number(objUiState.greenReDelta))) {
         objUiState.greenReDelta = normalizeLiveNumber(objUiState.reDelta1, 0.53);
     }
-    if (!Number.isFinite(Number(objUiState.greenTpDelta))) {
-        objUiState.greenTpDelta = normalizeLiveNumber(objUiState.deltaTp1, 0.15);
+    const vGreenTpLegacy = normalizeLiveNumber(objUiState.greenTpDelta ?? objUiState.deltaTp1, 0.15);
+    const vGreenSlLegacy = normalizeLiveNumber(objUiState.greenSlDelta ?? objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.greenTpPct))) {
+        objUiState.greenTpPct = vGreenTpLegacy <= 2 ? (vGreenTpLegacy * 100) : vGreenTpLegacy;
     }
-    if (!Number.isFinite(Number(objUiState.greenSlDelta))) {
-        objUiState.greenSlDelta = normalizeLiveNumber(objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.greenSlPct))) {
+        objUiState.greenSlPct = vGreenSlLegacy <= 2 ? (vGreenSlLegacy * 100) : vGreenSlLegacy;
     }
     return sanitizeLiveUiState(objUiState);
 }
@@ -677,25 +692,43 @@ function getMergedLiveUiState(pProfile?: { uiState?: Record<string, unknown> | n
 function getLiveRuleMetadataForColor(
     pUiState: Record<string, unknown>,
     pColorCode: "R" | "G",
-    pReason: string
+    pReason: string,
+    pEntryDelta: number,
+    pSide: string
 ): RollingOptionsLtDePositionMetadata {
     const objConfig = buildConfigFromUiState(pUiState);
+    const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+    const vEntryDelta = Math.abs(Number(pEntryDelta || 0.53));
+    const vSide = String(pSide || "").trim().toUpperCase();
+    const vIsBuy = vSide === "BUY";
+    const vTpMove = clamp01(Number((pColorCode === "G" ? objConfig.greenTakeProfitPct : objConfig.redTakeProfitPct) ?? 15) / 100);
+    const vSlMove = clamp01(Number((pColorCode === "G" ? objConfig.greenStopLossPct : objConfig.redStopLossPct) ?? 85) / 100);
+    const vTakeProfitDelta = vIsBuy
+        ? clamp01(vEntryDelta + vTpMove)
+        : clamp01(vEntryDelta - vTpMove);
+    const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
+    const vStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss);
+
     if (pColorCode === "G") {
         return {
             ruleColor: "G",
-            takeProfitDelta: Number(objConfig.greenDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15),
-            stopLossDelta: Number(objConfig.greenDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85),
+            takeProfitDelta: vTakeProfitDelta,
+            stopLossDelta: vStopLossDelta,
             reEntryDelta: Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53),
-            openedReason: pReason
+            openedReason: pReason,
+            trailBestDelta: vEntryDelta,
+            trailTpPeakDelta: vEntryDelta
         };
     }
 
     return {
         ruleColor: "R",
-        takeProfitDelta: Number(objConfig.redDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15),
-        stopLossDelta: Number(objConfig.redDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85),
+        takeProfitDelta: vTakeProfitDelta,
+        stopLossDelta: vStopLossDelta,
         reEntryDelta: Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53),
-        openedReason: pReason
+        openedReason: pReason,
+        trailBestDelta: vEntryDelta,
+        trailTpPeakDelta: vEntryDelta
     };
 }
 
@@ -888,6 +921,45 @@ export async function executeRollingOptionsLtDeStrategy(
 
     const vRenkoColor = String(req.body?.renkoColor || "").trim().toUpperCase() === "G" ? "G" : "R";
     const objResult = await pService.executeStrategy(vUserId, vRenkoColor);
+    const [objRuntime, arrPositions] = await Promise.all([
+        loadRollingOptionsLtDeRuntime(vUserId),
+        listRollingOptionsLtDeImportedPositions(vUserId)
+    ]);
+
+    res.json({
+        status: objResult.status,
+        message: objResult.message,
+        data: {
+            runtime: objRuntime,
+            trackedOpenPositions: arrPositions
+        }
+    });
+}
+
+export async function runRollingOptionsLtDeStrategyCycle(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsLtDeService
+): Promise<void> {
+    const vUserId = getAccountId(req);
+    const objProfile = await readLiveProfile(vUserId);
+    const vSelectedApiProfileId = String(objProfile.selectedApiProfileId || "").trim();
+    if (!vSelectedApiProfileId) {
+        res.status(400).json({ status: "warning", message: "Select an API profile before running a live cycle." });
+        return;
+    }
+
+    const objCheck = await performRollingOptionsLtDeConnectionCheck(vUserId, vSelectedApiProfileId);
+    if (objCheck.profile.connectionStatus.state !== "connected") {
+        res.status(400).json({
+            status: "warning",
+            message: objCheck.profile.connectionStatus.message || "Delta connection is not healthy.",
+            data: objCheck.profile
+        });
+        return;
+    }
+
+    const objResult = await pService.runCycle(vUserId);
     const [objRuntime, arrPositions] = await Promise.all([
         loadRollingOptionsLtDeRuntime(vUserId),
         listRollingOptionsLtDeImportedPositions(vUserId)
@@ -1238,7 +1310,13 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
                 pnl: 0,
                 margin: 0,
                 liquidationPrice: 0,
-                metadata: getLiveRuleMetadataForColor(objUiState, vRuleColor, "manual_option_open"),
+                metadata: getLiveRuleMetadataForColor(
+                    objUiState,
+                    vRuleColor,
+                    "manual_option_open",
+                    Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53,
+                    vAction.toUpperCase()
+                ),
                 openedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             } satisfies RollingOptionsLtDeImportedPositionRecord)));
@@ -1287,7 +1365,11 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
     }
 }
 
-export async function closeRollingOptionsLtDeImportedOpenPosition(req: Request, res: Response): Promise<void> {
+export async function closeRollingOptionsLtDeImportedOpenPosition(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsLtDeService
+): Promise<void> {
     const vUserId = getAccountId(req);
     const objProfile = await readLiveProfile(vUserId);
     const vSelectedApiProfileId = String(objProfile.selectedApiProfileId || "").trim();
@@ -1342,6 +1424,10 @@ export async function closeRollingOptionsLtDeImportedOpenPosition(req: Request, 
 
         if (vImportId) {
             await deleteRollingOptionsLtDeImportedPosition(vUserId, vImportId);
+        }
+        const vIsOptionContract = vContractName.toUpperCase().startsWith("C-") || vContractName.toUpperCase().startsWith("P-");
+        if (vIsOptionContract) {
+            pService.blockOptionEntryFromManualClose(vUserId);
         }
         await logRollingOptionsLtDeEvent({
             userId: vUserId,
@@ -1445,6 +1531,48 @@ export async function getRollingOptionsLtDeEvents(req: Request, res: Response): 
     res.json({
         status: "success",
         data: arrEvents
+    });
+}
+
+export async function updateRollingOptionsLtDeRuleSettings(req: Request, res: Response): Promise<void> {
+    const vUserId = getAccountId(req);
+    const vColor: "R" | "G" = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
+    const objProfile = await loadRollingOptionsLtDeProfile(vUserId);
+    const objUiState = getMergedLiveUiState(objProfile);
+    const arrPositions = await listRollingOptionsLtDeImportedPositions(vUserId);
+    let vUpdated = 0;
+    const arrUpdated = arrPositions.map((objRow) => {
+        const vContractName = String(objRow.contractName || "").trim();
+        const bIsOption = vContractName.toUpperCase().startsWith("C-") || vContractName.toUpperCase().startsWith("P-");
+        if (!bIsOption) {
+            return objRow;
+        }
+        const vRuleColor = String(objRow.metadata?.ruleColor || "").trim().toUpperCase() === "G" ? "G" : "R";
+        if (vRuleColor !== vColor) {
+            return objRow;
+        }
+
+        const vEntryDelta = Math.abs(Number(objRow.entryDelta ?? objRow.currentDelta ?? 0.53));
+        const vSide = String(objRow.side || "").trim().toUpperCase();
+        const objNewMeta = getLiveRuleMetadataForColor(objUiState, vColor, "manual_rule_update", vEntryDelta, vSide);
+        vUpdated += 1;
+        return {
+            ...objRow,
+            metadata: {
+                ...(objRow.metadata || {}),
+                ...objNewMeta
+            }
+        };
+    });
+
+    await replaceRollingOptionsLtDeImportedPositions(vUserId, arrUpdated);
+    res.json({
+        status: "success",
+        message: `Updated ${vUpdated} ${vColor === "G" ? "Green" : "Red"} open option position${vUpdated === 1 ? "" : "s"}.`,
+        data: {
+            updated: vUpdated,
+            trackedOpenPositions: arrUpdated
+        }
     });
 }
 

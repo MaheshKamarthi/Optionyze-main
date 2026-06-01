@@ -441,40 +441,77 @@ export class RollingOptionsLtDeService {
     public async reconcileUserPositions(pUserId: string, pSymbol?: string): Promise<RollingOptionsLtDeImportedPositionRecord[]> {
         const objConfig = await this.loadConfig(pUserId);
         const vSymbol = String(pSymbol || objConfig.symbol || "").trim().toUpperCase() || objConfig.symbol;
+        const objState = this.getOrCreateState(pUserId);
         const arrSaved = await listRollingOptionsLtDeImportedPositions(pUserId);
         const arrLive = await this.fetchCurrentDeltaPositions(pUserId, vSymbol);
-        const objLiveByContract = new Map(arrLive.map((objRow) => [objRow.contractName, objRow]));
-        const arrReconciled = arrSaved
-            .map((objSavedRow): RollingOptionsLtDeImportedPositionRecord | null => {
-                const objLiveRow = objLiveByContract.get(objSavedRow.contractName);
-                if (!objLiveRow) {
-                    return null;
-                }
-                return {
-                    ...objLiveRow,
-                    entryDelta: objSavedRow.entryDelta ?? objLiveRow.entryDelta,
-                    currentDelta: objSavedRow.currentDelta ?? objLiveRow.currentDelta,
-                    charges: objSavedRow.charges ?? objLiveRow.charges,
-                    metadata: objSavedRow.metadata ?? objLiveRow.metadata,
-                    openedAt: objSavedRow.openedAt || objLiveRow.openedAt
-                };
-            })
-            .filter((objRow): objRow is RollingOptionsLtDeImportedPositionRecord => Boolean(objRow));
+        const objSavedByContract = new Map(arrSaved.map((objRow) => [String(objRow.contractName || "").trim(), objRow]));
+
+        const objLiveByContract = new Map(arrLive.map((objRow) => [String(objRow.contractName || "").trim(), objRow]));
+        const vRemovedCount = arrSaved.filter((objRow) => !objLiveByContract.has(String(objRow.contractName || "").trim())).length;
+        const vAddedCount = arrLive.filter((objRow) => !objSavedByContract.has(String(objRow.contractName || "").trim())).length;
+        const vQtyMismatchCount = arrSaved.reduce((pSum, objRow) => {
+            const objLiveRow = objLiveByContract.get(String(objRow.contractName || "").trim()) || null;
+            if (!objLiveRow) {
+                return pSum;
+            }
+            const vSavedQty = Math.max(0, Number(objRow.qty || 0));
+            const vLiveQty = Math.max(0, Number(objLiveRow.qty || 0));
+            const vSavedSide = String(objRow.side || "").trim().toUpperCase();
+            const vLiveSide = String(objLiveRow.side || "").trim().toUpperCase();
+            if (vSavedSide !== vLiveSide) {
+                return pSum + 1;
+            }
+            if (Number.isFinite(vSavedQty) && Number.isFinite(vLiveQty) && vSavedQty !== vLiveQty) {
+                return pSum + 1;
+            }
+            return pSum;
+        }, 0);
+        objState.positionMismatchDetected = (vRemovedCount + vAddedCount + vQtyMismatchCount) > 0;
+
+        const arrOptionContracts = arrLive
+            .filter((objRow) => isOptionContract(objRow.contractName))
+            .map((objRow) => String(objRow.contractName || "").trim())
+            .filter(Boolean);
+        const objTickerByContract = new Map<string, Awaited<ReturnType<typeof getLiveOptionTicker>>>();
+        await Promise.all(arrOptionContracts.map(async (pContractName) => {
+            objTickerByContract.set(pContractName, await getLiveOptionTicker(pContractName));
+        }));
+
+        const arrReconciled = arrLive.map((objLiveRow): RollingOptionsLtDeImportedPositionRecord => {
+            const objSavedRow = objSavedByContract.get(String(objLiveRow.contractName || "").trim()) || null;
+            const objTicker = isOptionContract(objLiveRow.contractName)
+                ? (objTickerByContract.get(String(objLiveRow.contractName || "").trim()) || null)
+                : null;
+            const vLiveDelta = objTicker && Number.isFinite(Number(objTicker.delta))
+                ? Math.abs(Number(objTicker.delta))
+                : null;
+
+            return {
+                ...objLiveRow,
+                entryDelta: objSavedRow?.entryDelta ?? (vLiveDelta === null ? objLiveRow.entryDelta : vLiveDelta),
+                currentDelta: objSavedRow?.currentDelta ?? (vLiveDelta === null ? objLiveRow.currentDelta : vLiveDelta),
+                charges: objSavedRow?.charges ?? objLiveRow.charges,
+                metadata: objSavedRow?.metadata ?? objLiveRow.metadata,
+                openedAt: objSavedRow?.openedAt || objLiveRow.openedAt
+            };
+        });
 
         await this.persistImportedPositions(pUserId, arrReconciled);
 
-        const vRemovedCount = Math.max(0, arrSaved.length - arrReconciled.length);
-        if (vRemovedCount > 0) {
+        if (vRemovedCount > 0 || vAddedCount > 0) {
             await logRollingOptionsLtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "warning",
                 title: "Live Positions Reconciled",
-                message: `Removed ${vRemovedCount} saved live position${vRemovedCount === 1 ? "" : "s"} that no longer exist on Delta Exchange.`,
+                message: [
+                    vAddedCount > 0 ? `Added ${vAddedCount} Delta position${vAddedCount === 1 ? "" : "s"} into the saved grid.` : "",
+                    vRemovedCount > 0 ? `Removed ${vRemovedCount} saved position${vRemovedCount === 1 ? "" : "s"} that no longer exist on Delta Exchange.` : ""
+                ].filter(Boolean).join(" "),
                 payload: {
                     symbol: vSymbol,
-                    qty: vRemovedCount,
-                    reason: "reconcile_removed_missing_positions"
+                    qty: vAddedCount + vRemovedCount,
+                    reason: "reconcile_sync_positions"
                 }
             });
         }
@@ -505,55 +542,65 @@ export class RollingOptionsLtDeService {
     ): {
         colorCode: "R" | "G";
         reDelta: number;
-        takeProfitDelta: number;
-        stopLossDelta: number;
+        tpMove: number;
+        slMove: number;
     } {
+        const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
         if (pColorCode === "G") {
             return {
                 colorCode: "G",
                 reDelta: Number(pConfig.greenReDelta ?? pConfig.reDelta ?? 0.53),
-                takeProfitDelta: Number(pConfig.greenDeltaTakeProfit ?? pConfig.deltaTakeProfit ?? 0.15),
-                stopLossDelta: Number(pConfig.greenDeltaStopLoss ?? pConfig.deltaStopLoss ?? 0.85)
+                tpMove: clamp01(Number(pConfig.greenTakeProfitPct ?? 15) / 100),
+                slMove: clamp01(Number(pConfig.greenStopLossPct ?? 85) / 100)
             };
         }
 
         return {
             colorCode: "R",
             reDelta: Number(pConfig.redReDelta ?? pConfig.reDelta ?? 0.53),
-            takeProfitDelta: Number(pConfig.redDeltaTakeProfit ?? pConfig.deltaTakeProfit ?? 0.15),
-            stopLossDelta: Number(pConfig.redDeltaStopLoss ?? pConfig.deltaStopLoss ?? 0.85)
+            tpMove: clamp01(Number(pConfig.redTakeProfitPct ?? 15) / 100),
+            slMove: clamp01(Number(pConfig.redStopLossPct ?? 85) / 100)
         };
+    }
+
+    private computeOptionThresholds(
+        pRuleValues: { tpMove: number; slMove: number; },
+        pPositionSide: "BUY" | "SELL",
+        pEntryDelta: number
+    ): { takeProfitDelta: number; stopLossDelta: number; } {
+        const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+        const vEntryDelta = Math.abs(Number(pEntryDelta || 0.53));
+        const vTpMove = clamp01(Number(pRuleValues.tpMove || 0));
+        const vSlMove = clamp01(Number(pRuleValues.slMove || 0));
+        const bIsBuy = pPositionSide === "BUY";
+
+        const vTakeProfitDelta = bIsBuy
+            ? clamp01(vEntryDelta + vTpMove)
+            : clamp01(vEntryDelta - vTpMove);
+        const vRawStopLoss = bIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
+        const vStopLossDelta = (!bIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss);
+        return { takeProfitDelta: vTakeProfitDelta, stopLossDelta: vStopLossDelta };
     }
 
     private buildOptionMetadata(
         pConfig: RollingOptionsPtDeConfig,
         pColorCode: "R" | "G",
-        pReason: string
+        pReason: string,
+        pEntryDelta: number,
+        pPositionSide: "BUY" | "SELL"
     ): RollingOptionsLtDePositionMetadata {
         const objRuleValues = this.getRuleValues(pConfig, pColorCode);
+        const objThresholds = this.computeOptionThresholds(objRuleValues, pPositionSide, pEntryDelta);
+        const vEntryDelta = Math.abs(Number(pEntryDelta || 0.53));
         return {
             ruleColor: objRuleValues.colorCode,
-            takeProfitDelta: objRuleValues.takeProfitDelta,
-            stopLossDelta: objRuleValues.stopLossDelta,
+            takeProfitDelta: objThresholds.takeProfitDelta,
+            stopLossDelta: objThresholds.stopLossDelta,
             reEntryDelta: objRuleValues.reDelta,
-            openedReason: pReason
+            openedReason: pReason,
+            trailBestDelta: vEntryDelta,
+            trailTpPeakDelta: vEntryDelta
         };
-    }
-
-    private wouldOptionTriggerImmediately(
-        pRuleValues: {
-            takeProfitDelta: number;
-            stopLossDelta: number;
-        },
-        pPositionSide: "BUY" | "SELL",
-        pDelta: number
-    ): boolean {
-        return shouldTriggerImportedOption(
-            pPositionSide,
-            pDelta,
-            Number(pRuleValues.takeProfitDelta || 0),
-            Number(pRuleValues.stopLossDelta || 0)
-        ).shouldAct;
     }
 
     private createInitialState(pUserId: string): RollingOptionsPtDeEngineState {
@@ -566,6 +613,7 @@ export class RollingOptionsLtDeService {
             consecutiveFailures: 0,
             lastError: "",
             lastCycleAt: null,
+            manualCloseBlocksOptionEntry: false,
             renko: {
                 anchor: null,
                 lastDir: 0,
@@ -639,16 +687,16 @@ export class RollingOptionsLtDeService {
             reEnter1: false,
             redOptQtyPct: 100,
             reRedDelta: 0.53,
-            redTpDelta: 0.15,
-            redSlDelta: 0.85,
+            redTpPct: 15,
+            redSlPct: 85,
             greenOptQtyPct: 100,
             greenReDelta: 0.53,
-            greenTpDelta: 0.15,
-            greenSlDelta: 0.85,
+            greenTpPct: 15,
+            greenSlPct: 85,
             addOneLotFuture: false,
             renkoFeedEnabled: true,
             renkoFeedPts: 10,
-            renkoFeedPriceSrc: "spot_price",
+            renkoFeedPriceSrc: "mark_price",
             ...(objProfile?.uiState || {})
         });
     }
@@ -737,18 +785,17 @@ export class RollingOptionsLtDeService {
         const arrFutures = pPositions.filter((objRow) => !isOptionContract(objRow.contractName));
         const arrOptions = pPositions.filter((objRow) => isOptionContract(objRow.contractName));
 
-        if (arrOptions.length > 0 || arrFutures.length <= 0) {
+        if (arrOptions.length > 0 || arrFutures.length > 0) {
             return 0;
         }
 
-        const vTotalFutureQty = arrFutures.reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
-        const vFutureQty = this.getRenkoOptionQty(vTotalFutureQty, pConfig.greenOptionQtyPct);
-        if (!(vFutureQty > 0)) {
-            return 0;
-        }
-
-        await this.openInitialFutureEntry(pUserId, pConfig, vFutureQty, pReason);
-        return vFutureQty;
+        await this.openInitialFutureEntry(
+            pUserId,
+            pConfig,
+            Math.max(1, Math.floor(Number(pConfig.futureQty || 1))),
+            pReason
+        );
+        return Math.max(1, Math.floor(Number(pConfig.futureQty || 1)));
     }
 
     private async openInitialFutureEntry(
@@ -801,6 +848,13 @@ export class RollingOptionsLtDeService {
         pConfig: RollingOptionsPtDeConfig,
         pSnapshot: RollingOptionsPtDeMarketSnapshot
     ): Promise<void> {
+        const vExistingFutureQty = (await listRollingOptionsLtDeImportedPositions(pUserId))
+            .filter((objRow) => !isOptionContract(objRow.contractName))
+            .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
+        if (vExistingFutureQty > 0) {
+            return;
+        }
+
         const { client } = await this.getDeltaClient(pUserId);
         const vSide = pConfig.action === "sell" ? "buy" : "sell";
         await client.apis.Orders.placeOrder({
@@ -875,7 +929,9 @@ export class RollingOptionsLtDeService {
             if (!this.meetsEntryDeltaRule(pConfig.action, objContract.delta, pTargetDelta)) {
                 continue;
             }
-            if (this.wouldOptionTriggerImmediately(objRuleValues, vPositionSide, Math.abs(objContract.delta))) {
+            const vEntryDelta = Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53;
+            const objThresholds = this.computeOptionThresholds(objRuleValues, vPositionSide, vEntryDelta);
+            if (shouldTriggerImportedOption(vPositionSide, Math.abs(objContract.delta), objThresholds.takeProfitDelta, objThresholds.stopLossDelta).shouldAct) {
                 continue;
             }
 
@@ -905,7 +961,7 @@ export class RollingOptionsLtDeService {
                 pnl: 0,
                 margin: 0,
                 liquidationPrice: 0,
-                metadata: this.buildOptionMetadata(pConfig, pColorCode, pReason),
+                metadata: this.buildOptionMetadata(pConfig, pColorCode, pReason, vEntryDelta, vPositionSide),
                 openedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             });
@@ -937,6 +993,10 @@ export class RollingOptionsLtDeService {
         pPositions: RollingOptionsLtDeImportedPositionRecord[],
         pColorCode: "R" | "G"
     ): Promise<number> {
+        const objState = this.getOrCreateState(pUserId);
+        if (pColorCode === "R" && objState.manualCloseBlocksOptionEntry) {
+            return 0;
+        }
         if (pColorCode === "G") {
             return await this.openGreenRenkoFutureEntry(
                 pUserId,
@@ -1016,6 +1076,10 @@ export class RollingOptionsLtDeService {
             }
         });
 
+        if (Boolean(this.getOrCreateState(pUserId).positionMismatchDetected)) {
+            return;
+        }
+
         const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
         const vActiveRuleColor: "R" | "G" = pConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
         const objRuleValues = this.getRuleValues(pConfig, vActiveRuleColor);
@@ -1026,34 +1090,23 @@ export class RollingOptionsLtDeService {
             arrNextPositions = await listRollingOptionsLtDeImportedPositions(pUserId);
         }
 
-        if (vActiveRuleColor === "R") {
-            const vFutureQty = arrNextPositions
-                .filter((objRow) => !isOptionContract(objRow.contractName))
-                .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
-            const vBaseQty = Math.max(0, vFutureQty || Number(pPosition.qty || 0));
-            const vReEntryQty = this.getRenkoOptionQty(vBaseQty, pConfig.redOptionQtyPct);
-            if (!(vReEntryQty > 0)) {
-                return;
-            }
-            await this.openOptionEntries(
-                pUserId,
-                pConfig,
-                vReEntryQty,
-                objRuleValues.reDelta,
-                pReason === "sl" ? "SL replacement option" : "TP replacement option",
-                vActiveRuleColor
-            );
+        const vFutureQty = arrNextPositions
+            .filter((objRow) => !isOptionContract(objRow.contractName))
+            .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
+        const vBaseQty = Math.max(0, vFutureQty || Number(pPosition.qty || 0));
+        const vQtyPct = vActiveRuleColor === "G" ? pConfig.greenOptionQtyPct : pConfig.redOptionQtyPct;
+        const vReEntryQty = this.getRenkoOptionQty(vBaseQty, vQtyPct);
+        if (!(vReEntryQty > 0)) {
             return;
         }
-
-        if (pReason === "sl") {
-            await this.openGreenRenkoFutureEntry(
-                pUserId,
-                pConfig,
-                arrNextPositions,
-                "SL GREEN future entry"
-            );
-        }
+        await this.openOptionEntries(
+            pUserId,
+            pConfig,
+            vReEntryQty,
+            objRuleValues.reDelta,
+            pReason === "sl" ? "SL replacement option" : "TP replacement option",
+            vActiveRuleColor
+        );
     }
 
     private async buildRuntimeRecord(
@@ -1128,6 +1181,7 @@ export class RollingOptionsLtDeService {
         const objProfile = await loadRollingOptionsLtDeProfile(pUserId);
         const objState = this.getOrCreateState(pUserId);
         objState.running = true;
+        objState.manualCloseBlocksOptionEntry = false;
         objState.lastError = "";
         this.armTimer(objState, objConfig.loopSeconds);
         await this.runCycle(pUserId);
@@ -1153,6 +1207,11 @@ export class RollingOptionsLtDeService {
             autoTraderEnabled: false,
             selectedApiProfileId: String(objProfile?.selectedApiProfileId || "")
         });
+    }
+
+    public blockOptionEntryFromManualClose(pUserId: string): void {
+        const objState = this.getOrCreateState(pUserId);
+        objState.manualCloseBlocksOptionEntry = true;
     }
 
     public async emergencyStopUser(pUserId: string): Promise<{
@@ -1240,9 +1299,11 @@ export class RollingOptionsLtDeService {
     ): Promise<{ status: string; message: string; }> {
         const objState = this.getOrCreateState(pUserId);
         const objConfig = await this.loadConfig(pUserId);
+        objState.manualCloseBlocksOptionEntry = false;
         const vRenkoColor = pRenkoColorCode === "G"
             ? "G"
             : ((pRenkoColorCode === "R" ? "R" : objState.renko.lastColor) === "G" ? "G" : "R");
+        const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vRenkoColor === "G" ? "G" : "R";
 
         objState.renko.lastColor = vRenkoColor;
         objState.renko.lastDir = vRenkoColor === "R" ? -1 : 1;
@@ -1270,21 +1331,28 @@ export class RollingOptionsLtDeService {
             .filter((objRow) => !isOptionContract(objRow.contractName))
             .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
 
-        if (arrExistingOptions.length <= 0 && vTotalFutureQty > 0 && vRenkoColor === "R") {
-            const arrCreatedOptions = await this.handleRenkoOptionEntry(
-                pUserId,
-                objConfig,
-                arrUpdatedPositions,
-                vRenkoColor
-            );
-            bOpenedOption = arrCreatedOptions > 0;
+        if (arrExistingOptions.length <= 0 && vTotalFutureQty > 0) {
+            const objRuleValues = this.getRuleValues(objConfig, vRuleColor);
+            const vQtyPct = vRuleColor === "G" ? objConfig.greenOptionQtyPct : objConfig.redOptionQtyPct;
+            const vOptionQty = this.getRenkoOptionQty(vTotalFutureQty, vQtyPct);
+            if (vOptionQty > 0) {
+                const arrCreatedOptions = await this.openOptionEntries(
+                    pUserId,
+                    objConfig,
+                    vOptionQty,
+                    objRuleValues.reDelta,
+                    "Strategy initial option entry",
+                    vRuleColor
+                );
+                bOpenedOption = arrCreatedOptions.length > 0;
+            }
         }
 
         objState.lastCycleAt = new Date().toISOString();
         await this.syncRuntime(pUserId, objConfig, objState, {
             status: objState.running ? "running" : "stopped",
             autoTraderEnabled: objState.running,
-            lastSignal: vRenkoColor === "R" ? "EXEC_STRATEGY_RED" : "EXEC_STRATEGY_GREEN",
+            lastSignal: vRuleColor === "R" ? "EXEC_STRATEGY_RED" : "EXEC_STRATEGY_GREEN",
             lastCycleAt: objState.lastCycleAt,
             lastError: ""
         });
@@ -1308,7 +1376,7 @@ export class RollingOptionsLtDeService {
         return {
             status: bOpenedFuture || bOpenedOption ? "success" : "warning",
             message: bOpenedFuture || bOpenedOption
-                ? `Live strategy executed using ${vRenkoColor === "R" ? "RED" : "GREEN"} Renko sizing.`
+                ? `Live strategy executed using ${vRuleColor === "R" ? "RED" : "GREEN"} Renko sizing.`
                 : (bHadTrackedOptions
                     ? "Strategy execution skipped because option positions are already tracked."
                     : "No option entry was placed from the current Renko state.")
@@ -1326,6 +1394,7 @@ export class RollingOptionsLtDeService {
             const objConfig = await this.loadConfig(pUserId);
             const objProfile = await loadRollingOptionsLtDeProfile(pUserId);
             const arrCurrentPositions = await this.reconcileUserPositions(pUserId, objConfig.symbol);
+            const bMismatchDetected = Boolean(objState.positionMismatchDetected);
             this.refreshTickerScope(pUserId, [
                 objConfig.contractName,
                 ...arrCurrentPositions
@@ -1337,6 +1406,7 @@ export class RollingOptionsLtDeService {
             objState.market.lastSpotPrice = objSnapshot.spotPrice;
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
+            const vMismatchSignal = bMismatchDetected ? "POSITION_MISMATCH" : "";
             let vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
             if (String(objState.renko.lastColor || "").trim().toUpperCase() !== "G" && String(objState.renko.lastColor || "").trim().toUpperCase() !== "R") {
                 vPreviousRenkoColor = "";
@@ -1371,18 +1441,36 @@ export class RollingOptionsLtDeService {
                 if (vRenkoSignal === "G" && !bRenkoColorChanged) {
                     continue;
                 }
+                if (bMismatchDetected) {
+                    continue;
+                }
                 const arrPositionsBeforeEntry = await listRollingOptionsLtDeImportedPositions(pUserId);
                 await this.handleRenkoOptionEntry(pUserId, objConfig, arrPositionsBeforeEntry, vRenkoSignal);
             }
 
-            if (objState.running && objState.renko.lastColor === "R") {
+            if (objState.running && !bMismatchDetected) {
                 const arrPositionsBeforeFallbackEntry = await listRollingOptionsLtDeImportedPositions(pUserId);
-                await this.handleRenkoOptionEntry(
-                    pUserId,
-                    objConfig,
-                    arrPositionsBeforeFallbackEntry,
-                    "R"
-                );
+                const vHasOption = arrPositionsBeforeFallbackEntry.some((objRow) => isOptionContract(objRow.contractName));
+                const vTotalFutureQty = arrPositionsBeforeFallbackEntry
+                    .filter((objRow) => !isOptionContract(objRow.contractName))
+                    .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
+                if (!vHasOption && vTotalFutureQty > 0 && !objState.manualCloseBlocksOptionEntry) {
+                    const vRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
+                    const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vRenkoColor === "G" ? "G" : "R";
+                    const objRuleValues = this.getRuleValues(objConfig, vRuleColor);
+                    const vQtyPct = vRuleColor === "G" ? objConfig.greenOptionQtyPct : objConfig.redOptionQtyPct;
+                    const vOptionQty = this.getRenkoOptionQty(vTotalFutureQty, vQtyPct);
+                    if (vOptionQty > 0) {
+                        await this.openOptionEntries(
+                            pUserId,
+                            objConfig,
+                            vOptionQty,
+                            objRuleValues.reDelta,
+                            "Renko fallback option entry",
+                            vRuleColor
+                        );
+                    }
+                }
             }
 
             const arrRefreshedPositions = await this.refreshImportedPositions(
@@ -1390,6 +1478,72 @@ export class RollingOptionsLtDeService {
                 objSnapshot,
                 await listRollingOptionsLtDeImportedPositions(pUserId)
             );
+
+            const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+            for (const objPosition of arrRefreshedPositions) {
+                if (!objPosition.isOption || !Number.isFinite(Number(objPosition.currentDelta))) {
+                    continue;
+                }
+                const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+                const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase() === "G" ? "G" : "R";
+                const vSide = String(objPosition.side || "").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
+                const vEntryDelta = Math.abs(Number(objPosition.entryDelta ?? objPosition.currentDelta ?? 0.53));
+                const vCurrentDelta = Math.abs(Number(objPosition.currentDelta ?? 0.53));
+                const vSlMove = vRuleColor === "G"
+                    ? clamp01(Number(objConfig.greenStopLossPct ?? 85) / 100)
+                    : clamp01(Number(objConfig.redStopLossPct ?? 85) / 100);
+                const vTpMove = vRuleColor === "G"
+                    ? clamp01(Number(objConfig.greenTakeProfitPct ?? 15) / 100)
+                    : clamp01(Number(objConfig.redTakeProfitPct ?? 15) / 100);
+
+                const objRuleMoves = { tpMove: vTpMove, slMove: vSlMove };
+                const vExistingTp = Number(objMeta.takeProfitDelta);
+                const vExistingSl = Number(objMeta.stopLossDelta);
+                const objInitial = this.computeOptionThresholds(objRuleMoves, vSide, vEntryDelta);
+                const objNextMeta = { ...objMeta } as Record<string, unknown>;
+
+                if (!Number.isFinite(vExistingTp) || !(vExistingTp > 0)) {
+                    objNextMeta.takeProfitDelta = Number(objInitial.takeProfitDelta.toFixed(6));
+                }
+                if (!Number.isFinite(vExistingSl) || !(vExistingSl > 0)) {
+                    objNextMeta.stopLossDelta = Number(objInitial.stopLossDelta.toFixed(6));
+                }
+
+                const vPrevBest = Number(objNextMeta.trailBestDelta);
+                const vBestDelta = Number.isFinite(vPrevBest)
+                    ? (vSide === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
+                    : (vSide === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
+
+                if (Number.isFinite(vSlMove) && vSlMove > 0) {
+                    const vCandidateRaw = vSide === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
+                    const vCandidate = (vSide === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
+                    const vStoredSl = Number(objNextMeta.stopLossDelta);
+                    const vNextSl = vSide === "BUY"
+                        ? (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.max(vStoredSl, vCandidate) : vCandidate)
+                        : (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.min(vStoredSl, vCandidate) : vCandidate);
+                    objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                }
+
+                if (vSide === "SELL" && Number.isFinite(vTpMove) && vTpMove > 0) {
+                    const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
+                    const vPeakDelta = Number.isFinite(vPrevPeak)
+                        ? Math.max(vPrevPeak, vCurrentDelta)
+                        : Math.max(vEntryDelta, vCurrentDelta);
+                    const vStoredTp = Number(objNextMeta.takeProfitDelta);
+                    const vCandidate = clamp01(vPeakDelta - vTpMove);
+                    const vNextTp = Number.isFinite(vStoredTp) && vStoredTp > 0
+                        ? Math.max(vStoredTp, vCandidate)
+                        : vCandidate;
+                    objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                    objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                }
+
+                objNextMeta.ruleColor = vRuleColor;
+                objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
+                objNextMeta.trailTpPeakDelta = Number(Number(objNextMeta.trailTpPeakDelta ?? vEntryDelta).toFixed(6));
+                objPosition.metadata = objNextMeta as any;
+            }
+
             await this.persistImportedPositions(pUserId, arrRefreshedPositions.map((objRow) => ({
                 userId: objRow.userId,
                 importId: objRow.importId,
@@ -1417,11 +1571,21 @@ export class RollingOptionsLtDeService {
 
                 const vStoredTakeProfitDelta = Number(objPosition.metadata?.takeProfitDelta);
                 const vStoredStopLossDelta = Number(objPosition.metadata?.stopLossDelta);
+                const vRuleColor = String(objPosition.metadata?.ruleColor || "").trim().toUpperCase() === "G" ? "G" : "R";
+                const vSide = String(objPosition.side || "").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
+                const vEntryDelta = Math.abs(Number(objPosition.entryDelta ?? objPosition.currentDelta ?? 0.53));
+                const vTpMove = vRuleColor === "G"
+                    ? clamp01(Number(objConfig.greenTakeProfitPct ?? 15) / 100)
+                    : clamp01(Number(objConfig.redTakeProfitPct ?? 15) / 100);
+                const vSlMove = vRuleColor === "G"
+                    ? clamp01(Number(objConfig.greenStopLossPct ?? 85) / 100)
+                    : clamp01(Number(objConfig.redStopLossPct ?? 85) / 100);
+                const objFallbackThresholds = this.computeOptionThresholds({ tpMove: vTpMove, slMove: vSlMove }, vSide, vEntryDelta);
                 const objDecision = shouldTriggerImportedOption(
                     objPosition.side,
                     Number(objPosition.currentDelta),
-                    Number.isFinite(vStoredTakeProfitDelta) ? vStoredTakeProfitDelta : Number(objConfig.deltaTakeProfit || 0),
-                    Number.isFinite(vStoredStopLossDelta) ? vStoredStopLossDelta : Number(objConfig.deltaStopLoss || 0)
+                    Number.isFinite(vStoredTakeProfitDelta) ? vStoredTakeProfitDelta : objFallbackThresholds.takeProfitDelta,
+                    Number.isFinite(vStoredStopLossDelta) ? vStoredStopLossDelta : objFallbackThresholds.stopLossDelta
                 );
                 if (objDecision.shouldAct && objDecision.reason) {
                     await this.handleOptionTrigger(pUserId, objConfig, objPosition, objDecision.reason, objSnapshot);
@@ -1443,7 +1607,7 @@ export class RollingOptionsLtDeService {
                 lastSpotPrice: objSnapshot.spotPrice,
                 lastFuturesPrice: objSnapshot.futuresPrice,
                 lastCycleAt: objSnapshot.ts,
-                lastSignal: vTriggerSignal || (arrRenkoSignals.at(-1)
+                lastSignal: vTriggerSignal || vMismatchSignal || (arrRenkoSignals.at(-1)
                     ? (arrRenkoSignals.at(-1) === "R" ? "RED" : "GREEN")
                     : (objState.renko.lastColor === "R" ? "RED" : (objState.renko.lastColor === "G" ? "GREEN" : "IDLE")))
             });

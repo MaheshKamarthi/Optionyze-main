@@ -385,7 +385,7 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         deltaStopLoss: vRedDeltaStopLoss,
         reEnter: Boolean(pUiState.reEnter1),
         addOneLotFuture: Boolean(pUiState.addOneLotFuture),
-        renkoEnabled: Boolean(pUiState.renkoFeedEnabled ?? true),
+        renkoEnabled: Boolean(pUiState.renkoFeedEnabled ?? (Number(pUiState.renkoFeedPts ?? 10) > 0)),
         renkoStepPoints: Math.max(1, Math.round(Number(pUiState.renkoFeedPts || 10))),
         renkoPriceSource: vPriceSource,
         loopSeconds: 8

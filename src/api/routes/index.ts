@@ -49,6 +49,7 @@ import {
     clearRollingOptionsLtDeEventsController,
     deleteRollingOptionsLtDeOpenPosition,
     executeRollingOptionsLtDeStrategy,
+    runRollingOptionsLtDeStrategyCycle,
     executeRollingOptionsLtDeKillSwitch,
     executeRollingOptionsLtDeManualFuture,
     executeRollingOptionsLtDeManualOption,
@@ -58,13 +59,13 @@ import {
     getRollingOptionsLtDeEvents,
     getRollingOptionsLtDeOpenPositions,
     getRollingOptionsLtDeRuntimeStatus,
-    getRollingOptionsLtDeImportableOpenPositions
-    ,
+    getRollingOptionsLtDeImportableOpenPositions,
     getRollingOptionsLtDeProfile,
     reconcileRollingOptionsLtDeOpenPositions,
     saveRollingOptionsLtDeOpenPositions,
     saveRollingOptionsLtDeProfileController,
-    setRollingOptionsLtDeManualRenkoSignal
+    setRollingOptionsLtDeManualRenkoSignal,
+    updateRollingOptionsLtDeRuleSettings
 } from "../controllers/rolling-options-lt-de-controller";
 import {
     checkRollingFuturesLtLongConnection,
@@ -309,6 +310,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-lt-de/strategy/execute", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsLtDeStrategy(req, res, pRollingOptionsLtDeService);
     });
+    objRouter.post("/rollingoptions-lt-de/strategy/cycle", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await runRollingOptionsLtDeStrategyCycle(req, res, pRollingOptionsLtDeService);
+    });
     objRouter.post("/rollingoptions-lt-de/kill-switch", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsLtDeKillSwitch(req, res, pRollingOptionsLtDeService);
     });
@@ -318,8 +322,11 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-lt-de/manual/option", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsLtDeManualOption(req, res);
     });
+    objRouter.post("/rollingoptions-lt-de/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsLtDeRuleSettings(req, res);
+    });
     objRouter.post("/rollingoptions-lt-de/open-positions/close", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
-        await closeRollingOptionsLtDeImportedOpenPosition(req, res);
+        await closeRollingOptionsLtDeImportedOpenPosition(req, res, pRollingOptionsLtDeService);
     });
     objRouter.get("/rollingoptions-lt-de/open-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await getRollingOptionsLtDeOpenPositions(req, res);

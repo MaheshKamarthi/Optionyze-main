@@ -37,6 +37,18 @@
                         <div class="rolling-demo-metric-value" id="rollingLiveHealthValue">-</div>
                     </div>
                     <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Options PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingLiveOptionsPnlValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Total Charges</div>
+                        <div class="rolling-demo-metric-value" id="rollingLiveTotalChargesValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Total PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingLiveTotalPnlValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Profile</div>
                         <div class="rolling-demo-metric-value" id="rollingLiveProfileLabel">-</div>
                     </div>
@@ -210,12 +222,16 @@
                         <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveReGreenD" value="0.53" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtRollingLiveGreenTp">Green TP</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveGreenTp" value="0.15" />
+                        <label for="txtRollingLiveGreenTp">Green TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingLiveGreenTp" value="15" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtRollingLiveGreenSl">Green SL</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveGreenSl" value="0.85" />
+                        <label for="txtRollingLiveGreenSl">Green SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingLiveGreenSl" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingLiveUpdateGreenRules">Update Green</button>
                     </div>
                     <div class="rolling-demo-field rolling-live-red-opt-qty">
                         <label for="txtRollingLiveRedOptQtyPct">Red Opt Qty %</label>
@@ -226,12 +242,16 @@
                         <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveReRedD" value="0.53" />
                     </div>
                     <div class="rolling-demo-field rolling-live-red-tp">
-                        <label for="txtRollingLiveRedTp">Red TP</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveRedTp" value="0.15" />
+                        <label for="txtRollingLiveRedTp">Red TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingLiveRedTp" value="15" />
                     </div>
                     <div class="rolling-demo-field rolling-live-red-sl">
-                        <label for="txtRollingLiveRedSl">Red SL</label>
-                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingLiveRedSl" value="0.85" />
+                        <label for="txtRollingLiveRedSl">Red SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingLiveRedSl" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingLiveUpdateRedRules">Update Red</button>
                     </div>
                     <div class="rolling-demo-field rolling-live-renko-group">
                         <label for="txtRollingLiveRenkoValue">Renko Control</label>
@@ -239,6 +259,15 @@
                             <input type="number" min="1" step="1" id="txtRollingLiveRenkoValue" value="10" />
                             <button class="rolling-demo-btn rolling-live-renko-button" type="button" id="btnRollingLiveRenkoBox">R</button>
                         </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingLiveRenkoPriceSrc">Renko Source</label>
+                        <select id="ddlRollingLiveRenkoPriceSrc">
+                            <option value="mark_price" selected>Mark Price</option>
+                            <option value="spot_price">Spot Price</option>
+                            <option value="best_bid">Best Bid</option>
+                            <option value="best_ask">Best Ask</option>
+                        </select>
                     </div>
                     <div class="rolling-demo-field rolling-live-add-one-lot">
                         <label for="chkRollingLiveAddOneLotFuture">Add 1 Lot Future</label>
@@ -290,6 +319,8 @@
                             <tr>
                                 <th>Delta</th>
                                 <th>C Delta</th>
+                                <th>TP Delta</th>
+                                <th>SL Delta</th>
                                 <th>Symbol</th>
                                 <th>Tr Type</th>
                                 <th>Lot Sz</th>
@@ -306,7 +337,7 @@
                         </thead>
                         <tbody id="rollingLiveOpenPositionsBody">
                             <tr>
-                                <td colspan="14" class="rolling-demo-empty">Select an API profile and import existing live positions from Delta Exchange.</td>
+                                <td colspan="16" class="rolling-demo-empty">Select an API profile and import existing live positions from Delta Exchange.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -355,6 +386,8 @@
                             <tr>
                                 <th>Start DT</th>
                                 <th>End DT</th>
+                                <th>Delta</th>
+                                <th>C Delta</th>
                                 <th>Symbol</th>
                                 <th>Tr Type</th>
                                 <th>Lot Sz</th>
@@ -367,7 +400,7 @@
                         </thead>
                         <tbody id="rollingLiveClosedPositionsBody">
                             <tr>
-                                <td colspan="10" class="rolling-demo-empty">No Delta fill history found for the selected date range.</td>
+                                <td colspan="12" class="rolling-demo-empty">No Delta fill history found for the selected date range.</td>
                             </tr>
                         </tbody>
                     </table>

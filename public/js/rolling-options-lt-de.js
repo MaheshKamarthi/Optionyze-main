@@ -16,6 +16,9 @@
         blockedMarginValue: document.getElementById("rollingLiveBlockedMarginValue"),
         availableBalanceValue: document.getElementById("rollingLiveAvailableBalanceValue"),
         healthValue: document.getElementById("rollingLiveHealthValue"),
+        optionsPnlValue: document.getElementById("rollingLiveOptionsPnlValue"),
+        totalChargesValue: document.getElementById("rollingLiveTotalChargesValue"),
+        totalPnlValue: document.getElementById("rollingLiveTotalPnlValue"),
         profileLabel: document.getElementById("rollingLiveProfileLabel"),
         openCount: document.getElementById("rollingLiveOpenCount"),
         openRenkoSignal: document.getElementById("rollingLiveOpenRenkoSignal"),
@@ -37,15 +40,18 @@
         optionReEnter: document.getElementById("chkRollingLiveReEnter1"),
         redOptQtyPct: document.getElementById("txtRollingLiveRedOptQtyPct"),
         reRedDelta: document.getElementById("txtRollingLiveReRedD"),
-        redTpDelta: document.getElementById("txtRollingLiveRedTp"),
-        redSlDelta: document.getElementById("txtRollingLiveRedSl"),
+        redTpPct: document.getElementById("txtRollingLiveRedTp"),
+        redSlPct: document.getElementById("txtRollingLiveRedSl"),
         greenOptQtyPct: document.getElementById("txtRollingLiveGreenOptQtyPct"),
         greenReDelta: document.getElementById("txtRollingLiveReGreenD"),
-        greenTpDelta: document.getElementById("txtRollingLiveGreenTp"),
-        greenSlDelta: document.getElementById("txtRollingLiveGreenSl"),
+        greenTpPct: document.getElementById("txtRollingLiveGreenTp"),
+        greenSlPct: document.getElementById("txtRollingLiveGreenSl"),
+        updateGreenRulesButton: document.getElementById("btnRollingLiveUpdateGreenRules"),
         addOneLotFuture: document.getElementById("chkRollingLiveAddOneLotFuture"),
         renkoValue: document.getElementById("txtRollingLiveRenkoValue"),
+        renkoPriceSrc: document.getElementById("ddlRollingLiveRenkoPriceSrc"),
         renkoBoxButton: document.getElementById("btnRollingLiveRenkoBox"),
+        updateRedRulesButton: document.getElementById("btnRollingLiveUpdateRedRules"),
         importButton: document.getElementById("btnRollingLiveImportPositions"),
         refreshOpenPositionsButton: document.getElementById("btnRollingLiveRefreshOpenPositions"),
         killSwitchButton: document.getElementById("btnRollingLiveKillSwitch"),
@@ -84,6 +90,8 @@
     let gAutoTraderEnabled = false;
     let gIsApplyingState = false;
     let gSaveTimer = null;
+    let gProfileSavePromise = Promise.resolve();
+    let gRenkoKickTimer = null;
     let gPreviousOpenPositionLtps = new Map();
     let gClosedPositions = [];
     let gClosedPositionsPage = 1;
@@ -327,14 +335,15 @@
             reEnter1: Boolean(ids.optionReEnter?.checked),
             redOptQtyPct: parseNumberInput(ids.redOptQtyPct, 100),
             reRedDelta: parseNumberInput(ids.reRedDelta, 0.53),
-            redTpDelta: parseNumberInput(ids.redTpDelta, 0.15),
-            redSlDelta: parseNumberInput(ids.redSlDelta, 0.85),
+            redTpPct: parseNumberInput(ids.redTpPct, 15),
+            redSlPct: parseNumberInput(ids.redSlPct, 85),
             greenOptQtyPct: parseNumberInput(ids.greenOptQtyPct, 100),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
-            greenTpDelta: parseNumberInput(ids.greenTpDelta, 0.15),
-            greenSlDelta: parseNumberInput(ids.greenSlDelta, 0.85),
+            greenTpPct: parseNumberInput(ids.greenTpPct, 15),
+            greenSlPct: parseNumberInput(ids.greenSlPct, 85),
             addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoValue, 10),
+            renkoFeedPriceSrc: String(ids.renkoPriceSrc?.value || "mark_price"),
             closedFromDate: String(ids.closedFromDate?.value || ""),
             closedToDate: String(ids.closedToDate?.value || ""),
             telegramAlertsEnabled: ids.telegramEventCheckboxes.some(function (objCheckbox) { return objCheckbox.checked; }),
@@ -373,14 +382,23 @@
         setFieldValue(ids.optionReEnter, uiState.reEnter1);
         setFieldValue(ids.redOptQtyPct, uiState.redOptQtyPct);
         setFieldValue(ids.reRedDelta, uiState.reRedDelta);
-        setFieldValue(ids.redTpDelta, uiState.redTpDelta);
-        setFieldValue(ids.redSlDelta, uiState.redSlDelta);
+        const vRedTpLegacy = Number(uiState.redTpDelta ?? uiState.deltaTp1 ?? 0);
+        const vRedSlLegacy = Number(uiState.redSlDelta ?? uiState.deltaSl1 ?? 0);
+        const vRedTpPct = Number(uiState.redTpPct ?? (vRedTpLegacy > 0 ? (vRedTpLegacy <= 2 ? vRedTpLegacy * 100 : vRedTpLegacy) : 15));
+        const vRedSlPct = Number(uiState.redSlPct ?? (vRedSlLegacy > 0 ? (vRedSlLegacy <= 2 ? vRedSlLegacy * 100 : vRedSlLegacy) : 85));
+        setFieldValue(ids.redTpPct, vRedTpPct);
+        setFieldValue(ids.redSlPct, vRedSlPct);
         setFieldValue(ids.greenOptQtyPct, uiState.greenOptQtyPct);
         setFieldValue(ids.greenReDelta, uiState.greenReDelta);
-        setFieldValue(ids.greenTpDelta, uiState.greenTpDelta);
-        setFieldValue(ids.greenSlDelta, uiState.greenSlDelta);
+        const vGreenTpLegacy = Number(uiState.greenTpDelta ?? uiState.deltaTp1 ?? 0);
+        const vGreenSlLegacy = Number(uiState.greenSlDelta ?? uiState.deltaSl1 ?? 0);
+        const vGreenTpPct = Number(uiState.greenTpPct ?? (vGreenTpLegacy > 0 ? (vGreenTpLegacy <= 2 ? vGreenTpLegacy * 100 : vGreenTpLegacy) : 15));
+        const vGreenSlPct = Number(uiState.greenSlPct ?? (vGreenSlLegacy > 0 ? (vGreenSlLegacy <= 2 ? vGreenSlLegacy * 100 : vGreenSlLegacy) : 85));
+        setFieldValue(ids.greenTpPct, vGreenTpPct);
+        setFieldValue(ids.greenSlPct, vGreenSlPct);
         setFieldValue(ids.addOneLotFuture, uiState.addOneLotFuture);
         setFieldValue(ids.renkoValue, uiState.renkoFeedPts);
+        setFieldValue(ids.renkoPriceSrc, uiState.renkoFeedPriceSrc ?? "mark_price");
         setFieldValue(ids.closedFromDate, uiState.closedFromDate);
         setFieldValue(ids.closedToDate, uiState.closedToDate);
         const arrSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -395,7 +413,7 @@
         gIsApplyingState = false;
     }
 
-    async function saveLiveProfile(payload) {
+    async function saveLiveProfileNow(payload) {
         const vProfileIdSource = payload && Object.prototype.hasOwnProperty.call(payload, "selectedApiProfileId")
             ? payload.selectedApiProfileId
             : ids.apiProfile?.value;
@@ -405,6 +423,38 @@
             selectedApiProfileId: vProfileId,
             uiState: (payload && payload.uiState) || getUiState()
         });
+    }
+
+    function enqueueProfileSave(payload) {
+        const nextPayload = payload || {};
+        gProfileSavePromise = gProfileSavePromise.then(function () {
+            return saveLiveProfileNow(nextPayload);
+        });
+        return gProfileSavePromise;
+    }
+
+    async function flushProfileSave() {
+        if (gIsApplyingState) {
+            return;
+        }
+        if (gSaveTimer) {
+            clearTimeout(gSaveTimer);
+            gSaveTimer = null;
+        }
+        await enqueueProfileSave({ uiState: getUiState() });
+    }
+
+    async function updateRuleSettings(colorCode) {
+        const vColor = String(colorCode || "").trim().toUpperCase() === "G" ? "G" : "R";
+        await flushProfileSave();
+        const objResult = await postJson("/api/rollingoptions-lt-de/rules/update", {
+            color: vColor
+        });
+        const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
+        if (arrTracked) {
+            renderOpenPositions(arrTracked);
+        }
+        return objResult;
     }
 
     function queueProfileSave() {
@@ -418,7 +468,7 @@
 
         gSaveTimer = setTimeout(function () {
             gSaveTimer = null;
-            void saveLiveProfile({ uiState: getUiState() }).catch(function (_objError) {
+            void enqueueProfileSave({ uiState: getUiState() }).catch(function (_objError) {
             });
         }, 400);
     }
@@ -604,6 +654,23 @@
         return objResult;
     }
 
+    async function kickRenkoCycleIfNeeded() {
+        const vRenkoPts = Math.max(0, Math.floor(Number(ids.renkoValue?.value || 0)));
+        const shouldKickRenkoCycle = vRenkoPts > 0
+            && !Boolean(gAutoTraderEnabled)
+            && canUseLiveActions();
+        if (!shouldKickRenkoCycle) {
+            return null;
+        }
+
+        await flushProfileSave();
+        const objResult = await postJson("/api/rollingoptions-lt-de/strategy/cycle", {});
+        if (objResult?.data?.runtime) {
+            applyRuntimeStatus(objResult.data.runtime);
+        }
+        return objResult;
+    }
+
     function getCurrentRenkoColor() {
         return String(ids.renkoBoxButton?.textContent || "").trim().toUpperCase() === "G" ? "G" : "R";
     }
@@ -614,6 +681,7 @@
             throw new Error("Delta connection is not healthy enough to execute the live strategy.");
         }
 
+        await flushProfileSave();
         const objResult = await postJson("/api/rollingoptions-lt-de/strategy/execute", {
             renkoColor: getCurrentRenkoColor()
         });
@@ -754,12 +822,17 @@
                 loadRuntimeStatus()
             ]).then(function () {
                 if (!gAutoTraderEnabled) {
-                    return;
+                    return Promise.all([
+                        kickRenkoCycleIfNeeded().catch(function () { return undefined; }),
+                        reconcileOpenPositionsSilently().catch(function () { return undefined; }),
+                        loadClosedPositions(true).catch(function () { return undefined; })
+                    ]);
                 }
                 return Promise.all([
-                    loadSavedOpenPositions(),
+                    reconcileOpenPositionsSilently().catch(function () { return undefined; }),
                     loadAccountSummary().catch(function () { return undefined; }),
-                    loadEvents().catch(function () { return undefined; })
+                    loadEvents().catch(function () { return undefined; }),
+                    loadClosedPositions(true).catch(function () { return undefined; })
                 ]);
             }).catch(function (objError) {
                 setStatus(ids.connectionStatus, objError instanceof Error ? objError.message : "Unable to load Delta connection status.", "danger");
@@ -842,7 +915,7 @@
 
         if (!arrRows.length) {
             gPreviousOpenPositionLtps = new Map();
-            ids.openPositionsBody.innerHTML = "<tr><td colspan=\"14\" class=\"rolling-demo-empty\">No imported live positions are currently shown.</td></tr>";
+            ids.openPositionsBody.innerHTML = "<tr><td colspan=\"16\" class=\"rolling-demo-empty\">No imported live positions are currently shown.</td></tr>";
             if (ids.openCount) {
                 ids.openCount.textContent = "0";
             }
@@ -857,6 +930,11 @@
             const vImportId = String(row.importId || vContractName || "");
             const vEntryDelta = Number.isFinite(Number(row.entryDelta)) ? fmt(row.entryDelta, 2) : "-";
             const vCurrentDelta = Number.isFinite(Number(row.currentDelta)) ? fmt(row.currentDelta, 2) : "-";
+            const objMeta = row && typeof row === "object" ? (row.metadata || {}) : {};
+            const vTpDeltaRaw = Number(objMeta.takeProfitDelta ?? objMeta.deltaTakeProfit);
+            const vSlDeltaRaw = Number(objMeta.stopLossDelta ?? objMeta.deltaStopLoss);
+            const vTpDelta = Number.isFinite(vTpDeltaRaw) && vTpDeltaRaw > 0 ? fmt(vTpDeltaRaw, 2) : "-";
+            const vSlDelta = Number.isFinite(vSlDeltaRaw) && vSlDeltaRaw > 0 ? fmt(vSlDeltaRaw, 2) : "-";
             const vCharges = estimateOpenPositionCharges(row);
             const vPnl = calculateOpenPositionPnl(row);
             const vLtpBlinkClass = getLtpBlinkClass(vImportId, row.markPrice);
@@ -868,6 +946,8 @@
                 <tr>
                     <td>${escapeHtml(vEntryDelta)}</td>
                     <td>${escapeHtml(vCurrentDelta)}</td>
+                    <td>${escapeHtml(vTpDelta)}</td>
+                    <td>${escapeHtml(vSlDelta)}</td>
                     <td>${escapeHtml(vContractName)}</td>
                     <td>${escapeHtml(vSide || "-")}</td>
                     <td>${escapeHtml(fmt(vLotSize, 3))}</td>
@@ -907,7 +987,7 @@
         }, 0);
         ids.openPositionsBody.innerHTML = `${openRowsHtml}
             <tr class="rolling-demo-total-row">
-                <td colspan="9">Total</td>
+                <td colspan="11">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(fmt(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(fmt(totalPnl, 3))}</td>
                 <td colspan="3">-</td>
@@ -932,7 +1012,16 @@
         }
 
         if (!arrRows.length) {
-            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"10\" class=\"rolling-demo-empty\">No Delta order history found for the selected date range.</td></tr>";
+            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No Delta order history found for the selected date range.</td></tr>";
+            if (ids.optionsPnlValue) {
+                ids.optionsPnlValue.textContent = "-";
+            }
+            if (ids.totalChargesValue) {
+                ids.totalChargesValue.textContent = "-";
+            }
+            if (ids.totalPnlValue) {
+                ids.totalPnlValue.textContent = "-";
+            }
             if (ids.closedPageInfo) {
                 ids.closedPageInfo.textContent = "Page 0 of 0";
             }
@@ -950,10 +1039,14 @@
 
         const closedRowsHtml = arrPageRows.map(function (row) {
             const vContractName = String(row.symbol || "-");
+            const vEntryDelta = Number(row && row.entryDelta);
+            const vCurrentDelta = Number(row && row.currentDelta);
             return `
                 <tr>
                     <td>${escapeHtml(formatDateTime(row.startAt))}</td>
                     <td>${escapeHtml(formatDateTime(row.endAt))}</td>
+                    <td>${escapeHtml(Number.isFinite(vEntryDelta) ? fmt(vEntryDelta, 2) : "-")}</td>
+                    <td>${escapeHtml(Number.isFinite(vCurrentDelta) ? fmt(vCurrentDelta, 2) : "-")}</td>
                     <td>${escapeHtml(vContractName)}</td>
                     <td>${escapeHtml(row.side || row.orderType || "-")}</td>
                     <td>${escapeHtml(fmt(getLotSizeForContract(vContractName), 3))}</td>
@@ -969,9 +1062,27 @@
         const totalPnl = arrRows.some(function (row) { return Number.isFinite(Number(row && row.pnl)); })
             ? sumNumeric(arrRows, "pnl")
             : null;
+        const totalOptionPnl = arrRows.reduce(function (sum, row) {
+            const contractName = String(row && row.symbol || "").trim();
+            if (!isOptionContract(contractName)) {
+                return sum;
+            }
+            const value = Number(row && row.pnl);
+            return Number.isFinite(value) ? sum + value : sum;
+        }, 0);
+        if (ids.optionsPnlValue) {
+            ids.optionsPnlValue.textContent = fmt(totalOptionPnl, 3);
+        }
+        if (ids.totalChargesValue) {
+            ids.totalChargesValue.textContent = fmt(totalCharges, 3);
+        }
+        if (ids.totalPnlValue) {
+            const vNetPnl = (totalPnl === null ? 0 : totalPnl) - totalCharges;
+            ids.totalPnlValue.textContent = fmt(vNetPnl, 3);
+        }
         ids.closedPositionsBody.innerHTML = `${closedRowsHtml}
             <tr class="rolling-demo-total-row">
-                <td colspan="8">Total</td>
+                <td colspan="10">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(fmt(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(totalPnl === null ? "-" : fmt(totalPnl, 3))}</td>
             </tr>
@@ -1102,6 +1213,16 @@
         return arrPositions;
     }
 
+    async function reconcileOpenPositionsSilently() {
+        if (!canUseLiveActions()) {
+            return [];
+        }
+        const objResult = await reconcileOpenPositions();
+        const arrPositions = Array.isArray(objResult?.data) ? objResult.data : [];
+        renderOpenPositions(arrPositions);
+        return arrPositions;
+    }
+
     async function saveOpenPositions(rows) {
         const arrRows = Array.isArray(rows) ? rows : [];
         const objResult = await postJson("/api/rollingoptions-lt-de/open-positions", {
@@ -1132,7 +1253,8 @@
         return postJson("/api/rollingoptions-lt-de/kill-switch", {});
     }
 
-    async function loadClosedPositions() {
+    async function loadClosedPositions(preservePage) {
+        const shouldPreservePage = Boolean(preservePage);
         if (!canUseLiveActions()) {
             gClosedPositions = [];
             gClosedPositionsPage = 1;
@@ -1151,7 +1273,9 @@
         const vQuery = objSearch.toString();
         const objResult = await getJson(`/api/rollingoptions-lt-de/closed-positions${vQuery ? `?${vQuery}` : ""}`);
         gClosedPositions = Array.isArray(objResult?.data?.positions) ? objResult.data.positions : [];
-        gClosedPositionsPage = 1;
+        if (!shouldPreservePage) {
+            gClosedPositionsPage = 1;
+        }
         renderClosedPositions(gClosedPositions);
     }
 
@@ -1185,7 +1309,7 @@
     ids.symbol?.addEventListener("change", function () {
         applySymbolDefaults();
         const vSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
-        void saveLiveProfile({
+        void enqueueProfileSave({
             uiState: getUiState()
         }).then(function () {
             return loadAccountSummary(vSymbol).catch(function () {
@@ -1215,16 +1339,29 @@
     ids.optionReEnter?.addEventListener("change", queueProfileSave);
     ids.redOptQtyPct?.addEventListener("input", queueProfileSave);
     ids.reRedDelta?.addEventListener("input", queueProfileSave);
-    ids.redTpDelta?.addEventListener("input", queueProfileSave);
-    ids.redSlDelta?.addEventListener("input", queueProfileSave);
+    ids.redTpPct?.addEventListener("input", queueProfileSave);
+    ids.redSlPct?.addEventListener("input", queueProfileSave);
     ids.greenOptQtyPct?.addEventListener("input", queueProfileSave);
     ids.greenReDelta?.addEventListener("input", queueProfileSave);
-    ids.greenTpDelta?.addEventListener("input", queueProfileSave);
-    ids.greenSlDelta?.addEventListener("input", queueProfileSave);
+    ids.greenTpPct?.addEventListener("input", queueProfileSave);
+    ids.greenSlPct?.addEventListener("input", queueProfileSave);
     ids.addOneLotFuture?.addEventListener("change", queueProfileSave);
-    ids.renkoValue?.addEventListener("input", queueProfileSave);
+    ids.renkoValue?.addEventListener("input", function () {
+        queueProfileSave();
+        if (gRenkoKickTimer) {
+            clearTimeout(gRenkoKickTimer);
+        }
+        gRenkoKickTimer = setTimeout(function () {
+            gRenkoKickTimer = null;
+            void kickRenkoCycleIfNeeded().catch(function () { return undefined; });
+        }, 600);
+    });
+    ids.renkoPriceSrc?.addEventListener("change", function () {
+        queueProfileSave();
+        void kickRenkoCycleIfNeeded().catch(function () { return undefined; });
+    });
     ids.apiProfile?.addEventListener("change", function () {
-        void saveLiveProfile({
+        void enqueueProfileSave({
             selectedApiProfileId: String(ids.apiProfile?.value || "").trim(),
             uiState: getUiState()
         }).then(function () {
@@ -1235,7 +1372,11 @@
                 renderOpenPositions([]);
                 return;
             }
-            return Promise.all([loadAccountSummary(), loadClosedPositions()]);
+            return Promise.all([
+                loadAccountSummary(),
+                reconcileOpenPositionsSilently().catch(function () { return undefined; }),
+                loadClosedPositions(false)
+            ]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to load live account data.", "danger");
         });
@@ -1247,7 +1388,11 @@
                 renderOpenPositions([]);
                 return;
             }
-            return Promise.all([loadAccountSummary(), loadClosedPositions()]);
+            return Promise.all([
+                loadAccountSummary(),
+                reconcileOpenPositionsSilently().catch(function () { return undefined; }),
+                loadClosedPositions(false)
+            ]);
         }).catch(function (objError) {
             setStatus(ids.connectionStatus, objError instanceof Error ? objError.message : "Unable to check Delta connection.", "danger");
         });
@@ -1259,7 +1404,7 @@
             }
             return toggleAutoTrader();
         }).then(function () {
-            return Promise.all([loadRuntimeStatus(), loadAccountSummary(), loadClosedPositions()]);
+            return Promise.all([loadRuntimeStatus(), loadAccountSummary(), loadClosedPositions(false)]);
         }).then(function () {
             setStatus(ids.pageStatus, gAutoTraderEnabled ? "Live auto trader enabled." : "Live auto trader disabled.", "success");
         }).catch(function (objError) {
@@ -1277,7 +1422,7 @@
                 renderOpenPositions(arrTracked);
             }
             setStatus(ids.pageStatus, vOrderId ? `${vMessage} Order ID: ${vOrderId}` : vMessage, "success");
-            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadEvents().catch(function () { return undefined; })]);
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place SELL FUT order.", "danger");
         });
@@ -1293,7 +1438,7 @@
                 renderOpenPositions(arrTracked);
             }
             setStatus(ids.pageStatus, vOrderId ? `${vMessage} Order ID: ${vOrderId}` : vMessage, "success");
-            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadEvents().catch(function () { return undefined; })]);
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place BUY FUT order.", "danger");
         });
@@ -1310,7 +1455,7 @@
                 renderOpenPositions(arrTracked);
             }
             setStatus(ids.pageStatus, vContracts ? `${vMessage} ${vContracts}` : vMessage, "success");
-            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadEvents().catch(function () { return undefined; })]);
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place OPEN OPTION order.", "danger");
         });
@@ -1327,7 +1472,7 @@
                 renderOpenPositions(arrTracked);
             }
             setStatus(ids.pageStatus, vContracts ? `${vMessage} ${vContracts}` : vMessage, "success");
-            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadEvents().catch(function () { return undefined; })]);
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place EXIT OPTION order.", "danger");
         });
@@ -1348,7 +1493,7 @@
         });
     });
     ids.refreshClosedPositionsButton?.addEventListener("click", function () {
-        void loadClosedPositions().then(function () {
+        void loadClosedPositions(false).then(function () {
             setStatus(ids.pageStatus, "Closed-position history refreshed.", "success");
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to load closed positions.", "danger");
@@ -1391,7 +1536,7 @@
             ids.closedToDate.value = "";
         }
         queueProfileSave();
-        void loadClosedPositions().then(function () {
+        void loadClosedPositions(false).then(function () {
             setStatus(ids.pageStatus, "Closed-position filters cleared.", "success");
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to clear closed-position filters.", "danger");
@@ -1399,13 +1544,13 @@
     });
     ids.closedFromDate?.addEventListener("change", function () {
         queueProfileSave();
-        void loadClosedPositions().catch(function (objError) {
+        void loadClosedPositions(false).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to filter closed positions.", "danger");
         });
     });
     ids.closedToDate?.addEventListener("change", function () {
         queueProfileSave();
-        void loadClosedPositions().catch(function (objError) {
+        void loadClosedPositions(false).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to filter closed positions.", "danger");
         });
     });
@@ -1428,6 +1573,22 @@
             return loadEvents().catch(function () { return undefined; });
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to toggle Renko box.", "danger");
+        });
+    });
+    ids.updateGreenRulesButton?.addEventListener("click", function () {
+        void updateRuleSettings("G").then(function (objResult) {
+            setStatus(ids.pageStatus, objResult?.message || "Updated Green rule settings for open options.", "success");
+            return loadEvents().catch(function () { return undefined; });
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Green rule settings.", "danger");
+        });
+    });
+    ids.updateRedRulesButton?.addEventListener("click", function () {
+        void updateRuleSettings("R").then(function (objResult) {
+            setStatus(ids.pageStatus, objResult?.message || "Updated Red rule settings for open options.", "success");
+            return loadEvents().catch(function () { return undefined; });
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Red rule settings.", "danger");
         });
     });
     ids.copyWhitelistIpButton?.addEventListener("click", function () {
@@ -1471,7 +1632,14 @@
                     return String(row?.importId || "").trim() !== vImportId;
                 });
                 renderOpenPositions(arrRemaining);
-                return Promise.all([loadAccountSummary(), loadConnectionStatus(), refreshImportablePositionsSilently().catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
+                return Promise.all([
+                    reconcileOpenPositionsSilently().catch(function () { return undefined; }),
+                    loadAccountSummary(),
+                    loadConnectionStatus(),
+                    loadClosedPositions(true).catch(function () { return undefined; }),
+                    refreshImportablePositionsSilently().catch(function () { return undefined; }),
+                    loadEvents().catch(function () { return undefined; })
+                ]);
             }).catch(function (objError) {
                 setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to close imported live position.", "danger");
             });
@@ -1504,10 +1672,11 @@
             setStatus(ids.pageStatus, objResult?.message || "Live strategy executed.", "success");
             return Promise.all([
                 loadRuntimeStatus(),
-                loadSavedOpenPositions(),
+                reconcileOpenPositionsSilently().catch(function () { return undefined; }),
                 loadAccountSummary().catch(function () { return undefined; }),
                 loadConnectionStatus(),
-                loadEvents().catch(function () { return undefined; })
+                loadEvents().catch(function () { return undefined; }),
+                loadClosedPositions(true).catch(function () { return undefined; })
             ]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to execute live strategy.", "danger");
@@ -1531,7 +1700,7 @@
                 loadAccountSummary().catch(function () { return undefined; }),
                 loadConnectionStatus(),
                 loadEvents().catch(function () { return undefined; }),
-                loadClosedPositions().catch(function () { return undefined; })
+                loadClosedPositions(true).catch(function () { return undefined; })
             ]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to execute live kill switch.", "danger");
@@ -1561,7 +1730,12 @@
             if (!canUseLiveActions()) {
                 return;
             }
-            return Promise.all([loadAccountSummary(), loadClosedPositions(), loadEvents()]);
+            return Promise.all([
+                loadAccountSummary(),
+                reconcileOpenPositionsSilently().catch(function () { return undefined; }),
+                loadClosedPositions(false),
+                loadEvents()
+            ]);
         });
     }).catch(function (objError) {
         setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to load Delta API profiles.", "danger");

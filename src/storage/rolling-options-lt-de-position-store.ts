@@ -27,6 +27,8 @@ export interface RollingOptionsLtDePositionMetadata {
     stopLossDelta?: number | null;
     reEntryDelta?: number | null;
     openedReason?: string;
+    trailBestDelta?: number | null;
+    trailTpPeakDelta?: number | null;
 }
 
 interface RollingOptionsLtDeImportedPositionRow {
@@ -70,6 +72,12 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsLtDePositionMetada
     const vReEntryDelta = objMetadata.reEntryDelta === null || objMetadata.reEntryDelta === undefined
         ? undefined
         : Number(objMetadata.reEntryDelta);
+    const vTrailBestDelta = objMetadata.trailBestDelta === null || objMetadata.trailBestDelta === undefined
+        ? undefined
+        : Number(objMetadata.trailBestDelta);
+    const vTrailTpPeakDelta = objMetadata.trailTpPeakDelta === null || objMetadata.trailTpPeakDelta === undefined
+        ? undefined
+        : Number(objMetadata.trailTpPeakDelta);
     const objNormalized: RollingOptionsLtDePositionMetadata = {};
 
     if (vRuleColor === "R" || vRuleColor === "G") {
@@ -86,6 +94,12 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsLtDePositionMetada
     }
     if (String(objMetadata.openedReason || "").trim()) {
         objNormalized.openedReason = String(objMetadata.openedReason).trim();
+    }
+    if (Number.isFinite(vTrailBestDelta)) {
+        objNormalized.trailBestDelta = vTrailBestDelta;
+    }
+    if (Number.isFinite(vTrailTpPeakDelta)) {
+        objNormalized.trailTpPeakDelta = vTrailTpPeakDelta;
     }
 
     return Object.keys(objNormalized).length > 0 ? objNormalized : undefined;
