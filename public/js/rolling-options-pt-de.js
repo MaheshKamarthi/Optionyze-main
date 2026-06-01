@@ -808,6 +808,17 @@
         }
     }
 
+    async function kickRenkoCycleIfNeeded() {
+        const shouldKickRenkoCycle = Boolean(ids.renkoFeedEnabled?.checked)
+            && !Boolean(gLatestRuntimeState?.autoTraderEnabled);
+        if (!shouldKickRenkoCycle) {
+            return;
+        }
+
+        await flushProfileSave();
+        await postJson("/api/rollingoptions-pt-de/strategy/cycle", {});
+    }
+
     async function deleteOpenPosition(positionId) {
         const normalizedPositionId = String(positionId || "").trim();
         if (!normalizedPositionId) {
@@ -858,10 +869,24 @@
     ids.renkoFeedEnabled?.addEventListener("change", function () {
         updateRenkoFeedVisualState();
         queueProfileSave();
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadServerPanels();
+        }).catch(function () { return undefined; });
     });
 
     ids.demoBalance?.addEventListener("input", function () {
         updateBalanceMetrics(gLatestOpenPositions);
+    });
+
+    ids.renkoFeedPts?.addEventListener("change", function () {
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadServerPanels();
+        }).catch(function () { return undefined; });
+    });
+    ids.renkoFeedPriceSrc?.addEventListener("change", function () {
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadServerPanels();
+        }).catch(function () { return undefined; });
     });
 
     ids.lastSignal?.addEventListener("click", function () {
@@ -1036,7 +1061,9 @@
     });
 
     setInterval(function () {
-        void Promise.all([loadStatus(), loadOpenPositions(), loadClosedPositions(), loadEvents()]).catch(function (objError) {
+        void kickRenkoCycleIfNeeded().then(function () {
+            return Promise.all([loadStatus(), loadOpenPositions(), loadClosedPositions(), loadEvents()]);
+        }).catch(function (objError) {
             console.error(objError);
             setStatus(objError instanceof Error ? objError.message : "Unable to refresh Rolling Options data.", "danger");
         });

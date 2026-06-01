@@ -68,7 +68,14 @@ async function bootstrap(): Promise<void> {
     app.set("views", path.resolve(process.cwd(), "src", "views"));
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
-    app.use(express.static(path.resolve(process.cwd(), "public")));
+    app.use(express.static(path.resolve(process.cwd(), "public"), {
+        etag: false,
+        lastModified: false,
+        maxAge: 0,
+        setHeaders: (res) => {
+            res.setHeader("Cache-Control", "no-store");
+        }
+    }));
     app.use(attachAuthContext);
 
     app.get("/", (_req, res) => {

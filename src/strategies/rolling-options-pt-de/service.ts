@@ -1070,23 +1070,59 @@ export class RollingOptionsPtDeService {
                 const vSlMove = vRuleColor === "R"
                     ? clamp01(Number(objConfig.redStopLossPct ?? 85) / 100)
                     : clamp01(Number(objConfig.greenStopLossPct ?? 85) / 100);
+                const vGreenTpMove = clamp01(Number(objConfig.greenTakeProfitPct ?? 15) / 100);
+                const vRedTpMove = clamp01(Number(objConfig.redTakeProfitPct ?? 15) / 100);
                 const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
 
-                if ((vRuleColor === "G" || vRuleColor === "R") && Number.isFinite(vSlMove) && vSlMove > 0 && (vAction === "BUY" || vAction === "SELL")) {
+                if ((vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
                     const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
                     const vPrevBest = Number(objNextMeta.trailBestDelta);
                     const vBestDelta = Number.isFinite(vPrevBest)
                         ? (vAction === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
                         : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
-                    const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
-                    const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
-                    const vNextSl = vAction === "BUY"
-                        ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
-                        : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
+
+                    if (Number.isFinite(vSlMove) && vSlMove > 0) {
+                        const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
+                        const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
+                        const vNextSl = vAction === "BUY"
+                            ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
+                            : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
+                        objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
+                        objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                    }
+
+                    if (vRuleColor === "G" && vAction === "SELL" && Number.isFinite(vGreenTpMove) && vGreenTpMove > 0) {
+                        const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
+                        const vPeakDelta = Number.isFinite(vPrevPeak)
+                            ? Math.max(vPrevPeak, vCurrentDelta)
+                            : Math.max(vEntryDelta, vCurrentDelta);
+                        const vExistingTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
+                        const vCandidate = clamp01(vPeakDelta - vGreenTpMove);
+                        const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
+                            ? Math.max(vExistingTp, vCandidate)
+                            : vCandidate;
+                        objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                        objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
+                        objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                    }
+
+                    if (vRuleColor === "R" && vAction === "SELL" && Number.isFinite(vRedTpMove) && vRedTpMove > 0) {
+                        const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
+                        const vPeakDelta = Number.isFinite(vPrevPeak)
+                            ? Math.max(vPrevPeak, vCurrentDelta)
+                            : Math.max(vEntryDelta, vCurrentDelta);
+                        const vExistingTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
+                        const vCandidate = clamp01(vPeakDelta - vRedTpMove);
+                        const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
+                            ? Math.max(vExistingTp, vCandidate)
+                            : vCandidate;
+                        objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                        objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
+                        objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                    }
+
                     objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
-                    objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
-                    objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
                 }
 
                 await saveRollingOptionsPtDePosition({
