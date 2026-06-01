@@ -685,11 +685,11 @@ export class RollingOptionsLtDeService {
             manualOptQty1: 1,
             newDelta1: 0.53,
             reEnter1: false,
-            redOptQtyPct: 100,
+            redOptQty: 1,
             reRedDelta: 0.53,
             redTpPct: 15,
             redSlPct: 85,
-            greenOptQtyPct: 100,
+            greenOptQty: 1,
             greenReDelta: 0.53,
             greenTpPct: 15,
             greenSlPct: 85,
@@ -774,6 +774,25 @@ export class RollingOptionsLtDeService {
         }
 
         return Math.max(1, Math.round(vBaseQty * vPercent / 100));
+    }
+
+    private getConfiguredOptionQty(
+        pConfig: RollingOptionsPtDeConfig,
+        pColorCode: "R" | "G",
+        pFutureQtyForLegacyPct: number
+    ): number {
+        const vColorCode: "R" | "G" = pColorCode === "G" ? "G" : "R";
+        const vExplicitQty = vColorCode === "G"
+            ? Number(pConfig.greenOptionQty)
+            : Number(pConfig.redOptionQty);
+        if (Number.isFinite(vExplicitQty)) {
+            return Math.max(0, Math.floor(vExplicitQty));
+        }
+
+        const vPct = vColorCode === "G"
+            ? Number(pConfig.greenOptionQtyPct)
+            : Number(pConfig.redOptionQtyPct);
+        return this.getRenkoOptionQty(pFutureQtyForLegacyPct, vPct);
     }
 
     private async openGreenRenkoFutureEntry(
@@ -1017,8 +1036,7 @@ export class RollingOptionsLtDeService {
             return 0;
         }
 
-        const vQtyPct = pColorCode === "R" ? pConfig.redOptionQtyPct : pConfig.greenOptionQtyPct;
-        const vOptionQty = this.getRenkoOptionQty(vTotalFutureQty, vQtyPct);
+        const vOptionQty = this.getConfiguredOptionQty(pConfig, pColorCode, vTotalFutureQty);
         if (!(vOptionQty > 0)) {
             return 0;
         }
@@ -1094,8 +1112,7 @@ export class RollingOptionsLtDeService {
             .filter((objRow) => !isOptionContract(objRow.contractName))
             .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
         const vBaseQty = Math.max(0, vFutureQty || Number(pPosition.qty || 0));
-        const vQtyPct = vActiveRuleColor === "G" ? pConfig.greenOptionQtyPct : pConfig.redOptionQtyPct;
-        const vReEntryQty = this.getRenkoOptionQty(vBaseQty, vQtyPct);
+        const vReEntryQty = this.getConfiguredOptionQty(pConfig, vActiveRuleColor, vBaseQty);
         if (!(vReEntryQty > 0)) {
             return;
         }
@@ -1333,8 +1350,7 @@ export class RollingOptionsLtDeService {
 
         if (arrExistingOptions.length <= 0 && vTotalFutureQty > 0) {
             const objRuleValues = this.getRuleValues(objConfig, vRuleColor);
-            const vQtyPct = vRuleColor === "G" ? objConfig.greenOptionQtyPct : objConfig.redOptionQtyPct;
-            const vOptionQty = this.getRenkoOptionQty(vTotalFutureQty, vQtyPct);
+            const vOptionQty = this.getConfiguredOptionQty(objConfig, vRuleColor, vTotalFutureQty);
             if (vOptionQty > 0) {
                 const arrCreatedOptions = await this.openOptionEntries(
                     pUserId,
@@ -1458,8 +1474,7 @@ export class RollingOptionsLtDeService {
                     const vRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
                     const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vRenkoColor === "G" ? "G" : "R";
                     const objRuleValues = this.getRuleValues(objConfig, vRuleColor);
-                    const vQtyPct = vRuleColor === "G" ? objConfig.greenOptionQtyPct : objConfig.redOptionQtyPct;
-                    const vOptionQty = this.getRenkoOptionQty(vTotalFutureQty, vQtyPct);
+                    const vOptionQty = this.getConfiguredOptionQty(objConfig, vRuleColor, vTotalFutureQty);
                     if (vOptionQty > 0) {
                         await this.openOptionEntries(
                             pUserId,

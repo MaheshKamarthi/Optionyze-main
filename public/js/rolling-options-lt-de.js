@@ -38,11 +38,11 @@
         optionQty: document.getElementById("txtRollingLiveOptQty1"),
         optionNewDelta: document.getElementById("txtRollingLiveNewDelta1"),
         optionReEnter: document.getElementById("chkRollingLiveReEnter1"),
-        redOptQtyPct: document.getElementById("txtRollingLiveRedOptQtyPct"),
+        redOptQty: document.getElementById("txtRollingLiveRedOptQty"),
         reRedDelta: document.getElementById("txtRollingLiveReRedD"),
         redTpPct: document.getElementById("txtRollingLiveRedTp"),
         redSlPct: document.getElementById("txtRollingLiveRedSl"),
-        greenOptQtyPct: document.getElementById("txtRollingLiveGreenOptQtyPct"),
+        greenOptQty: document.getElementById("txtRollingLiveGreenOptQty"),
         greenReDelta: document.getElementById("txtRollingLiveReGreenD"),
         greenTpPct: document.getElementById("txtRollingLiveGreenTp"),
         greenSlPct: document.getElementById("txtRollingLiveGreenSl"),
@@ -334,11 +334,11 @@
             manualOptQty1: parseNumberInput(ids.optionQty, 1),
             newDelta1: parseNumberInput(ids.optionNewDelta, 0.53),
             reEnter1: Boolean(ids.optionReEnter?.checked),
-            redOptQtyPct: parseNumberInput(ids.redOptQtyPct, 100),
+            redOptQty: parseNumberInput(ids.redOptQty, 1),
             reRedDelta: parseNumberInput(ids.reRedDelta, 0.53),
             redTpPct: parseNumberInput(ids.redTpPct, 15),
             redSlPct: parseNumberInput(ids.redSlPct, 85),
-            greenOptQtyPct: parseNumberInput(ids.greenOptQtyPct, 100),
+            greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
             greenTpPct: parseNumberInput(ids.greenTpPct, 15),
             greenSlPct: parseNumberInput(ids.greenSlPct, 85),
@@ -382,7 +382,14 @@
         setFieldValue(ids.optionQty, uiState.manualOptQty1);
         setFieldValue(ids.optionNewDelta, uiState.newDelta1);
         setFieldValue(ids.optionReEnter, uiState.reEnter1);
-        setFieldValue(ids.redOptQtyPct, uiState.redOptQtyPct);
+        const vManualFutQty = Math.max(1, Math.floor(Number(uiState.manualFutQty || 1)));
+        const vRedOptQtyLegacyPct = Number(uiState.redOptQtyPct ?? uiState.autoOptQtyPct ?? 0);
+        const vRedOptQty = Number.isFinite(Number(uiState.redOptQty))
+            ? Math.max(0, Math.floor(Number(uiState.redOptQty)))
+            : (Number.isFinite(vRedOptQtyLegacyPct)
+                ? Math.max(0, Math.round(vManualFutQty * vRedOptQtyLegacyPct / 100))
+                : 1);
+        setFieldValue(ids.redOptQty, vRedOptQty);
         setFieldValue(ids.reRedDelta, uiState.reRedDelta);
         const vRedTpLegacy = Number(uiState.redTpDelta ?? uiState.deltaTp1 ?? 0);
         const vRedSlLegacy = Number(uiState.redSlDelta ?? uiState.deltaSl1 ?? 0);
@@ -390,7 +397,13 @@
         const vRedSlPct = Number(uiState.redSlPct ?? (vRedSlLegacy > 0 ? (vRedSlLegacy <= 2 ? vRedSlLegacy * 100 : vRedSlLegacy) : 85));
         setFieldValue(ids.redTpPct, vRedTpPct);
         setFieldValue(ids.redSlPct, vRedSlPct);
-        setFieldValue(ids.greenOptQtyPct, uiState.greenOptQtyPct);
+        const vGreenOptQtyLegacyPct = Number(uiState.greenOptQtyPct ?? 0);
+        const vGreenOptQty = Number.isFinite(Number(uiState.greenOptQty))
+            ? Math.max(0, Math.floor(Number(uiState.greenOptQty)))
+            : (Number.isFinite(vGreenOptQtyLegacyPct)
+                ? Math.max(0, Math.round(vManualFutQty * vGreenOptQtyLegacyPct / 100))
+                : 1);
+        setFieldValue(ids.greenOptQty, vGreenOptQty);
         setFieldValue(ids.greenReDelta, uiState.greenReDelta);
         const vGreenTpLegacy = Number(uiState.greenTpDelta ?? uiState.deltaTp1 ?? 0);
         const vGreenSlLegacy = Number(uiState.greenSlDelta ?? uiState.deltaSl1 ?? 0);
@@ -824,6 +837,7 @@
             ]).then(function () {
                 if (!gAutoTraderEnabled) {
                     return Promise.all([
+                        loadAccountSummary().catch(function () { return undefined; }),
                         kickRenkoCycleIfNeeded().catch(function () { return undefined; }),
                         reconcileOpenPositionsSilently().catch(function () { return undefined; }),
                         loadClosedPositions(true).catch(function () { return undefined; })
@@ -1339,11 +1353,11 @@
     ids.optionQty?.addEventListener("input", queueProfileSave);
     ids.optionNewDelta?.addEventListener("input", queueProfileSave);
     ids.optionReEnter?.addEventListener("change", queueProfileSave);
-    ids.redOptQtyPct?.addEventListener("input", queueProfileSave);
+    ids.redOptQty?.addEventListener("input", queueProfileSave);
     ids.reRedDelta?.addEventListener("input", queueProfileSave);
     ids.redTpPct?.addEventListener("input", queueProfileSave);
     ids.redSlPct?.addEventListener("input", queueProfileSave);
-    ids.greenOptQtyPct?.addEventListener("input", queueProfileSave);
+    ids.greenOptQty?.addEventListener("input", queueProfileSave);
     ids.greenReDelta?.addEventListener("input", queueProfileSave);
     ids.greenTpPct?.addEventListener("input", queueProfileSave);
     ids.greenSlPct?.addEventListener("input", queueProfileSave);

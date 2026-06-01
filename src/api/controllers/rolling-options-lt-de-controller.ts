@@ -612,11 +612,11 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         manualOptQty1: 1,
         newDelta1: 0.53,
         reEnter1: false,
-        redOptQtyPct: 100,
+        redOptQty: 1,
         reRedDelta: 0.53,
         redTpPct: 15,
         redSlPct: 85,
-        greenOptQtyPct: 100,
+        greenOptQty: 1,
         greenReDelta: 0.53,
         greenTpPct: 15,
         greenSlPct: 85,
@@ -647,11 +647,18 @@ function sanitizeLiveUiState(pUiState?: Record<string, unknown> | null): Record<
 
 function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record<string, unknown> {
     const objUiState = pUiState && typeof pUiState === "object" ? { ...pUiState } : {};
-    if (!Number.isFinite(Number(objUiState.redOptQtyPct))) {
-        objUiState.redOptQtyPct = normalizeLiveNumber(objUiState.autoOptQtyPct, 100);
+    const vManualFutQty = Math.max(1, Math.floor(normalizeLiveNumber(objUiState.manualFutQty, 1)));
+    const vLegacyRedPct = normalizeLiveNumber(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct, NaN);
+    if (!Number.isFinite(Number(objUiState.redOptQty))) {
+        objUiState.redOptQty = Number.isFinite(vLegacyRedPct)
+            ? Math.max(0, Math.round(vManualFutQty * vLegacyRedPct / 100))
+            : 1;
     }
-    if (!Number.isFinite(Number(objUiState.greenOptQtyPct))) {
-        objUiState.greenOptQtyPct = 100;
+    const vLegacyGreenPct = normalizeLiveNumber(objUiState.greenOptQtyPct, NaN);
+    if (!Number.isFinite(Number(objUiState.greenOptQty))) {
+        objUiState.greenOptQty = Number.isFinite(vLegacyGreenPct)
+            ? Math.max(0, Math.round(vManualFutQty * vLegacyGreenPct / 100))
+            : 1;
     }
     if (!Number.isFinite(Number(objUiState.reRedDelta))) {
         objUiState.reRedDelta = normalizeLiveNumber(objUiState.reDelta1, 0.53);
@@ -1852,8 +1859,8 @@ export async function getRollingOptionsLtDeAccountSummary(req: Request, res: Res
         const vLivePrice = Number(objMarketSnapshot?.futuresPrice || 0);
         const vOneLotValue = Number.isFinite(vLivePrice) && vLivePrice > 0 ? vLivePrice * vLotSize : Number.NaN;
         const vSelectedFuturePositionValue = getSelectedFuturePositionValue(arrPositions, vSelectedSymbol, vLivePrice);
-        const vHealthPct = vAvailableBalance > 0 && vSelectedFuturePositionValue > 0
-            ? Number(((vSelectedFuturePositionValue / vAvailableBalance) * 100).toFixed(2))
+        const vHealthPct = vTotalBalance > 0 && vBlockedMargin >= 0
+            ? Number(((vBlockedMargin / vTotalBalance) * 100).toFixed(2))
             : Number.NaN;
 
         res.json({
