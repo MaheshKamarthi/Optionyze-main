@@ -574,11 +574,13 @@ export class RollingOptionsLtDeService {
         const vSlMove = clamp01(Number(pRuleValues.slMove || 0));
         const bIsBuy = pPositionSide === "BUY";
 
-        const vTakeProfitDelta = bIsBuy
-            ? clamp01(vEntryDelta + vTpMove)
-            : clamp01(vEntryDelta - vTpMove);
+        const vTakeProfitDelta = vTpMove > 0
+            ? (bIsBuy ? clamp01(vEntryDelta + vTpMove) : clamp01(vEntryDelta - vTpMove))
+            : 0;
         const vRawStopLoss = bIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
-        const vStopLossDelta = (!bIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss);
+        const vStopLossDelta = vSlMove > 0
+            ? ((!bIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss))
+            : 0;
         return { takeProfitDelta: vTakeProfitDelta, stopLossDelta: vStopLossDelta };
     }
 
@@ -943,9 +945,6 @@ export class RollingOptionsLtDeService {
         for (const vOptionSide of arrOptionSides) {
             const objContract = await findBestLiveOptionContract(pConfig, vOptionSide, pTargetDelta);
             if (!objContract?.contractSymbol) {
-                continue;
-            }
-            if (!this.meetsEntryDeltaRule(pConfig.action, objContract.delta, pTargetDelta)) {
                 continue;
             }
             const vEntryDelta = Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53;

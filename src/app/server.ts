@@ -46,9 +46,38 @@ import { cleanupExpiredSessions } from "../storage/sessions-store";
 
 dns.setDefaultResultOrder("ipv4first");
 
+async function listenOnAvailablePort(app: express.Express, preferredPort: number, allowFallback: boolean): Promise<number> {
+    let vPort = preferredPort;
+    for (let vAttempt = 0; vAttempt < 20; vAttempt++) {
+        try {
+            const objServer = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+                const objListeningServer = app.listen(vPort, () => resolve(objListeningServer));
+                objListeningServer.on("error", reject);
+            });
+
+            const objAddress = objServer.address();
+            if (objAddress && typeof objAddress === "object") {
+                return objAddress.port;
+            }
+            return vPort;
+        }
+        catch (objError) {
+            const vCode = typeof objError === "object" && objError ? (objError as { code?: string }).code : undefined;
+            if (vCode === "EADDRINUSE" && allowFallback) {
+                vPort++;
+                continue;
+            }
+            throw objError;
+        }
+    }
+
+    throw new Error(`No available port found starting from ${preferredPort}`);
+}
+
 async function bootstrap(): Promise<void> {
     const app = express();
-    const port = Number(process.env.PORT || 3001);
+    const vEnvPort = process.env.PORT;
+    const vPreferredPort = Number(vEnvPort || 3001);
     const runnerManager = new RunnerManager();
     const strategyFoPaperService = new StrategyFoGreeksPaperService(runnerManager);
     const rollingOptionsPtDeService = new RollingOptionsPtDeService(runnerManager);
@@ -114,9 +143,8 @@ async function bootstrap(): Promise<void> {
     app.get("/strategyfogreeks", requireAuthPage, requireFreshPasswordPage, renderStrategyFoPaperPage);
     app.use("/api", createApiRouter(runnerManager, strategyFoPaperService, rollingOptionsPtDeService, rollingOptionsLtDeService));
 
-    app.listen(port, () => {
-        console.log(`Optionyze server listening on port ${port}`);
-    });
+    const vPort = await listenOnAvailablePort(app, vPreferredPort, !vEnvPort);
+    console.log(`Optionyze server listening on port ${vPort}`);
 }
 
 void bootstrap().catch((objError) => {

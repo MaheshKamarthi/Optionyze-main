@@ -777,7 +777,11 @@
         const vExpiryDate = String(ids.optionExpiryDate?.value || "").trim();
         const vLegSide = String(ids.optionLegSide?.value || "ce").trim().toLowerCase();
         const vExpiryMode = String(ids.optionExpiryMode?.value || "1").trim();
-        const vTargetDelta = Math.max(0, Number(ids.optionNewDelta?.value || 0.53));
+        const vRenkoColor = getCurrentRenkoColor();
+        const vTargetDeltaRaw = vRenkoColor === "G"
+            ? Number(ids.greenReDelta?.value || 0.53)
+            : Number(ids.reRedDelta?.value || 0.53);
+        const vTargetDelta = Math.max(0, vTargetDeltaRaw);
         const vSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
 
         if (vAction !== "buy" && vAction !== "sell") {
