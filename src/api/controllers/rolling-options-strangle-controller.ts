@@ -6,7 +6,7 @@ import {
     getPositionPnl,
     resolveExpiryDateByMode,
 } from "../../strategies/rolling-options-pt-de/engine";
-import { applyClosedOptionPnlToProfile } from "../../strategies/rolling-options-pt-de/options-pnl";
+import { applyClosedOptionPnlToProfile, syncOptionsPnlWithClosedPositions } from "../../strategies/rolling-options-strangle/options-pnl";
 import {
     ensureLiveTickerSymbols,
     findBestLiveOptionContract,
@@ -20,22 +20,22 @@ import {
     listRollingOptionsPtDeOpenPositions,
     saveRollingOptionsPtDePosition,
     type RollingOptionsPtDePositionRecord
-} from "../../storage/rolling-options-pt-de-position-store";
-import { listRollingOptionsPtDeEvents } from "../../storage/rolling-options-pt-de-event-store";
-import { clearRollingOptionsPtDeEvents } from "../../storage/rolling-options-pt-de-event-store";
+} from "../../storage/rolling-options-strangle-position-store";
+import { clearRollingOptionsEventsByStrategy, listRollingOptionsEventsByStrategy } from "../../storage/rolling-options-pt-de-event-store";
 import {
     loadRollingOptionsPtDeProfile,
     saveRollingOptionsPtDeProfile,
     type RollingOptionsPtDeProfileRecord
-} from "../../storage/rolling-options-pt-de-profile-store";
+} from "../../storage/rolling-options-strangle-profile-store";
 import {
     loadRollingOptionsPtDeRuntime,
     saveRollingOptionsPtDeRuntime,
     type RollingOptionsPtDeRuntimeRecord
-} from "../../storage/rolling-options-pt-de-runtime-store";
-import type { RollingOptionsPtDeService } from "../../strategies/rolling-options-pt-de/service";
-import { gRollingOptionsTelegramEventTypes, logRollingOptionsPtDeEvent } from "../../strategies/rolling-options-pt-de/event-logger";
-import { syncOptionsPnlWithClosedPositions } from "../../strategies/rolling-options-pt-de/options-pnl";
+} from "../../storage/rolling-options-strangle-runtime-store";
+import type { RollingOptionsStrangleService } from "../../strategies/rolling-options-strangle/service";
+import { gRollingOptionsTelegramEventTypes, logRollingOptionsPtDeEvent } from "../../strategies/rolling-options-strangle/event-logger";
+
+const gStrategyCode = "rolling-options-strangle";
 
 function getUserIdFromReq(pReq: Request): string {
     const vUserId = String(pReq.authAccount?.accountId || pReq.body?.userId || pReq.query?.userId || "demo-paper").trim();
@@ -48,16 +48,30 @@ function getDefaultUiState(): Record<string, unknown> {
         manualFutQty: 1,
         manualFutOrderType: "market_order",
         manualFutAction: "SELL",
+        futuresEnabled: true,
         action1: "sell",
         legSide1: "ce",
         expiryMode1: "1",
         expiryDate1: "",
         manualOptQty1: 1,
-        newDelta1: 0.53,
         reDelta1: 0.53,
         deltaTp1: 0.15,
         deltaSl1: 0.85,
         reEnter1: false,
+        action2: "none",
+        legSide2: "pe",
+        expiryMode2: "1",
+        expiryDate2: "",
+        manualOptQty2: 1,
+        reEnter2: false,
+        greenOptQty2: 1,
+        greenReDelta2: 0.53,
+        greenTpPct2: 15,
+        greenSlPct2: 85,
+        redOptQty2: 1,
+        redReDelta2: 0.53,
+        redTpPct2: 15,
+        redSlPct2: 85,
         redOptQty: 1,
         redTpPct: 15,
         redSlPct: 85,
@@ -67,7 +81,6 @@ function getDefaultUiState(): Record<string, unknown> {
         greenSlDelta: 0.85,
         greenTpPct: 15,
         greenSlPct: 85,
-        addOneLotFuture: false,
         renkoFeedEnabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
@@ -316,7 +329,6 @@ async function getLiveOrFallbackOptionQuote(
         }
     }
     catch (_objError) {
-        // Fall back to the existing simulated/manual approximation when live lookup is unavailable.
     }
 
     return {
@@ -369,7 +381,6 @@ async function getLiveOrFallbackExitPrice(
             }
         }
         catch (_objError) {
-            // Fall through to the simulated/manual approximation below.
         }
     }
 
@@ -542,14 +553,6 @@ async function closeOpenPositionById(
     return objClosedPosition;
 }
 
-export function renderRollingOptionsPaperDemoPage(req: Request, res: Response): void {
-    res.render("rolling-options-pt-de", {
-        pageTitle: "Rolling Options - Demo | Optionyze",
-        currentAccount: req.authAccount,
-        rollingTelegramEventTypes: gRollingOptionsTelegramEventTypes
-    });
-}
-
 export function renderRollingOptionsStranglePage(req: Request, res: Response): void {
     res.render("rolling-options-strangle", {
         pageTitle: "Rolling Option Strangle Demo | Optionyze",
@@ -558,7 +561,7 @@ export function renderRollingOptionsStranglePage(req: Request, res: Response): v
     });
 }
 
-export async function getRollingOptionsPtDeProfile(req: Request, res: Response): Promise<void> {
+export async function getRollingOptionsStrangleProfile(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objProfile = await loadRollingOptionsPtDeProfile(vUserId);
 
@@ -575,7 +578,7 @@ export async function getRollingOptionsPtDeProfile(req: Request, res: Response):
     });
 }
 
-export async function saveRollingOptionsPtDeProfileController(req: Request, res: Response): Promise<void> {
+export async function saveRollingOptionsStrangleProfileController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objExisting = await loadRollingOptionsPtDeProfile(vUserId);
 
@@ -593,7 +596,7 @@ export async function saveRollingOptionsPtDeProfileController(req: Request, res:
     res.json({ status: "success", data: objSaved });
 }
 
-export async function getRollingOptionsPtDeStatus(req: Request, res: Response): Promise<void> {
+export async function getRollingOptionsStrangleStatus(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objRuntime = await loadRollingOptionsPtDeRuntime(vUserId);
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
@@ -620,7 +623,7 @@ export async function getRollingOptionsPtDeStatus(req: Request, res: Response): 
     });
 }
 
-export async function getRollingOptionsPtDeOpenPositions(req: Request, res: Response): Promise<void> {
+export async function getRollingOptionsStrangleOpenPositions(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objRows = await refreshOpenPositionMarks(vUserId);
 
@@ -630,7 +633,7 @@ export async function getRollingOptionsPtDeOpenPositions(req: Request, res: Resp
     });
 }
 
-export async function deleteRollingOptionsPtDeOpenPositionController(req: Request, res: Response): Promise<void> {
+export async function deleteRollingOptionsStrangleOpenPositionController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vPositionId = String(req.body?.positionId || "").trim();
 
@@ -666,7 +669,7 @@ export async function deleteRollingOptionsPtDeOpenPositionController(req: Reques
     });
 }
 
-export async function closeRollingOptionsPtDeOpenPositionController(req: Request, res: Response): Promise<void> {
+export async function closeRollingOptionsStrangleOpenPositionController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vPositionId = String(req.body?.positionId || "").trim();
 
@@ -704,7 +707,7 @@ export async function closeRollingOptionsPtDeOpenPositionController(req: Request
     });
 }
 
-export async function getRollingOptionsPtDeClosedPositions(req: Request, res: Response): Promise<void> {
+export async function getRollingOptionsStrangleClosedPositions(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vFromDate = String(req.query?.fromDate || "").trim();
     const vToDate = String(req.query?.toDate || "").trim();
@@ -719,19 +722,19 @@ export async function getRollingOptionsPtDeClosedPositions(req: Request, res: Re
     });
 }
 
-export async function getRollingOptionsPtDeEvents(req: Request, res: Response): Promise<void> {
+export async function getRollingOptionsStrangleEvents(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
-    const objRows = await listRollingOptionsPtDeEvents(vUserId, 100);
+    const objRows = await listRollingOptionsEventsByStrategy(vUserId, gStrategyCode, 100);
     res.json({
         status: "success",
         data: objRows
     });
 }
 
-export async function toggleRollingOptionsPtDeAutoTrader(
+export async function toggleRollingOptionsStrangleAutoTrader(
     req: Request,
     res: Response,
-    pService: RollingOptionsPtDeService
+    pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
@@ -742,9 +745,25 @@ export async function toggleRollingOptionsPtDeAutoTrader(
     res.json({ status: objResult.status, message: objResult.message, data: objSaved });
 }
 
-export async function executeRollingOptionsPtDeManualFuture(req: Request, res: Response): Promise<void> {
+export async function executeRollingOptionsStrangleManualFuture(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
+    const bFuturesEnabled = Boolean(objUiState.futuresEnabled ?? true);
+    if (!bFuturesEnabled) {
+        await logRollingOptionsPtDeEvent({
+            userId: vUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "Futures Disabled",
+            message: "Skipped manual future entry because FUT Enabled is OFF.",
+            payload: {
+                reason: "futures_disabled",
+                symbol: String(objUiState.symbol || "")
+            }
+        });
+        res.json({ status: "warning", message: "Futures are disabled (FUT Enabled is OFF)." });
+        return;
+    }
     const vSymbol = String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
     const vAction = String(req.body?.action || "SELL").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
     const vQty = Math.max(1, Math.floor(normalizeNumber(objUiState.manualFutQty, 1)));
@@ -834,32 +853,88 @@ export async function executeRollingOptionsPtDeManualFuture(req: Request, res: R
     res.json({ status: "success", data: { position: objSavedPosition, runtime: objRuntime } });
 }
 
-export async function executeRollingOptionsPtDeManualOption(req: Request, res: Response): Promise<void> {
+export async function executeRollingOptionsStrangleManualOption(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
     const vSymbol = String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
-    const vAction = String(objUiState.action1 || "sell").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
-    const vLegSide = String(objUiState.legSide1 || "ce").trim().toUpperCase();
-    const vQty = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty1, 1)));
     const vLotSize = getLotSizeForSymbol(vSymbol);
     const vExpiryDate = String(objUiState.expiryDate1 || "");
-    const vDelta = normalizeNumber(objUiState.newDelta1, 0.53);
+    const vDelta = 0.53;
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
-    const objSides: Array<"CE" | "PE"> = vLegSide === "BOTH" ? ["CE", "PE"] : [vLegSide === "PE" ? "PE" : "CE"];
     const vNow = objSnapshot.ts;
     const objSavedPositions: RollingOptionsPtDePositionRecord[] = [];
-    const objPlannedQuotes: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
+    const objLegPlans: Array<{
+        action: "BUY" | "SELL";
+        legSideLabel: string;
+        expiryMode: string;
+        expiryDate: string;
+        ruleSet: 1 | 2;
+        qty: number;
+        reEnter: boolean;
+        planned: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }>;
+    }> = [];
 
-    for (const vOptionSide of objSides) {
-        const objQuote = await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta);
-        objPlannedQuotes.push({ side: vOptionSide, quote: objQuote });
+    const vAction1 = String(objUiState.action1 || "sell").trim().toUpperCase();
+    if (vAction1 !== "NONE") {
+        const vLegSide1 = String(objUiState.legSide1 || "ce").trim().toUpperCase();
+        const vQty1 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty1, 1)));
+        const vSides1: Array<"CE" | "PE"> = vLegSide1 === "BOTH" ? ["CE", "PE"] : [vLegSide1 === "PE" ? "PE" : "CE"];
+        const arrPlanned1: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
+        for (const vOptionSide of vSides1) {
+            arrPlanned1.push({ side: vOptionSide, quote: await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta) });
+        }
+        objLegPlans.push({
+            action: vAction1 === "BUY" ? "BUY" : "SELL",
+            legSideLabel: vLegSide1,
+            expiryMode: String(objUiState.expiryMode1 || "1"),
+            expiryDate: String(objUiState.expiryDate1 || ""),
+            ruleSet: 1,
+            qty: vQty1,
+            reEnter: Boolean(objUiState.reEnter1),
+            planned: arrPlanned1
+        });
+    }
+
+    const vAction2 = String(objUiState.action2 || "none").trim().toUpperCase();
+    if (vAction2 !== "NONE") {
+        const vLegSide2 = String(objUiState.legSide2 || "pe").trim().toUpperCase();
+        const vQty2 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty2, 1)));
+        const vSides2: Array<"CE" | "PE"> = vLegSide2 === "BOTH" ? ["CE", "PE"] : [vLegSide2 === "PE" ? "PE" : "CE"];
+        const arrPlanned2: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
+        for (const vOptionSide of vSides2) {
+            arrPlanned2.push({
+                side: vOptionSide,
+                quote: await getLiveOrFallbackOptionQuote({
+                    ...(objUiState || {}),
+                    expiryMode1: objUiState.expiryMode2,
+                    expiryDate1: objUiState.expiryDate2
+                } as Record<string, unknown>, vOptionSide, vDelta)
+            });
+        }
+        objLegPlans.push({
+            action: vAction2 === "BUY" ? "BUY" : "SELL",
+            legSideLabel: vLegSide2,
+            expiryMode: String(objUiState.expiryMode2 || "1"),
+            expiryDate: String(objUiState.expiryDate2 || ""),
+            ruleSet: 2,
+            qty: vQty2,
+            reEnter: Boolean(objUiState.reEnter2),
+            planned: arrPlanned2
+        });
+    }
+
+    if (objLegPlans.length <= 0) {
+        res.status(400).json({ status: "error", message: "No option action selected." });
+        return;
     }
 
     const vDemoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 0));
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     const vBlockedMargin = calculateBlockedMargin(objOpenPositions);
-    const vAdditionalMargin = objPlannedQuotes.reduce((sum, objPlanned) => {
-        return sum + calculatePaperNotional(vQty, vLotSize, objPlanned.quote.entryPrice);
+    const vAdditionalMargin = objLegPlans.reduce((sum, objLegPlan) => {
+        return sum + objLegPlan.planned.reduce((innerSum, objPlanned) => {
+            return innerSum + calculatePaperNotional(objLegPlan.qty, vLotSize, objPlanned.quote.entryPrice);
+        }, 0);
     }, 0);
     if (!(vDemoBalance > 0) || vBlockedMargin + vAdditionalMargin > vDemoBalance) {
         await logRollingOptionsPtDeEvent({
@@ -893,56 +968,69 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     )));
     const vGreenTpDelta = Number((vGreenTpPct / 100).toFixed(4));
     const vGreenSlDelta = Number((vGreenSlPct / 100).toFixed(4));
+    const vGreenTpPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenTpPct2, 15)));
+    const vGreenSlPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenSlPct2, 85)));
+    const vGreenTpDelta2 = Number((vGreenTpPct2 / 100).toFixed(4));
+    const vGreenSlDelta2 = Number((vGreenSlPct2 / 100).toFixed(4));
 
-    for (const objPlanned of objPlannedQuotes) {
-        const vOptionSide = objPlanned.side;
-        const objQuote = objPlanned.quote;
-        const vBaseDelta = Math.abs(Number(objQuote.entryDelta || 0.53));
-        const vTpMove = Math.min(1, Math.max(0, vGreenTpDelta));
-        const vSlMove = Math.min(1, Math.max(0, vGreenSlDelta));
-        const vTakeProfitDelta = vAction === "BUY"
-            ? Math.min(1, Math.max(0, vBaseDelta + vTpMove))
-            : Math.min(1, Math.max(0, vBaseDelta - vTpMove));
-        const vStopLossDelta = vAction === "BUY"
-            ? Math.min(1, Math.max(0, vBaseDelta - vSlMove))
-            : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vGreenSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
-        const objPosition: RollingOptionsPtDePositionRecord = {
-            ...createPositionBase(vUserId),
-            status: "OPEN",
-            symbol: vSymbol,
-            contractName: objQuote.contractName,
-            instrumentType: "OPTION",
-            optionSide: vOptionSide,
-            action: vAction,
-            strike: objQuote.strike,
-            expiryDate: objQuote.expiryDate || vExpiryDate,
-            qty: vQty,
-            lotSize: vLotSize,
-            entryPrice: objQuote.entryPrice,
-            exitPrice: null,
-            markPrice: objQuote.entryPrice,
-            entryDelta: objQuote.entryDelta,
-            exitDelta: objQuote.entryDelta,
-            charges: estimatePositionCharges("OPTION", vQty, vLotSize, objQuote.entryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
-            pnl: 0,
-            openedReason: `Manual ${vAction} ${vOptionSide}`,
-            closedReason: "",
-            openedAt: vNow,
-            closedAt: "",
-            metadata: {
-                expiryMode: String(objUiState.expiryMode1 || "1"),
-                deltaTakeProfit: vTakeProfitDelta,
-                deltaStopLoss: vStopLossDelta,
-                takeProfitDelta: vTakeProfitDelta,
-                stopLossDelta: vStopLossDelta,
-                reEntryDelta: normalizeNumber(objUiState.greenReDelta, 0.53),
-                reEnter: Boolean(objUiState.reEnter1),
-                ruleColor: "G",
-                ...objQuote.metadata
-            }
-        };
+    for (const objLegPlan of objLegPlans) {
+        const vLegGreenTpDelta = objLegPlan.ruleSet === 2 ? vGreenTpDelta2 : vGreenTpDelta;
+        const vLegGreenSlDelta = objLegPlan.ruleSet === 2 ? vGreenSlDelta2 : vGreenSlDelta;
+        const vLegGreenReDelta = objLegPlan.ruleSet === 2
+            ? normalizeNumber((objUiState as any).greenReDelta2, 0.53)
+            : normalizeNumber(objUiState.greenReDelta, 0.53);
 
-        objSavedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
+        for (const objPlanned of objLegPlan.planned) {
+            const vOptionSide = objPlanned.side;
+            const objQuote = objPlanned.quote;
+            const vBaseDelta = Math.abs(Number(objQuote.entryDelta || 0.53));
+            const vTpMove = Math.min(1, Math.max(0, vLegGreenTpDelta));
+            const vSlMove = Math.min(1, Math.max(0, vLegGreenSlDelta));
+            const vTakeProfitDelta = objLegPlan.action === "BUY"
+                ? Math.min(1, Math.max(0, vBaseDelta + vTpMove))
+                : Math.min(1, Math.max(0, vBaseDelta - vTpMove));
+            const vStopLossDelta = objLegPlan.action === "BUY"
+                ? Math.min(1, Math.max(0, vBaseDelta - vSlMove))
+                : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vLegGreenSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
+            const objPosition: RollingOptionsPtDePositionRecord = {
+                ...createPositionBase(vUserId),
+                status: "OPEN",
+                symbol: vSymbol,
+                contractName: objQuote.contractName,
+                instrumentType: "OPTION",
+                optionSide: vOptionSide,
+                action: objLegPlan.action,
+                strike: objQuote.strike,
+                expiryDate: objQuote.expiryDate || objLegPlan.expiryDate || vExpiryDate,
+                qty: objLegPlan.qty,
+                lotSize: vLotSize,
+                entryPrice: objQuote.entryPrice,
+                exitPrice: null,
+                markPrice: objQuote.entryPrice,
+                entryDelta: objQuote.entryDelta,
+                exitDelta: objQuote.entryDelta,
+                charges: estimatePositionCharges("OPTION", objLegPlan.qty, vLotSize, objQuote.entryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
+                pnl: 0,
+                openedReason: `Manual ${objLegPlan.action} ${vOptionSide}`,
+                closedReason: "",
+                openedAt: vNow,
+                closedAt: "",
+                metadata: {
+                    expiryMode: objLegPlan.expiryMode,
+                    ruleSet: objLegPlan.ruleSet,
+                    deltaTakeProfit: vTakeProfitDelta,
+                    deltaStopLoss: vStopLossDelta,
+                    takeProfitDelta: vTakeProfitDelta,
+                    stopLossDelta: vStopLossDelta,
+                    reEntryDelta: vLegGreenReDelta,
+                    reEnter: objLegPlan.reEnter,
+                    ruleColor: "G",
+                    ...objQuote.metadata
+                }
+            };
+
+            objSavedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
+        }
     }
 
     const objRuntime = await updateRuntimeFromUiState(vUserId, {
@@ -951,7 +1039,7 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
         currentContractName: getContractNameForSymbol(vSymbol),
         lastSpotPrice: objSnapshot.spotPrice,
         lastFuturesPrice: objSnapshot.futuresPrice,
-        lastSignal: `MANUAL_OPEN_OPTION_${vLegSide === "BOTH" ? "BOTH" : vLegSide}`,
+        lastSignal: `MANUAL_OPEN_OPTION_${objLegPlans.length > 1 ? "MULTI" : (objLegPlans[0].legSideLabel === "BOTH" ? "BOTH" : objLegPlans[0].legSideLabel)}`,
         lastCycleAt: vNow,
         lastError: ""
     });
@@ -981,7 +1069,7 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
         message: `Opened ${objSavedPositions.length} manual option paper leg(s).`,
         payload: {
             symbol: vSymbol,
-            qty: vQty,
+            qty: objSavedPositions.reduce((sum, objRow) => sum + Math.max(0, Number(objRow.qty || 0)), 0),
             reason: "manual_option_open"
         }
     });
@@ -989,21 +1077,30 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     res.json({ status: "success", data: { positions: objSavedPositions, runtime: objRuntime } });
 }
 
-export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Response): Promise<void> {
+export async function updateRollingOptionsStrangleRuleSettings(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vColor = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
+    const vRuleSet = String(req.body?.ruleSet || "").trim();
+    const vRuleSetNumber = vRuleSet === "2" ? 2 : 1;
     const objUiState = await getMergedUiState(vUserId);
     const objConfig = buildConfigFromUiState(objUiState);
 
-    const vTakeProfitDelta = vColor === "G"
-        ? Number(objConfig.greenDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15)
-        : Number(objConfig.redDeltaTakeProfit ?? objConfig.deltaTakeProfit ?? 0.15);
-    const vStopLossDelta = vColor === "G"
-        ? Number(objConfig.greenDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85)
-        : Number(objConfig.redDeltaStopLoss ?? objConfig.deltaStopLoss ?? 0.85);
+    const clampPct = (pValue: unknown, pFallback: number): number => {
+        const vNum = normalizeNumber(pValue, pFallback);
+        return Math.max(0, Math.min(100, vNum));
+    };
+
+    const vTakeProfitPct = vColor === "G"
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenTpPct2, 15) : Number(objConfig.greenTakeProfitPct ?? 15))
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redTpPct2, 15) : Number(objConfig.redTakeProfitPct ?? 15));
+    const vStopLossPct = vColor === "G"
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenSlPct2, 85) : Number(objConfig.greenStopLossPct ?? 85))
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redSlPct2, 85) : Number(objConfig.redStopLossPct ?? 85));
+    const vTakeProfitDelta = Number((Math.min(100, Math.max(0, vTakeProfitPct)) / 100).toFixed(4));
+    const vStopLossDelta = Number((Math.min(100, Math.max(0, vStopLossPct)) / 100).toFixed(4));
     const vReEntryDelta = vColor === "G"
-        ? Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53)
-        : Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53);
+        ? (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).greenReDelta2, 0.53) : Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53))
+        : (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).redReDelta2, 0.53) : Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53));
 
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
@@ -1016,22 +1113,20 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
         if (vRuleColor !== vColor) {
             continue;
         }
+        const vPositionRuleSet = Math.max(1, Math.min(2, Math.floor(Number((objPosition.metadata as any)?.ruleSet ?? 1))));
+        if (vPositionRuleSet !== vRuleSetNumber) {
+            continue;
+        }
 
         const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
-        const vTpMove = vColor === "G"
-            ? Math.min(1, Math.max(0, Number(objConfig.greenTakeProfitPct ?? 15) / 100))
-            : Math.min(1, Math.max(0, Number(objConfig.redTakeProfitPct ?? 15) / 100));
-        const vSlMove = vColor === "G"
-            ? Math.min(1, Math.max(0, Number(objConfig.greenStopLossPct ?? 85) / 100))
-            : Math.min(1, Math.max(0, Number(objConfig.redStopLossPct ?? 85) / 100));
+        const vTpMove = Math.min(1, Math.max(0, vTakeProfitDelta));
+        const vSlMove = Math.min(1, Math.max(0, vStopLossDelta));
         const vIsBuy = String(objPosition.action || "").trim().toUpperCase() === "BUY";
         const vPositionTakeProfitDelta = vIsBuy
             ? Math.min(1, Math.max(0, vEntryDelta + vTpMove))
             : Math.min(1, Math.max(0, vEntryDelta - vTpMove));
         const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
-        const vAbsoluteStopLoss = vColor === "G"
-            ? Math.min(1, Math.max(0, Number(objConfig.greenStopLossPct ?? 85) / 100))
-            : Math.min(1, Math.max(0, Number(objConfig.redStopLossPct ?? 85) / 100));
+        const vAbsoluteStopLoss = Math.min(1, Math.max(0, vStopLossDelta));
         const vPositionStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vAbsoluteStopLoss : Math.min(1, Math.max(0, vRawStopLoss));
 
         await saveRollingOptionsPtDePosition({
@@ -1039,6 +1134,7 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
             metadata: {
                 ...(objPosition.metadata || {}),
                 ruleColor: vColor,
+                ruleSet: vPositionRuleSet,
                 deltaTakeProfit: vPositionTakeProfitDelta,
                 deltaStopLoss: vPositionStopLossDelta,
                 takeProfitDelta: vPositionTakeProfitDelta,
@@ -1054,12 +1150,13 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
         userId: vUserId,
         eventType: "manual_action",
         severity: "info",
-        title: `Rule Settings Updated (${vColor === "G" ? "Green" : "Red"})`,
+        title: `Rule Settings Updated (${vColor === "G" ? "Green" : "Red"} ${vRuleSetNumber})`,
         message: `Updated ${vUpdated} open option position(s) with the latest rule settings.`,
         payload: {
             qty: vUpdated,
             reason: vColor === "G" ? "update_green_rules" : "update_red_rules",
             ruleColor: vColor,
+            ruleSet: vRuleSetNumber,
             stopLossDelta: vStopLossDelta,
             takeProfitDelta: vTakeProfitDelta,
             reEntryDelta: vReEntryDelta
@@ -1074,7 +1171,7 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
     });
 }
 
-export async function exitRollingOptionsPtDeManualPositions(req: Request, res: Response): Promise<void> {
+export async function exitRollingOptionsStrangleManualPositions(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vInstrumentParam = String(req.body?.instrumentType || "ALL").trim().toUpperCase();
     const vInstrumentType = vInstrumentParam === "OPTION" || vInstrumentParam === "FUTURE"
@@ -1113,10 +1210,10 @@ export async function exitRollingOptionsPtDeManualPositions(req: Request, res: R
     });
 }
 
-export async function runRollingOptionsPtDeStrategyExecution(
+export async function runRollingOptionsStrangleStrategyExecution(
     req: Request,
     res: Response,
-    pService: RollingOptionsPtDeService
+    pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objResult = await pService.executeStrategy(vUserId);
@@ -1124,10 +1221,10 @@ export async function runRollingOptionsPtDeStrategyExecution(
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
 
-export async function runRollingOptionsPtDeStrategyCycle(
+export async function runRollingOptionsStrangleStrategyCycle(
     req: Request,
     res: Response,
-    pService: RollingOptionsPtDeService
+    pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objResult = await pService.runCycle(vUserId);
@@ -1135,10 +1232,10 @@ export async function runRollingOptionsPtDeStrategyCycle(
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
 
-export async function setRollingOptionsPtDeManualRenkoSignal(
+export async function setRollingOptionsStrangleManualRenkoSignal(
     req: Request,
     res: Response,
-    pService: RollingOptionsPtDeService
+    pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vColorCode = String(req.body?.color || "").trim().toUpperCase() === "R" ? "R" : "G";
@@ -1147,10 +1244,10 @@ export async function setRollingOptionsPtDeManualRenkoSignal(
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
 
-export async function resetRollingOptionsPtDeStrategy(
+export async function resetRollingOptionsStrangleStrategy(
     req: Request,
     res: Response,
-    pService: RollingOptionsPtDeService
+    pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objResult = await pService.reset(vUserId);
@@ -1158,7 +1255,7 @@ export async function resetRollingOptionsPtDeStrategy(
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
 
-export async function clearRollingOptionsPtDeClosedPositionsController(req: Request, res: Response): Promise<void> {
+export async function clearRollingOptionsStrangleClosedPositionsController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vDeletedCount = await clearRollingOptionsPtDeClosedPositions(vUserId);
     await syncOptionsPnlWithClosedPositions(vUserId);
@@ -1182,9 +1279,9 @@ export async function clearRollingOptionsPtDeClosedPositionsController(req: Requ
     });
 }
 
-export async function clearRollingOptionsPtDeEventsController(req: Request, res: Response): Promise<void> {
+export async function clearRollingOptionsStrangleEventsController(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
-    const vDeletedCount = await clearRollingOptionsPtDeEvents(vUserId);
+    const vDeletedCount = await clearRollingOptionsEventsByStrategy(vUserId, gStrategyCode);
     res.json({
         status: "success",
         message: `Cleared ${vDeletedCount} activity log event(s).`,

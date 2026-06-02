@@ -11,6 +11,7 @@ import { StrategyFoGreeksPaperService } from "../strategies/strategy-fo-greeks-p
 import { startRollingOptionsLtDeConnectionMonitor, runRollingOptionsLtDeConnectionMonitorCycle } from "../strategies/rolling-options-lt-de/connection-monitor";
 import { RollingOptionsLtDeService } from "../strategies/rolling-options-lt-de/service";
 import { RollingOptionsPtDeService } from "../strategies/rolling-options-pt-de/service";
+import { RollingOptionsStrangleService } from "../strategies/rolling-options-strangle/service";
 import {
     renderRollingFuturesLiveDualPage,
     renderRollingFuturesLiveLongPage,
@@ -19,7 +20,7 @@ import {
     renderStrategyFoPaperPage
 } from "../api/controllers/strategyfo-paper-controller";
 import { recoverRollingFuturesLtAutoTraderCycles } from "../api/controllers/rolling-futures-lt-controller";
-import { renderRollingOptionsPaperDemoPage } from "../api/controllers/rolling-options-pt-de-controller";
+import { renderRollingOptionsPaperDemoPage, renderRollingOptionsStranglePage } from "../api/controllers/rolling-options-pt-de-controller";
 import { renderRollingOptionsLivePage } from "../api/controllers/rolling-options-lt-de-controller";
 import {
     changePassword,
@@ -81,6 +82,7 @@ async function bootstrap(): Promise<void> {
     const runnerManager = new RunnerManager();
     const strategyFoPaperService = new StrategyFoGreeksPaperService(runnerManager);
     const rollingOptionsPtDeService = new RollingOptionsPtDeService(runnerManager);
+    const rollingOptionsStrangleService = new RollingOptionsStrangleService(runnerManager);
     const rollingOptionsLtDeService = new RollingOptionsLtDeService(runnerManager);
 
     await ensurePostgresSchema();
@@ -88,6 +90,7 @@ async function bootstrap(): Promise<void> {
     await cleanupExpiredSessions();
     await runnerManager.hydrate();
     await rollingOptionsPtDeService.hydrate();
+    await rollingOptionsStrangleService.hydrate();
     await rollingOptionsLtDeService.hydrate();
     await recoverRollingFuturesLtAutoTraderCycles();
     startRollingOptionsLtDeConnectionMonitor(5 * 60 * 1000);
@@ -122,6 +125,7 @@ async function bootstrap(): Promise<void> {
     });
     app.get("/dashboard", requireAuthPage, requireFreshPasswordPage, renderDashboardPage);
     app.get("/rollingoptions-pt-de", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsPaperDemoPage);
+    app.get("/rollingoptions-strangle", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsStranglePage);
     app.get("/rollingfutures-pt-de", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesPaperDemoPage);
     app.get("/rollingoptions-lt-de", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsLivePage);
     app.get("/rollingfutures-lt-long", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesLiveLongPage);
@@ -141,7 +145,7 @@ async function bootstrap(): Promise<void> {
         await changePassword(req, res);
     });
     app.get("/strategyfogreeks", requireAuthPage, requireFreshPasswordPage, renderStrategyFoPaperPage);
-    app.use("/api", createApiRouter(runnerManager, strategyFoPaperService, rollingOptionsPtDeService, rollingOptionsLtDeService));
+    app.use("/api", createApiRouter(runnerManager, strategyFoPaperService, rollingOptionsPtDeService, rollingOptionsStrangleService, rollingOptionsLtDeService));
 
     const vPort = await listenOnAvailablePort(app, vPreferredPort, !vEnvPort);
     console.log(`Optionyze server listening on port ${vPort}`);

@@ -11,22 +11,36 @@
         expiryMode1: document.getElementById("ddlExpiryModeCoveredCall1"),
         expiryDate1: document.getElementById("txtExpiryCoveredCall1"),
         manualOptQty1: document.getElementById("txtManualOptQtyCoveredCall1"),
-        newDelta1: document.getElementById("txtNewDeltaCoveredCall1"),
         reDelta1: document.getElementById("txtReDeltaCoveredCall1"),
         redTpPct: document.getElementById("txtDeltaTPCoveredCall1"),
         redSlPct: document.getElementById("txtDeltaSLCoveredCall1"),
         reEnter1: document.getElementById("chkReLegCoveredCall1"),
+        action2: document.getElementById("ddlActionCoveredCall2"),
+        legSide2: document.getElementById("ddlLegSideCoveredCall2"),
+        expiryMode2: document.getElementById("ddlExpiryModeCoveredCall2"),
+        expiryDate2: document.getElementById("txtExpiryCoveredCall2"),
+        manualOptQty2: document.getElementById("txtManualOptQtyCoveredCall2"),
+        reEnter2: document.getElementById("chkReLegCoveredCall2"),
         redOptQty: document.getElementById("txtRedOptQtyCoveredCall"),
         greenOptQty: document.getElementById("txtGreenOptQtyCoveredCall"),
         greenReDelta: document.getElementById("txtReGreenDCoveredCall"),
         greenTpPct: document.getElementById("txtReGreenTPCoveredCall"),
         greenSlPct: document.getElementById("txtReGreenSLCoveredCall"),
-        addOneLotFuture: document.getElementById("chkAddOneLotFutIfNegFut"),
+        greenOptQty2: document.getElementById("txtGreenOptQtyCoveredCall2"),
+        greenReDelta2: document.getElementById("txtReGreenDCoveredCall2"),
+        greenTpPct2: document.getElementById("txtReGreenTPCoveredCall2"),
+        greenSlPct2: document.getElementById("txtReGreenSLCoveredCall2"),
+        redOptQty2: document.getElementById("txtRedOptQtyCoveredCall2"),
+        redReDelta2: document.getElementById("txtReRedDCoveredCall2"),
+        redTpPct2: document.getElementById("txtRedTPCoveredCall2"),
+        redSlPct2: document.getElementById("txtRedSLCoveredCall2"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
         demoBalance: document.getElementById("txtRollingDemoDemoBalance"),
         optionsPnl: document.getElementById("txtRollingDemoOptionsPnl"),
+        totalPnl: document.getElementById("txtRollingDemoTotalPnl"),
+        totalCharges: document.getElementById("txtRollingDemoTotalCharges"),
         closedFromDate: document.getElementById("txtClsFromDate"),
         closedToDate: document.getElementById("txtClsToDate"),
         renkoFeedMeta: document.querySelector(".rolling-demo-feed-meta"),
@@ -47,7 +61,9 @@
         placeFutureButton: document.getElementById("btnRollingDemoPlaceFuture"),
         execStrategyButton: document.getElementById("btnRollingDemoExecStrategy"),
         updateGreenRulesButton: document.getElementById("btnRollingDemoUpdateGreenRules"),
+        updateGreenRulesButton2: document.getElementById("btnRollingDemoUpdateGreenRules2"),
         updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
+        updateRedRulesButton2: document.getElementById("btnRollingDemoUpdateRedRules2"),
         openOptionButton: document.getElementById("btnRollingDemoOpenOption"),
         exitOptionButton: document.getElementById("btnRollingDemoExitOption"),
         clearOpenPositionsButton: document.getElementById("btnRollingDemoClearOpenPositions"),
@@ -72,6 +88,7 @@
     let gPreviousOpenPositionLtps = new Map();
     let gLatestRuntimeState = null;
     let gLatestOpenPositions = [];
+    let gLatestClosedPositions = [];
     let gHasLoadedProfile = false;
 
     function getSelectedConfig() {
@@ -145,15 +162,18 @@
     }
 
     function applyExpiryModeDefaults() {
-        if (!ids.expiryMode1 || !ids.expiryDate1) {
-            return;
-        }
-
-        const resolvedDate = resolveExpiryDateByMode(ids.expiryMode1.value);
-        const formattedDate = formatDateInputValue(resolvedDate);
-        if (formattedDate) {
-            ids.expiryDate1.value = formattedDate;
-        }
+        const applyFor = function (modeField, dateField) {
+            if (!modeField || !dateField) {
+                return;
+            }
+            const resolvedDate = resolveExpiryDateByMode(modeField.value);
+            const formattedDate = formatDateInputValue(resolvedDate);
+            if (formattedDate) {
+                dateField.value = formattedDate;
+            }
+        };
+        applyFor(ids.expiryMode1, ids.expiryDate1);
+        applyFor(ids.expiryMode2, ids.expiryDate2);
     }
 
     function updateRenkoFeedVisualState() {
@@ -239,6 +259,26 @@
         ids.totalMarginValue.textContent = totalMargin > 0
             ? formatNumericValue(totalMargin, 3)
             : "-";
+    }
+
+    function updateTotalPnlMetric(rows = gLatestOpenPositions) {
+        if (!ids.totalPnl) {
+            return;
+        }
+        const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
+        const vOpenPnl = Array.isArray(rows) ? sumNumeric(rows, "pnl") : 0;
+        const vGross = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0) + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0);
+        const vCharges = parseNumberInput(ids.totalCharges, 0);
+        const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
+        ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+    }
+
+    function updateTotalChargesMetric(rows = gLatestClosedPositions) {
+        if (!ids.totalCharges) {
+            return;
+        }
+        const vCharges = Array.isArray(rows) ? sumCharges(rows) : 0;
+        ids.totalCharges.value = Number.isFinite(vCharges) ? (-Math.abs(vCharges)).toFixed(3) : "0.000";
     }
 
     function updateBalanceMetrics(rows = gLatestOpenPositions) {
@@ -356,6 +396,22 @@
         }, 0);
     }
 
+    function sumCharges(rows) {
+        return rows.reduce(function (sum, row) {
+            const value = Number(row?.charges || 0);
+            if (!Number.isFinite(value)) {
+                return sum;
+            }
+            return sum + Math.abs(value);
+        }, 0);
+    }
+
+    function formatChargeNegative(value, fractionDigits) {
+        const parsed = Number(value || 0);
+        const normalized = Number.isFinite(parsed) ? (-Math.abs(parsed)) : 0;
+        return formatNumericValue(normalized, fractionDigits);
+    }
+
     function getLtpBlinkClass(positionId, markPrice) {
         const currentLtp = Number(markPrice);
         const previousLtp = gPreviousOpenPositionLtps.get(positionId);
@@ -385,17 +441,29 @@
             expiryMode1: String(ids.expiryMode1?.value || "1"),
             expiryDate1: String(ids.expiryDate1?.value || ""),
             manualOptQty1: parseNumberInput(ids.manualOptQty1, 1),
-            newDelta1: parseNumberInput(ids.newDelta1, 0.53),
             reDelta1: parseNumberInput(ids.reDelta1, 0.53),
             redTpPct: parseNumberInput(ids.redTpPct, 15),
             redSlPct: parseNumberInput(ids.redSlPct, 85),
             reEnter1: Boolean(ids.reEnter1?.checked),
+            action2: String(ids.action2?.value || "none"),
+            legSide2: String(ids.legSide2?.value || "pe"),
+            expiryMode2: String(ids.expiryMode2?.value || "1"),
+            expiryDate2: String(ids.expiryDate2?.value || ""),
+            manualOptQty2: parseNumberInput(ids.manualOptQty2, 1),
+            reEnter2: Boolean(ids.reEnter2?.checked),
+            greenOptQty2: parseNumberInput(ids.greenOptQty2, 1),
+            greenReDelta2: parseNumberInput(ids.greenReDelta2, 0.53),
+            greenTpPct2: parseNumberInput(ids.greenTpPct2, 15),
+            greenSlPct2: parseNumberInput(ids.greenSlPct2, 85),
+            redOptQty2: parseNumberInput(ids.redOptQty2, 1),
+            redReDelta2: parseNumberInput(ids.redReDelta2, 0.53),
+            redTpPct2: parseNumberInput(ids.redTpPct2, 15),
+            redSlPct2: parseNumberInput(ids.redSlPct2, 85),
             redOptQty: parseNumberInput(ids.redOptQty, 1),
             greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
             greenTpPct: parseNumberInput(ids.greenTpPct, 15),
             greenSlPct: parseNumberInput(ids.greenSlPct, 85),
-            addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
@@ -437,17 +505,29 @@
         setFieldValue("expiryMode1", uiState.expiryMode1);
         setFieldValue("expiryDate1", uiState.expiryDate1);
         setFieldValue("manualOptQty1", uiState.manualOptQty1);
-        setFieldValue("newDelta1", uiState.newDelta1);
         setFieldValue("reDelta1", uiState.reDelta1);
         setFieldValue("redTpPct", uiState.redTpPct ?? (Number.isFinite(Number(uiState.deltaTp1)) ? (Number(uiState.deltaTp1) <= 2 ? Number(uiState.deltaTp1) * 100 : Number(uiState.deltaTp1)) : ""));
         setFieldValue("redSlPct", uiState.redSlPct ?? (Number.isFinite(Number(uiState.deltaSl1)) ? (Number(uiState.deltaSl1) <= 2 ? Number(uiState.deltaSl1) * 100 : Number(uiState.deltaSl1)) : ""));
         setFieldValue("reEnter1", uiState.reEnter1);
+        setFieldValue("action2", uiState.action2 ?? "none");
+        setFieldValue("legSide2", uiState.legSide2 ?? "pe");
+        setFieldValue("expiryMode2", uiState.expiryMode2 ?? "1");
+        setFieldValue("expiryDate2", uiState.expiryDate2);
+        setFieldValue("manualOptQty2", uiState.manualOptQty2 ?? 1);
+        setFieldValue("reEnter2", uiState.reEnter2);
+        setFieldValue("greenOptQty2", uiState.greenOptQty2 ?? 1);
+        setFieldValue("greenReDelta2", uiState.greenReDelta2 ?? 0.53);
+        setFieldValue("greenTpPct2", uiState.greenTpPct2 ?? 15);
+        setFieldValue("greenSlPct2", uiState.greenSlPct2 ?? 85);
+        setFieldValue("redOptQty2", uiState.redOptQty2 ?? 1);
+        setFieldValue("redReDelta2", uiState.redReDelta2 ?? 0.53);
+        setFieldValue("redTpPct2", uiState.redTpPct2 ?? 15);
+        setFieldValue("redSlPct2", uiState.redSlPct2 ?? 85);
         setFieldValue("redOptQty", uiState.redOptQty ?? uiState.redOptQtyPct);
         setFieldValue("greenOptQty", uiState.greenOptQty ?? uiState.greenOptQtyPct);
         setFieldValue("greenReDelta", uiState.greenReDelta);
         setFieldValue("greenTpPct", uiState.greenTpPct ?? (Number.isFinite(Number(uiState.greenTpDelta)) ? Number(uiState.greenTpDelta) * 100 : ""));
         setFieldValue("greenSlPct", uiState.greenSlPct ?? (Number.isFinite(Number(uiState.greenSlDelta)) ? Number(uiState.greenSlDelta) * 100 : ""));
-        setFieldValue("addOneLotFuture", uiState.addOneLotFuture);
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
@@ -509,6 +589,8 @@
         if (ids.optionsPnl) {
             ids.optionsPnl.value = Number.isFinite(optionsPnl) ? optionsPnl.toFixed(3) : "0.000";
         }
+        updateTotalChargesMetric(gLatestClosedPositions);
+        updateTotalPnlMetric(gLatestOpenPositions);
 
         updateOneLotMetric(runtimeState);
     }
@@ -524,6 +606,8 @@
             ids.openPositionsBody.innerHTML = "<tr><td colspan=\"17\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
+            updateTotalChargesMetric(gLatestClosedPositions);
+            updateTotalPnlMetric([]);
             return;
         }
 
@@ -561,7 +645,7 @@
                     <td>${escapeHtml(formatNumericValue(buyPrice, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(sellPrice, 2))}</td>
                     <td class="${ltpBlinkClass}">${escapeHtml(formatNumericValue(row.markPrice, 2))}</td>
-                    <td>${escapeHtml(formatNumericValue(row.charges, 3))}</td>
+                    <td>${escapeHtml(formatChargeNegative(row.charges, 3))}</td>
                     <td>${escapeHtml(formatNumericValue(row.pnl, 3))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.closedAt))}</td>
@@ -586,12 +670,12 @@
                 </tr>
             `;
         }).join("");
-        const totalCharges = sumNumeric(rows, "charges");
+        const totalCharges = sumCharges(rows);
         const totalPnl = sumNumeric(rows, "pnl");
         ids.openPositionsBody.innerHTML = `${openRowsHtml}
             <tr class="rolling-demo-total-row">
                 <td colspan="11">Total</td>
-                <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalCharges, 3))}</td>
+                <td class="rolling-demo-total-value">${escapeHtml(formatChargeNegative(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
                 <td colspan="4">-</td>
             </tr>
@@ -599,6 +683,8 @@
         gPreviousOpenPositionLtps = nextLtps;
         updateTotalMarginMetric(rows);
         updateBalanceMetrics(rows);
+        updateTotalChargesMetric(gLatestClosedPositions);
+        updateTotalPnlMetric(rows);
     }
 
     function renderClosedPositions(rows) {
@@ -607,10 +693,14 @@
         }
 
         if (!Array.isArray(rows) || rows.length === 0) {
+            gLatestClosedPositions = [];
             ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
+            updateTotalChargesMetric([]);
+            updateTotalPnlMetric(gLatestOpenPositions);
             return;
         }
 
+        gLatestClosedPositions = rows;
         const closedRowsHtml = rows.map(function (row) {
             const tradeType = String(row.action || "-");
             const currentDelta = String(row.instrumentType || "").toUpperCase() === "OPTION"
@@ -628,20 +718,22 @@
                     <td>${escapeHtml(formatNumericValue(row.qty, 0))}</td>
                     <td>${escapeHtml(formatNumericValue(row.entryPrice, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(row.exitPrice, 2))}</td>
-                    <td>${escapeHtml(formatNumericValue(row.charges, 3))}</td>
+                    <td>${escapeHtml(formatChargeNegative(row.charges, 3))}</td>
                     <td>${escapeHtml(formatNumericValue(row.pnl, 3))}</td>
                 </tr>
             `;
         }).join("");
-        const totalCharges = sumNumeric(rows, "charges");
+        const totalCharges = sumCharges(rows);
         const totalPnl = sumNumeric(rows, "pnl");
         ids.closedPositionsBody.innerHTML = `${closedRowsHtml}
             <tr class="rolling-demo-total-row">
                 <td colspan="10">Total</td>
-                <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalCharges, 3))}</td>
+                <td class="rolling-demo-total-value">${escapeHtml(formatChargeNegative(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
             </tr>
         `;
+        updateTotalChargesMetric(rows);
+        updateTotalPnlMetric(gLatestOpenPositions);
     }
 
     function renderEvents(rows) {
@@ -879,6 +971,13 @@
         }
     });
 
+    ids.expiryMode2?.addEventListener("change", function () {
+        applyExpiryModeDefaults();
+        if (gHasLoadedProfile) {
+            queueProfileSave();
+        }
+    });
+
     ids.renkoFeedEnabled?.addEventListener("change", function () {
         updateRenkoFeedVisualState();
         queueProfileSave();
@@ -968,13 +1067,27 @@
 
     ids.updateGreenRulesButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/rules/update`, {
-            color: "G"
+            color: "G",
+            ruleSet: 1
+        });
+    });
+    ids.updateGreenRulesButton2?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/rules/update`, {
+            color: "G",
+            ruleSet: 2
         });
     });
 
     ids.updateRedRulesButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/rules/update`, {
-            color: "R"
+            color: "R",
+            ruleSet: 1
+        });
+    });
+    ids.updateRedRulesButton2?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/rules/update`, {
+            color: "R",
+            ruleSet: 2
         });
     });
 
@@ -1026,17 +1139,29 @@
         ids.legSide1,
         ids.expiryDate1,
         ids.manualOptQty1,
-        ids.newDelta1,
         ids.reDelta1,
         ids.redTpPct,
         ids.redSlPct,
         ids.reEnter1,
+        ids.action2,
+        ids.legSide2,
+        ids.expiryMode2,
+        ids.expiryDate2,
+        ids.manualOptQty2,
+        ids.reEnter2,
+        ids.greenOptQty2,
+        ids.greenReDelta2,
+        ids.greenTpPct2,
+        ids.greenSlPct2,
+        ids.redOptQty2,
+        ids.redReDelta2,
+        ids.redTpPct2,
+        ids.redSlPct2,
         ids.redOptQty,
         ids.greenOptQty,
         ids.greenReDelta,
         ids.greenTpPct,
         ids.greenSlPct,
-        ids.addOneLotFuture,
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
         ids.demoBalance,

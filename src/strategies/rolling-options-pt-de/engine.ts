@@ -7,6 +7,7 @@ import type {
 
 const gFutureBrokeragePct = 0.05;
 const gOptionBrokeragePct = 0.01;
+const gOptionPremiumCapPct = 3.5;
 const gBrokerageGstMultiplier = 1.18;
 
 function clampNumber(pValue: number, pMin: number, pMax: number): number {
@@ -272,11 +273,26 @@ export function estimatePositionCharges(
     pInstrumentType: "OPTION" | "FUTURE",
     pQty: number,
     pLotSize: number,
-    pPrice: number
+    pPrice: number,
+    pSpotPrice?: number
 ): number {
-    const vQty = Math.max(1, Number(pQty || 1));
+    const vQty = Math.max(0, Number(pQty || 0));
+    if (!(vQty > 0)) {
+        return 0;
+    }
     const vLotSize = Math.max(0, Number(pLotSize || 0));
     const vPrice = Math.max(0, Number(pPrice || 0));
+    const vSpot = Math.max(0, Number(pSpotPrice || 0));
+
+    if (pInstrumentType === "OPTION" && vSpot > 0) {
+        const vNotional = vQty * vLotSize * vSpot;
+        const vTradingFee = (vNotional * gOptionBrokeragePct) / 100;
+        const vPremiumNotional = vQty * vLotSize * vPrice;
+        const vPremiumCap = (vPremiumNotional * gOptionPremiumCapPct) / 100;
+        const vEffectiveFee = Math.min(vTradingFee, vPremiumCap);
+        return Number((vEffectiveFee * gBrokerageGstMultiplier).toFixed(4));
+    }
+
     const vNotional = vQty * vLotSize * vPrice;
     const vBrokeragePct = pInstrumentType === "FUTURE" ? gFutureBrokeragePct : gOptionBrokeragePct;
     return Number((((vNotional * vBrokeragePct) / 100) * gBrokerageGstMultiplier).toFixed(4));
