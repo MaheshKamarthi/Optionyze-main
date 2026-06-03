@@ -1239,65 +1239,7 @@ export class RollingOptionsStrangleService {
         const vCloseReason = pReason === "sl" ? "SL triggered" : "TP triggered";
 
         await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
-        if (!bTriggeredActionEnabled) {
-            return;
-        }
-
-        const vReplacementQty = Math.max(0, Math.floor(Number(pPosition.qty || 0)));
-        if (!(vReplacementQty > 0)) {
-            return;
-        }
-
-        const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
-        const vBaseQty = objSummary.futureQty;
-
-        const readRuleSetQty = (pRuleSet: 1 | 2): number => {
-            if (pRuleSet !== 2) {
-                return 0;
-            }
-            const vRaw = vActiveRuleColor === "G"
-                ? Number((objUiState as any).greenOptQty2)
-                : Number((objUiState as any).redOptQty2);
-            return Number.isFinite(vRaw) ? Math.max(0, Math.floor(vRaw)) : 0;
-        };
-
-        const computeQty = (pCfg: RollingOptionsPtDeConfig, pRuleSet: 1 | 2): number => {
-            if (pRuleSet === 2) {
-                return readRuleSetQty(2);
-            }
-            if (!bFuturesEnabled) {
-                return vActiveRuleColor === "G"
-                    ? Math.max(0, Math.floor(Number(pCfg.greenOptionQty ?? 1)))
-                    : Math.max(0, Math.floor(Number(pCfg.redOptionQty ?? 1)));
-            }
-            return vActiveRuleColor === "G"
-                ? (pCfg.greenOptionQty !== undefined
-                    ? Math.max(0, Math.floor(Number(pCfg.greenOptionQty || 0)))
-                    : (vBaseQty > 0 ? this.getRenkoOptionQty(vBaseQty, pCfg.greenOptionQtyPct) : 1))
-                : (pCfg.redOptionQty !== undefined
-                    ? Math.max(0, Math.floor(Number(pCfg.redOptionQty || 0)))
-                    : (vBaseQty > 0 ? this.getRenkoOptionQty(vBaseQty, pCfg.redOptionQtyPct) : 1));
-        };
-
-        const vConfiguredQty = computeQty(objTriggeredConfig, vTriggeredRuleSet);
-        const vQty = Math.min(vReplacementQty, vConfiguredQty > 0 ? vConfiguredQty : vReplacementQty);
-        if (!(vQty > 0)) {
-            return;
-        }
-
-        const vSide = String(pPosition.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
-        await this.openOptionPositions(
-            pUserId,
-            objTriggeredConfig,
-            vQty,
-            pReason === "sl"
-                ? `SL replacement option (Action ${vTriggeredRuleSet})`
-                : `TP replacement option (Action ${vTriggeredRuleSet})`,
-            vActiveRuleColor === "G" ? "G" : "R",
-            true,
-            vTriggeredRuleSet,
-            [vSide]
-        );
+        return;
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {

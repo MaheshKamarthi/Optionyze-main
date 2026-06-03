@@ -50,8 +50,11 @@ export function getPostgresPool(): Pool {
         return gPool;
     }
 
+    const vConnectTimeoutMsRaw = Number(process.env.PG_CONNECT_TIMEOUT_MS || process.env.PGCONNECT_TIMEOUT_MS || 5000);
+    const vConnectTimeoutMs = Number.isFinite(vConnectTimeoutMsRaw) ? Math.max(1000, Math.floor(vConnectTimeoutMsRaw)) : 5000;
     gPool = new Pool({
         connectionString: process.env.DATABASE_URL,
+        connectionTimeoutMillis: vConnectTimeoutMs,
         ssl: process.env.PGSSLMODE === "disable"
             ? false
             : { rejectUnauthorized: false }
@@ -608,4 +611,3 @@ export async function ensurePostgresSchema(): Promise<void> {
         ON optionyze_sessions(expires_at);
     `);
 }
-
