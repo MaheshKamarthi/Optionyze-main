@@ -1021,17 +1021,26 @@ export class RollingOptionsStrangleService {
         const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
         const bAction1Enabled = String(objUiState.action1 || "sell").trim().toLowerCase() !== "none";
         const bAction2Enabled = String(objUiState.action2 || "none").trim().toLowerCase() !== "none";
+        const objOpenOptions = objOpenPositions.filter((objRow) => objRow.instrumentType === "OPTION" && objRow.status === "OPEN");
+        const objOpenOptions1 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) !== 2);
+        const objOpenOptions2 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === 2);
 
-        if (objSummary.hasOpenOption) {
+        const bHasSingleLeg1 = objOpenOptions1.length === 1;
+        const bHasSingleLeg2 = objOpenOptions2.length === 1;
+
+        if (!(bHasSingleLeg1 || bHasSingleLeg2)) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
                 title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because an option position is already open.`,
+                message: `Skipped ${vColorLabel} Renko option entry because exactly one open option leg was not found.`,
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_option_already_open"
+                    reason: "renko_option_skipped_requires_single_leg",
+                    openOptionLegs: objOpenOptions.length,
+                    openOptionLegsRuleSet1: objOpenOptions1.length,
+                    openOptionLegsRuleSet2: objOpenOptions2.length
                 }
             });
             return;
@@ -1093,26 +1102,38 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        if (vQty1 > 0) {
+        if (vQty1 > 0 && bAction1Enabled && bHasSingleLeg1) {
+            const objExisting = objOpenOptions1[0];
+            const vExistingQty = Math.max(0, Math.floor(Number(objExisting.qty || 0)));
+            const vQty = vExistingQty > 0 ? vExistingQty : vQty1;
+            const vExistingSide = String(objExisting.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const vMissingSide = vExistingSide === "PE" ? "CE" : "PE";
             await this.openOptionPositions(
                 pUserId,
                 objConfig1,
-                vQty1,
-                pColorCode === "R" ? "Renko RED option entry (Action 1)" : "Renko GREEN option entry (Action 1)",
+                vQty,
+                pColorCode === "R" ? "Renko RED option entry (Action 1 - Missing leg)" : "Renko GREEN option entry (Action 1 - Missing leg)",
                 pColorCode,
                 false,
-                1
+                1,
+                [vMissingSide]
             );
         }
-        if (vQty2 > 0) {
+        if (vQty2 > 0 && bAction2Enabled && bHasSingleLeg2) {
+            const objExisting = objOpenOptions2[0];
+            const vExistingQty = Math.max(0, Math.floor(Number(objExisting.qty || 0)));
+            const vQty = vExistingQty > 0 ? vExistingQty : vQty2;
+            const vExistingSide = String(objExisting.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const vMissingSide = vExistingSide === "PE" ? "CE" : "PE";
             await this.openOptionPositions(
                 pUserId,
                 objConfig2,
-                vQty2,
-                pColorCode === "R" ? "Renko RED option entry (Action 2)" : "Renko GREEN option entry (Action 2)",
+                vQty,
+                pColorCode === "R" ? "Renko RED option entry (Action 2 - Missing leg)" : "Renko GREEN option entry (Action 2 - Missing leg)",
                 pColorCode,
                 false,
-                2
+                2,
+                [vMissingSide]
             );
         }
     }

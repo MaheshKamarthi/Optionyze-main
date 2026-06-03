@@ -473,13 +473,24 @@ async function updateRuntimeFromUiState(
 async function closeOpenPositionsByInstrument(
     pUserId: string,
     pInstrumentType: "OPTION" | "FUTURE" | "ALL",
-    pReason: string
+    pReason: string,
+    pRuleSet: 1 | 2 | null = null
 ): Promise<RollingOptionsPtDePositionRecord[]> {
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
     const objUiState = await getMergedUiState(pUserId);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const objTargetPositions = objOpenPositions.filter((objPosition) => {
-        return pInstrumentType === "ALL" || objPosition.instrumentType === pInstrumentType;
+        if (!(pInstrumentType === "ALL" || objPosition.instrumentType === pInstrumentType)) {
+            return false;
+        }
+        if (pRuleSet === null) {
+            return true;
+        }
+        if (objPosition.instrumentType !== "OPTION") {
+            return true;
+        }
+        const vRuleSet = Math.max(1, Math.min(2, Math.floor(Number((objPosition.metadata as any)?.ruleSet ?? 1))));
+        return vRuleSet === pRuleSet;
     });
 
     const objClosedPositions: RollingOptionsPtDePositionRecord[] = [];
@@ -864,6 +875,8 @@ export async function executeRollingOptionsStrangleManualFuture(req: Request, re
 export async function executeRollingOptionsStrangleManualOption(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
+    const vRequestedRuleSet = String(req.body?.ruleSet || "").trim();
+    const vRuleSetFilter: 1 | 2 | null = vRequestedRuleSet === "2" ? 2 : (vRequestedRuleSet === "1" ? 1 : null);
     const vSymbol = String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
     const vLotSize = getLotSizeForSymbol(vSymbol);
     const vExpiryDate = String(objUiState.expiryDate1 || "");
@@ -883,7 +896,7 @@ export async function executeRollingOptionsStrangleManualOption(req: Request, re
     }> = [];
 
     const vAction1 = String(objUiState.action1 || "sell").trim().toUpperCase();
-    if (vAction1 !== "NONE") {
+    if ((vRuleSetFilter === null || vRuleSetFilter === 1) && vAction1 !== "NONE") {
         const vLegSide1 = String(objUiState.legSide1 || "ce").trim().toUpperCase();
         const vQty1 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty1, 1)));
         const vSides1: Array<"CE" | "PE"> = vLegSide1 === "BOTH" ? ["CE", "PE"] : [vLegSide1 === "PE" ? "PE" : "CE"];
@@ -904,7 +917,7 @@ export async function executeRollingOptionsStrangleManualOption(req: Request, re
     }
 
     const vAction2 = String(objUiState.action2 || "none").trim().toUpperCase();
-    if (vAction2 !== "NONE") {
+    if ((vRuleSetFilter === null || vRuleSetFilter === 2) && vAction2 !== "NONE") {
         const vLegSide2 = String(objUiState.legSide2 || "pe").trim().toUpperCase();
         const vQty2 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty2, 1)));
         const vSides2: Array<"CE" | "PE"> = vLegSide2 === "BOTH" ? ["CE", "PE"] : [vLegSide2 === "PE" ? "PE" : "CE"];
@@ -1185,10 +1198,13 @@ export async function exitRollingOptionsStrangleManualPositions(req: Request, re
     const vInstrumentType = vInstrumentParam === "OPTION" || vInstrumentParam === "FUTURE"
         ? vInstrumentParam
         : "ALL";
+    const vRequestedRuleSet = String(req.body?.ruleSet || "").trim();
+    const vRuleSetFilter: 1 | 2 | null = vRequestedRuleSet === "2" ? 2 : (vRequestedRuleSet === "1" ? 1 : null);
     const objClosedPositions = await closeOpenPositionsByInstrument(
         vUserId,
         vInstrumentType,
-        `Manual exit ${vInstrumentType.toLowerCase()}`
+        `Manual exit ${vInstrumentType.toLowerCase()}`,
+        vRuleSetFilter
     );
     const objRuntime = await updateRuntimeFromUiState(vUserId, {
         status: "stopped",

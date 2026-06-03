@@ -73,7 +73,9 @@
         updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
         updateRedRulesButton2: document.getElementById("btnRollingDemoUpdateRedRules2"),
         openOptionButton: document.getElementById("btnRollingDemoOpenOption"),
+        openOptionButton2: document.getElementById("btnRollingDemoOpenOption2"),
         exitOptionButton: document.getElementById("btnRollingDemoExitOption"),
+        exitOptionButton2: document.getElementById("btnRollingDemoExitOption2"),
         clearOpenPositionsButton: document.getElementById("btnRollingDemoClearOpenPositions"),
         killSwitchButton: document.getElementById("btnRollingDemoKillSwitch"),
         clearClosedPositionsButton: document.getElementById("btnRollingDemoClearClosedPositions"),
@@ -1107,7 +1109,10 @@
     });
 
     ids.openOptionButton?.addEventListener("click", function () {
-        void runServerAction(`${apiBase}/manual/option`);
+        void runServerAction(`${apiBase}/manual/option`, { ruleSet: 1 });
+    });
+    ids.openOptionButton2?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/manual/option`, { ruleSet: 2 });
     });
 
     ids.execStrategyButton?.addEventListener("click", function () {
@@ -1142,7 +1147,14 @@
 
     ids.exitOptionButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/manual/exit`, {
-            instrumentType: "OPTION"
+            instrumentType: "OPTION",
+            ruleSet: 1
+        });
+    });
+    ids.exitOptionButton2?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/manual/exit`, {
+            instrumentType: "OPTION",
+            ruleSet: 2
         });
     });
 
