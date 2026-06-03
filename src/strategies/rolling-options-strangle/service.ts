@@ -1025,37 +1025,16 @@ export class RollingOptionsStrangleService {
         const objOpenOptions1 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) !== 2);
         const objOpenOptions2 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === 2);
 
-        const bHasSingleLeg1 = objOpenOptions1.length === 1;
-        const bHasSingleLeg2 = objOpenOptions2.length === 1;
-
-        if (!(bHasSingleLeg1 || bHasSingleLeg2)) {
+        if (objOpenOptions.length <= 0) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
                 title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because exactly one open option leg was not found.`,
+                message: `Skipped ${vColorLabel} Renko option entry because no open option leg is running.`,
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_requires_single_leg",
-                    openOptionLegs: objOpenOptions.length,
-                    openOptionLegsRuleSet1: objOpenOptions1.length,
-                    openOptionLegsRuleSet2: objOpenOptions2.length
-                }
-            });
-            return;
-        }
-
-        if (objSummary.futureQty <= 0) {
-            await logRollingOptionsPtDeEvent({
-                userId: pUserId,
-                eventType: "manual_action",
-                severity: "info",
-                title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because no futures position is open.`,
-                payload: {
-                    symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_no_open_future"
+                    reason: "renko_option_skipped_no_open_option_leg"
                 }
             });
             return;
@@ -1075,66 +1054,94 @@ export class RollingOptionsStrangleService {
             if (pRuleSet === 2) {
                 return readRuleSetQty(2);
             }
-            return pColorCode === "R"
-                ? (pCfg.redOptionQty !== undefined
-                    ? Math.max(0, Math.floor(Number(pCfg.redOptionQty || 0)))
-                    : this.getRenkoOptionQty(objSummary.futureQty, pCfg.redOptionQtyPct))
-                : (pCfg.greenOptionQty !== undefined
-                    ? Math.max(0, Math.floor(Number(pCfg.greenOptionQty || 0)))
-                    : this.getRenkoOptionQty(objSummary.futureQty, pCfg.greenOptionQtyPct));
+            const vExplicitQty = pColorCode === "R"
+                ? Number(pCfg.redOptionQty)
+                : Number(pCfg.greenOptionQty);
+            if (Number.isFinite(vExplicitQty)) {
+                return Math.max(0, Math.floor(vExplicitQty));
+            }
+            const vPctQty = pColorCode === "R"
+                ? this.getRenkoOptionQty(objSummary.futureQty, pCfg.redOptionQtyPct)
+                : this.getRenkoOptionQty(objSummary.futureQty, pCfg.greenOptionQtyPct);
+            return vPctQty > 0 ? vPctQty : 1;
         };
 
-        const vQty1 = bAction1Enabled ? computeQty(objConfig1, 1) : 0;
-        const vQty2 = bAction2Enabled ? computeQty(objConfig2, 2) : 0;
-        if (!(vQty1 > 0) && !(vQty2 > 0)) {
+        const bShouldOpen1 = bAction1Enabled && objOpenOptions1.length === 0;
+        const bShouldOpen2 = bAction2Enabled && objOpenOptions2.length === 0;
+        if (!bShouldOpen1 && !bShouldOpen2) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
                 title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because the configured qty is 0.`,
+                message: `Skipped ${vColorLabel} Renko option entry because an option position is already open for the enabled rule set(s).`,
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_zero_qty",
-                    renkoColor: pColorCode
+                    reason: "renko_option_skipped_option_already_open",
+                    openOptionLegsRuleSet1: objOpenOptions1.length,
+                    openOptionLegsRuleSet2: objOpenOptions2.length,
+                    action1Enabled: bAction1Enabled,
+                    action2Enabled: bAction2Enabled
                 }
             });
             return;
         }
 
-        if (vQty1 > 0 && bAction1Enabled && bHasSingleLeg1) {
-            const objExisting = objOpenOptions1[0];
-            const vExistingQty = Math.max(0, Math.floor(Number(objExisting.qty || 0)));
-            const vQty = vExistingQty > 0 ? vExistingQty : vQty1;
-            const vExistingSide = String(objExisting.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
-            const vMissingSide = vExistingSide === "PE" ? "CE" : "PE";
-            await this.openOptionPositions(
-                pUserId,
-                objConfig1,
-                vQty,
-                pColorCode === "R" ? "Renko RED option entry (Action 1 - Missing leg)" : "Renko GREEN option entry (Action 1 - Missing leg)",
-                pColorCode,
-                false,
-                1,
-                [vMissingSide]
-            );
+        if (bShouldOpen1) {
+            const vFallbackQty = computeQty(objConfig1, 1);
+            const vQty = vFallbackQty;
+            if (!(vQty > 0)) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "info",
+                    title: `Renko ${vColorLabel} Skipped`,
+                    message: `Skipped ${vColorLabel} Renko option entry for Action 1 because qty resolved to 0.`,
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "renko_option_skipped_zero_qty_action_1"
+                    }
+                });
+            }
+            else {
+                await this.openOptionPositions(
+                    pUserId,
+                    objConfig1,
+                    vQty,
+                    pColorCode === "R" ? "Renko RED option entry (Action 1)" : "Renko GREEN option entry (Action 1)",
+                    pColorCode,
+                    false,
+                    1
+                );
+            }
         }
-        if (vQty2 > 0 && bAction2Enabled && bHasSingleLeg2) {
-            const objExisting = objOpenOptions2[0];
-            const vExistingQty = Math.max(0, Math.floor(Number(objExisting.qty || 0)));
-            const vQty = vExistingQty > 0 ? vExistingQty : vQty2;
-            const vExistingSide = String(objExisting.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
-            const vMissingSide = vExistingSide === "PE" ? "CE" : "PE";
-            await this.openOptionPositions(
-                pUserId,
-                objConfig2,
-                vQty,
-                pColorCode === "R" ? "Renko RED option entry (Action 2 - Missing leg)" : "Renko GREEN option entry (Action 2 - Missing leg)",
-                pColorCode,
-                false,
-                2,
-                [vMissingSide]
-            );
+        if (bShouldOpen2) {
+            const vFallbackQty = computeQty(objConfig2, 2);
+            const vQty = vFallbackQty;
+            if (!(vQty > 0)) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "info",
+                    title: `Renko ${vColorLabel} Skipped`,
+                    message: `Skipped ${vColorLabel} Renko option entry for Action 2 because qty resolved to 0.`,
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "renko_option_skipped_zero_qty_action_2"
+                    }
+                });
+            }
+            else {
+                await this.openOptionPositions(
+                    pUserId,
+                    objConfig2,
+                    vQty,
+                    pColorCode === "R" ? "Renko RED option entry (Action 2)" : "Renko GREEN option entry (Action 2)",
+                    pColorCode,
+                    false,
+                    2
+                );
+            }
         }
     }
 
@@ -1143,6 +1150,7 @@ export class RollingOptionsStrangleService {
     }
 
     private async handleRenkoGreenFlow(pUserId: string, pConfig: RollingOptionsPtDeConfig): Promise<void> {
+        await this.handleRenkoOptionEntry(pUserId, pConfig, "G");
         const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
 
         if (objSummary.futureQty <= 0) {
