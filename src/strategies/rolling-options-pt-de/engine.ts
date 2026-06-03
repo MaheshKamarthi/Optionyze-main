@@ -154,7 +154,8 @@ export function updateRenkoState(
         return objSignals;
     }
 
-    if (!Number.isFinite(Number(pEngineState.renko.anchor))) {
+    const vAnchor = pEngineState.renko.anchor;
+    if (vAnchor === null || !Number.isFinite(vAnchor)) {
         pEngineState.renko.anchor = Math.floor(vPrice / vStep) * vStep;
         pEngineState.renko.lastDir = 0;
         pEngineState.renko.lastColor = "";
@@ -164,7 +165,7 @@ export function updateRenkoState(
     const objBuild = getStandardBricks(
         vPrice,
         vStep,
-        Number(pEngineState.renko.anchor),
+        vAnchor,
         pEngineState.renko.lastDir
     );
 
