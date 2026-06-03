@@ -26,6 +26,10 @@
         greenReDelta: document.getElementById("txtReGreenDCoveredCall"),
         greenTpPct: document.getElementById("txtReGreenTPCoveredCall"),
         greenSlPct: document.getElementById("txtReGreenSLCoveredCall"),
+        trailGreenTp1Enabled: document.getElementById("chkRollingDemoTrailGreenTp1Enabled"),
+        trailGreenSl1Enabled: document.getElementById("chkRollingDemoTrailGreenSl1Enabled"),
+        trailRedTp1Enabled: document.getElementById("chkRollingDemoTrailRedTp1Enabled"),
+        trailRedSl1Enabled: document.getElementById("chkRollingDemoTrailRedSl1Enabled"),
         greenOptQty2: document.getElementById("txtGreenOptQtyCoveredCall2"),
         greenReDelta2: document.getElementById("txtReGreenDCoveredCall2"),
         greenTpPct2: document.getElementById("txtReGreenTPCoveredCall2"),
@@ -34,6 +38,10 @@
         redReDelta2: document.getElementById("txtReRedDCoveredCall2"),
         redTpPct2: document.getElementById("txtRedTPCoveredCall2"),
         redSlPct2: document.getElementById("txtRedSLCoveredCall2"),
+        trailGreenTp2Enabled: document.getElementById("chkRollingDemoTrailGreenTp2Enabled"),
+        trailGreenSl2Enabled: document.getElementById("chkRollingDemoTrailGreenSl2Enabled"),
+        trailRedTp2Enabled: document.getElementById("chkRollingDemoTrailRedTp2Enabled"),
+        trailRedSl2Enabled: document.getElementById("chkRollingDemoTrailRedSl2Enabled"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
@@ -464,11 +472,19 @@
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
             greenTpPct: parseNumberInput(ids.greenTpPct, 15),
             greenSlPct: parseNumberInput(ids.greenSlPct, 85),
+            trailGreenTp1Enabled: Boolean(ids.trailGreenTp1Enabled?.checked),
+            trailGreenSl1Enabled: Boolean(ids.trailGreenSl1Enabled?.checked),
+            trailRedTp1Enabled: Boolean(ids.trailRedTp1Enabled?.checked),
+            trailRedSl1Enabled: Boolean(ids.trailRedSl1Enabled?.checked),
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
             telegramAlertsEnabled: Boolean(ids.telegramAlertsEnabled?.checked),
+            trailGreenTp2Enabled: Boolean(ids.trailGreenTp2Enabled?.checked),
+            trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
+            trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
+            trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -528,12 +544,20 @@
         setFieldValue("greenReDelta", uiState.greenReDelta);
         setFieldValue("greenTpPct", uiState.greenTpPct ?? (Number.isFinite(Number(uiState.greenTpDelta)) ? Number(uiState.greenTpDelta) * 100 : ""));
         setFieldValue("greenSlPct", uiState.greenSlPct ?? (Number.isFinite(Number(uiState.greenSlDelta)) ? Number(uiState.greenSlDelta) * 100 : ""));
+        setFieldValue("trailGreenTp1Enabled", uiState.trailGreenTp1Enabled ?? true);
+        setFieldValue("trailGreenSl1Enabled", uiState.trailGreenSl1Enabled ?? true);
+        setFieldValue("trailRedTp1Enabled", uiState.trailRedTp1Enabled ?? true);
+        setFieldValue("trailRedSl1Enabled", uiState.trailRedSl1Enabled ?? true);
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("demoBalance", uiState.demoBalance);
         setFieldValue("optionsPnl", uiState.optionsPnl);
         setFieldValue("telegramAlertsEnabled", uiState.telegramAlertsEnabled);
+        setFieldValue("trailGreenTp2Enabled", uiState.trailGreenTp2Enabled ?? true);
+        setFieldValue("trailGreenSl2Enabled", uiState.trailGreenSl2Enabled ?? true);
+        setFieldValue("trailRedTp2Enabled", uiState.trailRedTp2Enabled ?? true);
+        setFieldValue("trailRedSl2Enabled", uiState.trailRedSl2Enabled ?? true);
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -993,6 +1017,32 @@
 
     ids.demoBalance?.addEventListener("input", function () {
         updateBalanceMetrics(gLatestOpenPositions);
+    });
+
+    ids.trailGreenTp1Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailGreenSl1Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailRedTp1Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailRedSl1Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+
+    ids.trailGreenTp2Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailGreenSl2Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailRedTp2Enabled?.addEventListener("change", function () {
+        queueProfileSave();
+    });
+    ids.trailRedSl2Enabled?.addEventListener("change", function () {
+        queueProfileSave();
     });
 
     ids.renkoFeedPts?.addEventListener("change", function () {

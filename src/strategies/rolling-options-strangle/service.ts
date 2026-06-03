@@ -65,7 +65,15 @@ export class RollingOptionsStrangleService {
             greenSlPct: 85,
             redTpPct: 15,
             redSlPct: 85,
+            trailGreenTp1Enabled: true,
+            trailGreenSl1Enabled: true,
+            trailRedTp1Enabled: true,
+            trailRedSl1Enabled: true,
             renkoFeedEnabled: true,
+            trailGreenTp2Enabled: true,
+            trailGreenSl2Enabled: true,
+            trailRedTp2Enabled: true,
+            trailRedSl2Enabled: true,
             renkoFeedPts: 10,
             renkoFeedPriceSrc: "spot_price",
             action2: "none",
@@ -1314,6 +1322,14 @@ export class RollingOptionsStrangleService {
 
             const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
             const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
+            const bTrailGreenTp1Enabled = Boolean((objUiState as any).trailGreenTp1Enabled ?? true);
+            const bTrailGreenSl1Enabled = Boolean((objUiState as any).trailGreenSl1Enabled ?? true);
+            const bTrailRedTp1Enabled = Boolean((objUiState as any).trailRedTp1Enabled ?? true);
+            const bTrailRedSl1Enabled = Boolean((objUiState as any).trailRedSl1Enabled ?? true);
+            const bTrailGreenTp2Enabled = Boolean((objUiState as any).trailGreenTp2Enabled ?? true);
+            const bTrailGreenSl2Enabled = Boolean((objUiState as any).trailGreenSl2Enabled ?? true);
+            const bTrailRedTp2Enabled = Boolean((objUiState as any).trailRedTp2Enabled ?? true);
+            const bTrailRedSl2Enabled = Boolean((objUiState as any).trailRedSl2Enabled ?? true);
 
             for (const objPosition of objOpenFutures) {
                 await saveRollingOptionsPtDePosition({
@@ -1344,23 +1360,35 @@ export class RollingOptionsStrangleService {
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
 
                 if ((vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
-                    const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
-                    const vPrevBest = Number(objNextMeta.trailBestDelta);
-                    const vBestDelta = Number.isFinite(vPrevBest)
-                        ? (vAction === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
-                        : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
+                    const bTrailSlEnabled = vRuleSet === 2
+                        ? (vRuleColor === "G" ? bTrailGreenSl2Enabled : (vRuleColor === "R" ? bTrailRedSl2Enabled : false))
+                        : (vRuleColor === "G" ? bTrailGreenSl1Enabled : (vRuleColor === "R" ? bTrailRedSl1Enabled : false));
+                    const bTrailTpEnabled = vRuleSet === 2
+                        ? (vRuleColor === "G" ? bTrailGreenTp2Enabled : (vRuleColor === "R" ? bTrailRedTp2Enabled : false))
+                        : (vRuleColor === "G" ? bTrailGreenTp1Enabled : (vRuleColor === "R" ? bTrailRedTp1Enabled : false));
 
-                    if (Number.isFinite(vSlMove) && vSlMove > 0) {
-                        const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
-                        const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
-                        const vNextSl = vAction === "BUY"
-                            ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
-                            : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
-                        objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
-                        objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                    const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
+
+                    if (bTrailSlEnabled) {
+                        const vPrevBest = Number(objNextMeta.trailBestDelta);
+                        const vBestDelta = Number.isFinite(vPrevBest)
+                            ? (vAction === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
+                            : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
+
+                        if (Number.isFinite(vSlMove) && vSlMove > 0) {
+                            const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
+                            const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
+                            const vNextSl = vAction === "BUY"
+                                ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
+                                : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
+                            objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
+                            objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                        }
+
+                        objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
                     }
 
-                    if (vRuleColor === "G" && vAction === "SELL" && Number.isFinite(vGreenTpMove) && vGreenTpMove > 0) {
+                    if (bTrailTpEnabled && vRuleColor === "G" && vAction === "SELL" && Number.isFinite(vGreenTpMove) && vGreenTpMove > 0) {
                         const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
                         const vPeakDelta = Number.isFinite(vPrevPeak)
                             ? Math.max(vPrevPeak, vCurrentDelta)
@@ -1375,7 +1403,7 @@ export class RollingOptionsStrangleService {
                         objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
                     }
 
-                    if (vRuleColor === "R" && vAction === "SELL" && Number.isFinite(vRedTpMove) && vRedTpMove > 0) {
+                    if (bTrailTpEnabled && vRuleColor === "R" && vAction === "SELL" && Number.isFinite(vRedTpMove) && vRedTpMove > 0) {
                         const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
                         const vPeakDelta = Number.isFinite(vPrevPeak)
                             ? Math.max(vPrevPeak, vCurrentDelta)
@@ -1389,8 +1417,6 @@ export class RollingOptionsStrangleService {
                         objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
                         objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
                     }
-
-                    objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
                 }
 
                 await saveRollingOptionsPtDePosition({
