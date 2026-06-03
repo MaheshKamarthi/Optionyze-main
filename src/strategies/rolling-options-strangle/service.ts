@@ -259,12 +259,42 @@ export class RollingOptionsStrangleService {
 
     private async getMarketSnapshot(pState: RollingOptionsPtDeEngineState, pConfig: RollingOptionsPtDeConfig): Promise<RollingOptionsPtDeMarketSnapshot> {
         ensureLiveTickerSymbols([pConfig.contractName]);
-        try {
-            return await getLiveMarketSnapshot(pConfig);
+        let objLastError: unknown = null;
+        for (let vAttempt = 0; vAttempt < 3; vAttempt += 1) {
+            try {
+                return await getLiveMarketSnapshot(pConfig);
+            }
+            catch (objError) {
+                objLastError = objError;
+                if (vAttempt < 2) {
+                    await new Promise<void>((resolve) => {
+                        setTimeout(resolve, 250 * (vAttempt + 1));
+                    });
+                }
+            }
         }
-        catch (_objError) {
-            return this.getSimulatedSnapshot(pState, pConfig);
+
+        const vSpot = Number(pState.market.lastSpotPrice ?? NaN);
+        const vFutures = Number(pState.market.lastFuturesPrice ?? NaN);
+        const vFallbackSpot = Number.isFinite(vSpot) && vSpot > 0 ? vSpot : (Number.isFinite(vFutures) && vFutures > 0 ? vFutures : 0);
+        const vFallbackFutures = Number.isFinite(vFutures) && vFutures > 0 ? vFutures : vFallbackSpot;
+        if (vFallbackSpot > 0 && vFallbackFutures > 0) {
+            return {
+                symbol: pConfig.symbol,
+                contractName: pConfig.contractName,
+                spotPrice: vFallbackSpot,
+                futuresPrice: vFallbackFutures,
+                bestBidPrice: vFallbackFutures,
+                bestAskPrice: vFallbackFutures,
+                priceSource: pState.market.lastSource,
+                ts: new Date().toISOString()
+            };
         }
+
+        if (pConfig.renkoEnabled) {
+            throw (objLastError instanceof Error ? objLastError : new Error("Unable to load live market snapshot."));
+        }
+        return this.getSimulatedSnapshot(pState, pConfig);
     }
 
     private async buildRuntimeRecord(
