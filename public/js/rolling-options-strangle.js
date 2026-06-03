@@ -274,8 +274,7 @@
             return;
         }
         const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
-        const vOpenPnl = Array.isArray(rows) ? sumNumeric(rows, "pnl") : 0;
-        const vGross = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0) + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0);
+        const vGross = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0);
         const vCharges = parseNumberInput(ids.totalCharges, 0);
         const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
         ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
