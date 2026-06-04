@@ -28,9 +28,22 @@ interface RollingOptionsPtDeEventRow {
 }
 
 const gEventsFile = path.resolve(process.cwd(), "data", "rolling-options-pt-de", "events.json");
-const gMaxEventsPerUser = 500;
-const gMaxAgeMs = 10 * 24 * 60 * 60 * 1000;
 const gDefaultStrategyCode = "rolling-options-pt-de";
+
+function readNumberEnv(pKey: string, pFallback: number): number {
+    const vRaw = String(process.env[pKey] ?? "").trim();
+    const vNum = Number(vRaw);
+    return Number.isFinite(vNum) ? vNum : pFallback;
+}
+
+function getMaxEventsPerUserStrategy(): number {
+    return Math.max(50, Math.min(5000, Math.floor(readNumberEnv("OPTIONYZE_EVENTS_MAX_PER_USER_STRATEGY", 500))));
+}
+
+function getMaxAgeMs(): number {
+    const vDays = Math.max(1, Math.min(365, Math.floor(readNumberEnv("OPTIONYZE_EVENTS_MAX_AGE_DAYS", 14))));
+    return vDays * 24 * 60 * 60 * 1000;
+}
 
 async function loadAllEventsJson(): Promise<RollingOptionsPtDeEventRecord[]> {
     return readJsonFile<RollingOptionsPtDeEventRecord[]>(gEventsFile, []);
@@ -96,7 +109,9 @@ export async function listRollingOptionsPtDeEvents(
 
 async function prunePostgresEvents(pUserId: string, pStrategyCode: string): Promise<void> {
     const objPool = getPostgresPool();
-    const vCutoff = new Date(Date.now() - gMaxAgeMs).toISOString();
+    const vMaxAgeMs = getMaxAgeMs();
+    const vMaxEvents = getMaxEventsPerUserStrategy();
+    const vCutoff = new Date(Date.now() - vMaxAgeMs).toISOString();
 
     await objPool.query(`
         DELETE FROM optionyze_rolling_options_pt_de_events
@@ -115,31 +130,33 @@ async function prunePostgresEvents(pUserId: string, pStrategyCode: string): Prom
             ORDER BY created_at DESC
             OFFSET $3
         )
-    `, [pUserId, pStrategyCode, gMaxEventsPerUser]);
+    `, [pUserId, pStrategyCode, vMaxEvents]);
 }
 
-async function pruneJsonEvents(pUserId: string, pStrategyCode: string): Promise<void> {
-    const vCutoffMs = Date.now() - gMaxAgeMs;
-    const objRows = await loadAllEventsJson();
-    const objKeptRows = objRows.filter((objRow) => {
-        if (objRow.userId !== pUserId || objRow.strategyCode !== pStrategyCode) {
-            return true;
-        }
-        return new Date(objRow.createdAt).getTime() >= vCutoffMs;
+function pruneJsonEvents(
+    pRows: RollingOptionsPtDeEventRecord[],
+    pUserId: string,
+    pStrategyCode: string
+): RollingOptionsPtDeEventRecord[] {
+    const vMaxAgeMs = getMaxAgeMs();
+    const vMaxEvents = getMaxEventsPerUserStrategy();
+    const vCutoffMs = Date.now() - vMaxAgeMs;
+
+    const objAgePruned = pRows.filter((objRow) => {
+        const vMs = new Date(objRow.createdAt).getTime();
+        return Number.isFinite(vMs) && vMs >= vCutoffMs;
     });
 
-    const objUserRows = objKeptRows
+    const objUserRows = objAgePruned
         .filter((objRow) => objRow.userId === pUserId && objRow.strategyCode === pStrategyCode)
         .sort((objA, objB) => String(objB.createdAt).localeCompare(String(objA.createdAt)));
-    const objAllowedEventIds = new Set(objUserRows.slice(0, gMaxEventsPerUser).map((objRow) => objRow.eventId));
-    const objFinalRows = objKeptRows.filter((objRow) => {
+    const objAllowedEventIds = new Set(objUserRows.slice(0, vMaxEvents).map((objRow) => objRow.eventId));
+    return objAgePruned.filter((objRow) => {
         if (objRow.userId !== pUserId || objRow.strategyCode !== pStrategyCode) {
             return true;
         }
         return objAllowedEventIds.has(objRow.eventId);
     });
-
-    await writeJsonFileAtomic(gEventsFile, objFinalRows);
 }
 
 export async function saveRollingOptionsEvent(
@@ -183,8 +200,8 @@ export async function saveRollingOptionsEvent(
 
     const objRows = await loadAllEventsJson();
     objRows.push(objEvent);
-    await writeJsonFileAtomic(gEventsFile, objRows);
-    await pruneJsonEvents(objEvent.userId, objEvent.strategyCode);
+    const objFinalRows = pruneJsonEvents(objRows, objEvent.userId, objEvent.strategyCode);
+    await writeJsonFileAtomic(gEventsFile, objFinalRows);
     return objEvent;
 }
 
