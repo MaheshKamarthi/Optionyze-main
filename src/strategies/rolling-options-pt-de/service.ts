@@ -1017,52 +1017,33 @@ export class RollingOptionsPtDeService {
                 ? updateRenkoState(objState, objSnapshot, objConfig)
                 : [];
 
+            if (objRenkoSignals.length > 0) {
+                const vLast = objRenkoSignals.at(-1) === "R" ? "R" : "G";
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "renko_change_detected",
+                    severity: "info",
+                    title: "Renko Change Detected",
+                    message: `Server detected ${objRenkoSignals.length} renko brick(s).`,
+                    payload: {
+                        symbol: objConfig.symbol,
+                        reason: "renko_bricks",
+                        renkoColor: vLast,
+                        bricks: objRenkoSignals.length
+                    }
+                });
+            }
+
             for (const vRenkoSignal of objRenkoSignals) {
                 if (!objState.running) {
                     break;
                 }
 
                 if (vRenkoSignal === "R") {
-                    await logRollingOptionsPtDeEvent({
-                        userId: pUserId,
-                        eventType: "renko_change_detected",
-                        severity: "info",
-                        title: "Renko Change Detected",
-                        message: "Server detected a RED renko brick.",
-                        payload: {
-                            symbol: objConfig.symbol,
-                            reason: "renko_red_brick",
-                            renkoColor: "R"
-                        }
-                    });
                     await this.handleRenkoRedFlow(pUserId, objConfig);
                     continue;
                 }
 
-                await logRollingOptionsPtDeEvent({
-                    userId: pUserId,
-                    eventType: "renko_change_detected",
-                    severity: "info",
-                    title: "Renko Change Detected",
-                    message: "Server detected a GREEN renko brick.",
-                    payload: {
-                        symbol: objConfig.symbol,
-                        reason: "renko_green_brick",
-                        renkoColor: "G"
-                    }
-                });
-
-                await logRollingOptionsPtDeEvent({
-                    userId: pUserId,
-                    eventType: "manual_action",
-                    severity: "info",
-                    title: "Renko Green Detected",
-                    message: "Server detected a GREEN renko brick.",
-                    payload: {
-                        symbol: objConfig.symbol,
-                        reason: "renko_green_brick"
-                    }
-                });
                 await this.handleRenkoGreenFlow(pUserId, objConfig);
             }
 

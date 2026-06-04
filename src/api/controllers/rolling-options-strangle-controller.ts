@@ -93,6 +93,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
         demoBalance: 10000,
+        closeAllLegsOnAnyClose: false,
         skipRenkoEntryNoOpenOptions: false,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
@@ -713,6 +714,11 @@ export async function closeRollingOptionsStrangleOpenPositionController(req: Req
         return;
     }
 
+    const objUiState = await getMergedUiState(vUserId);
+    if (Boolean((objUiState as any).closeAllLegsOnAnyClose)) {
+        await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+    }
+
     await logRollingOptionsPtDeEvent({
         userId: vUserId,
         eventType: "manual_action",
@@ -1243,6 +1249,7 @@ export async function exitRollingOptionsStrangleManualPositions(
     pService: RollingOptionsStrangleService
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
+    const objUiState = await getMergedUiState(vUserId);
     const vInstrumentParam = String(req.body?.instrumentType || "ALL").trim().toUpperCase();
     const vInstrumentType = vInstrumentParam === "OPTION" || vInstrumentParam === "FUTURE"
         ? vInstrumentParam
@@ -1259,6 +1266,9 @@ export async function exitRollingOptionsStrangleManualPositions(
         `Manual exit ${vInstrumentType.toLowerCase()}`,
         vRuleSetFilter
     );
+    if (vInstrumentType !== "ALL" && objClosedPositions.length > 0 && Boolean((objUiState as any).closeAllLegsOnAnyClose)) {
+        await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+    }
     const objRuntimeOverrides: Partial<RollingOptionsPtDeRuntimeRecord> = {
         status: "stopped",
         autoTraderEnabled: bKillSwitch && vInstrumentType === "ALL" ? false : undefined,

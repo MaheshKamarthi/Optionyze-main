@@ -80,6 +80,7 @@
         exitOptionButton2: document.getElementById("btnRollingDemoExitOption2"),
         clearOpenPositionsButton: document.getElementById("btnRollingDemoClearOpenPositions"),
         killSwitchButton: document.getElementById("btnRollingDemoKillSwitch"),
+        closeAllLegsOnAnyClose: document.getElementById("chkRollingDemoCloseAllLegsOnAnyClose"),
         skipRenkoEntryNoOpenOptions: document.getElementById("chkRollingDemoSkipRenkoEntryNoOpenOptions"),
         clearClosedPositionsButton: document.getElementById("btnRollingDemoClearClosedPositions"),
         telegramAlertsEnabled: document.getElementById("chkRollingDemoTelegramAlertsEnabled"),
@@ -530,6 +531,7 @@
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
             targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
+            closeAllLegsOnAnyClose: Boolean(ids.closeAllLegsOnAnyClose?.checked),
             skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             telegramAlertsEnabled: Boolean(ids.telegramAlertsEnabled?.checked),
             trailGreenTp2Enabled: Boolean(ids.trailGreenTp2Enabled?.checked),
@@ -604,6 +606,7 @@
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("demoBalance", uiState.demoBalance);
         setFieldValue("targetOpenPnl", uiState.targetOpenPnl ?? 0);
+        setFieldValue("closeAllLegsOnAnyClose", uiState.closeAllLegsOnAnyClose ?? false);
         setFieldValue("skipRenkoEntryNoOpenOptions", uiState.skipRenkoEntryNoOpenOptions ?? false);
         setFieldValue("optionsPnl", uiState.optionsPnl);
         setFieldValue("telegramAlertsEnabled", uiState.telegramAlertsEnabled);
@@ -1306,6 +1309,7 @@
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
         ids.demoBalance,
+        ids.closeAllLegsOnAnyClose,
         ids.skipRenkoEntryNoOpenOptions,
         ids.targetOpenPnl,
         ids.closedFromDate,

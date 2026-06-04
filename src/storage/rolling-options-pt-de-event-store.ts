@@ -29,6 +29,7 @@ interface RollingOptionsPtDeEventRow {
 
 const gEventsFile = path.resolve(process.cwd(), "data", "rolling-options-pt-de", "events.json");
 const gDefaultStrategyCode = "rolling-options-pt-de";
+const gLastLoggedAtByKey = new Map<string, number>();
 
 function readNumberEnv(pKey: string, pFallback: number): number {
     const vRaw = String(process.env[pKey] ?? "").trim();
@@ -43,6 +44,115 @@ function getMaxEventsPerUserStrategy(): number {
 function getMaxAgeMs(): number {
     const vDays = Math.max(1, Math.min(365, Math.floor(readNumberEnv("OPTIONYZE_EVENTS_MAX_AGE_DAYS", 14))));
     return vDays * 24 * 60 * 60 * 1000;
+}
+
+function getDedupeWindowMs(): number {
+    const vSeconds = Math.max(0, Math.min(24 * 60 * 60, Math.floor(readNumberEnv("OPTIONYZE_EVENTS_DEDUP_WINDOW_SECONDS", 60))));
+    return vSeconds * 1000;
+}
+
+function shouldDedupeEvent(pEvent: RollingOptionsPtDeEventRecord): boolean {
+    const vReason = String(pEvent.payload?.reason || "").trim();
+    return vReason.includes("renko_") && vReason.includes("skipped");
+}
+
+function getDedupeKey(pEvent: RollingOptionsPtDeEventRecord): string {
+    const vReason = String(pEvent.payload?.reason || "").trim();
+    const vTitle = String(pEvent.title || "").trim().toUpperCase();
+    if (vTitle.includes("RENKO") && vTitle.includes("SKIPPED") && vTitle.includes("RED")) {
+        return [
+            pEvent.userId,
+            pEvent.strategyCode,
+            pEvent.eventType,
+            "RENKO_RED_SKIPPED"
+        ].join("|");
+    }
+    if (vTitle.includes("RENKO") && vTitle.includes("SKIPPED") && vTitle.includes("GREEN")) {
+        return [
+            pEvent.userId,
+            pEvent.strategyCode,
+            pEvent.eventType,
+            "RENKO_GREEN_SKIPPED"
+        ].join("|");
+    }
+    return [
+        pEvent.userId,
+        pEvent.strategyCode,
+        pEvent.eventType,
+        pEvent.title,
+        vReason
+    ].join("|");
+}
+
+function getRenkoSkippedColorFromTitle(pTitle: string): "RED" | "GREEN" | null {
+    const vTitle = String(pTitle || "").trim().toUpperCase();
+    if (!vTitle.includes("RENKO") || !vTitle.includes("SKIPPED")) {
+        return null;
+    }
+    if (vTitle.includes("RED")) {
+        return "RED";
+    }
+    if (vTitle.includes("GREEN")) {
+        return "GREEN";
+    }
+    return null;
+}
+
+async function isDuplicateWithinWindow(pEvent: RollingOptionsPtDeEventRecord): Promise<boolean> {
+    const vWindowMs = getDedupeWindowMs();
+    if (!(vWindowMs > 0)) {
+        return false;
+    }
+    if (!shouldDedupeEvent(pEvent)) {
+        return false;
+    }
+
+    const vNow = Date.now();
+    const vKey = getDedupeKey(pEvent);
+    const vLast = gLastLoggedAtByKey.get(vKey);
+    if (vLast !== undefined && (vNow - vLast) < vWindowMs) {
+        return true;
+    }
+    gLastLoggedAtByKey.set(vKey, vNow);
+
+    const vColor = getRenkoSkippedColorFromTitle(pEvent.title);
+    if (!vColor) {
+        return false;
+    }
+
+    const vCutoffIso = new Date(Date.now() - vWindowMs).toISOString();
+    if (isPostgresConfigured()) {
+        const objPool = getPostgresPool();
+        const objResult = await objPool.query<{ exists: number }>(`
+            SELECT 1 AS exists
+            FROM optionyze_rolling_options_pt_de_events
+            WHERE user_id = $1
+              AND strategy_code = $2
+              AND created_at >= $3::timestamptz
+              AND title ILIKE '%renko%'
+              AND title ILIKE '%skipped%'
+              AND title ILIKE $4
+            LIMIT 1
+        `, [pEvent.userId, pEvent.strategyCode, vCutoffIso, vColor === "RED" ? "%red%" : "%green%"]);
+        return objResult.rows.length > 0;
+    }
+
+    const objRows = await loadAllEventsJson();
+    const vCutoffMs = Date.now() - vWindowMs;
+    return objRows.some((objRow) => {
+        if (objRow.userId !== pEvent.userId || objRow.strategyCode !== pEvent.strategyCode) {
+            return false;
+        }
+        const vMs = new Date(objRow.createdAt).getTime();
+        if (!Number.isFinite(vMs) || vMs < vCutoffMs) {
+            return false;
+        }
+        const vRowTitle = String(objRow.title || "").trim().toUpperCase();
+        if (!vRowTitle.includes("RENKO") || !vRowTitle.includes("SKIPPED")) {
+            return false;
+        }
+        return vColor === "RED" ? vRowTitle.includes("RED") : vRowTitle.includes("GREEN");
+    });
 }
 
 async function loadAllEventsJson(): Promise<RollingOptionsPtDeEventRecord[]> {
@@ -167,6 +277,10 @@ export async function saveRollingOptionsEvent(
         createdAt: new Date().toISOString(),
         ...pEvent
     };
+
+    if (await isDuplicateWithinWindow(objEvent)) {
+        return objEvent;
+    }
 
     if (isPostgresConfigured()) {
         const objPool = getPostgresPool();
