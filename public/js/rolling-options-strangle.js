@@ -288,6 +288,24 @@
         ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
     }
 
+    function getNetTotalPnlValue() {
+        const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
+        const vCharges = parseNumberInput(ids.totalCharges, 0);
+        const vNet = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0) + (Number.isFinite(vCharges) ? vCharges : 0);
+        return Number.isFinite(vNet) ? vNet : 0;
+    }
+
+    function updateOpenPnlMetric(rows = gLatestOpenPositions, openCountOverride = null) {
+        const openRows = Array.isArray(rows) ? rows : [];
+        const openCount = Number.isFinite(Number(openCountOverride)) ? Number(openCountOverride) : openRows.length;
+        const vUnrealized = sumNumeric(openRows, "pnl");
+        const vCombined = (Number.isFinite(vUnrealized) ? vUnrealized : 0) + getNetTotalPnlValue();
+        if (ids.openPnlValue) {
+            ids.openPnlValue.textContent = Number.isFinite(vCombined) ? formatNumericValue(vCombined, 3) : "0.000";
+        }
+        checkTargetOpenPnl(vCombined, openCount);
+    }
+
     function getTargetOpenPnlValue() {
         if (!ids.targetOpenPnl) {
             return null;
@@ -646,7 +664,6 @@
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
         const optionsPnl = Number(runtimeState?.optionsPnl);
-        const openPnl = sumNumeric(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : [], "pnl");
 
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
@@ -655,10 +672,6 @@
         if (ids.openCount) {
             ids.openCount.textContent = String(openCount);
         }
-        if (ids.openPnlValue) {
-            ids.openPnlValue.textContent = Number.isFinite(openPnl) ? formatNumericValue(openPnl, 3) : "0.000";
-        }
-        checkTargetOpenPnl(openPnl, openCount);
 
         if (ids.autoTraderButton) {
             ids.autoTraderButton.textContent = autoTraderEnabled ? "Auto Trader - ON" : "Auto Trader - OFF";
@@ -676,6 +689,7 @@
         }
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(gLatestOpenPositions);
+        updateOpenPnlMetric(gLatestOpenPositions, openCount);
 
         updateOneLotMetric(runtimeState);
     }
@@ -692,14 +706,11 @@
             if (ids.openCount) {
                 ids.openCount.textContent = "0";
             }
-            if (ids.openPnlValue) {
-                ids.openPnlValue.textContent = "0.000";
-            }
-            checkTargetOpenPnl(0, 0);
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
             updateTotalChargesMetric(gLatestClosedPositions);
             updateTotalPnlMetric([]);
+            updateOpenPnlMetric([], 0);
             return;
         }
 
@@ -707,11 +718,7 @@
         if (ids.openCount) {
             ids.openCount.textContent = String(rows.length);
         }
-        const openPnl = sumNumeric(rows, "pnl");
-        if (ids.openPnlValue) {
-            ids.openPnlValue.textContent = Number.isFinite(openPnl) ? formatNumericValue(openPnl, 3) : "0.000";
-        }
-        checkTargetOpenPnl(openPnl, rows.length);
+        updateOpenPnlMetric(rows, rows.length);
         const nextLtps = new Map();
         const openRowsHtml = rows.map(function (row) {
             const tradeType = String(row.action || "-");
@@ -785,6 +792,7 @@
         updateBalanceMetrics(rows);
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(rows);
+        updateOpenPnlMetric(rows, rows.length);
     }
 
     function renderClosedPositions(rows) {
@@ -797,6 +805,7 @@
             ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
             updateTotalChargesMetric([]);
             updateTotalPnlMetric(gLatestOpenPositions);
+            updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
             return;
         }
 
@@ -834,6 +843,7 @@
         `;
         updateTotalChargesMetric(rows);
         updateTotalPnlMetric(gLatestOpenPositions);
+        updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
     }
 
     function renderEvents(rows) {
