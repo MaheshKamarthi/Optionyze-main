@@ -344,7 +344,7 @@ export function createApiRouter(
         await updateRollingOptionsStrangleRuleSettings(req, res);
     });
     objRouter.post("/rollingoptions-strangle/manual/exit", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
-        await exitRollingOptionsStrangleManualPositions(req, res);
+        await exitRollingOptionsStrangleManualPositions(req, res, pRollingOptionsStrangleService);
     });
     objRouter.post("/rollingoptions-strangle/strategy/execute", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await runRollingOptionsStrangleStrategyExecution(req, res, pRollingOptionsStrangleService);

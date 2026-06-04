@@ -93,6 +93,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
         demoBalance: 10000,
+        skipRenkoEntryNoOpenOptions: false,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
         telegramAlertTypes: [
@@ -200,6 +201,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
         objUiState.redSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
+    objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     return {
         ...objUiState,
@@ -1217,26 +1219,39 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
     });
 }
 
-export async function exitRollingOptionsStrangleManualPositions(req: Request, res: Response): Promise<void> {
+export async function exitRollingOptionsStrangleManualPositions(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vInstrumentParam = String(req.body?.instrumentType || "ALL").trim().toUpperCase();
     const vInstrumentType = vInstrumentParam === "OPTION" || vInstrumentParam === "FUTURE"
         ? vInstrumentParam
         : "ALL";
+    const bKillSwitch = Boolean(req.body?.killSwitch);
     const vRequestedRuleSet = String(req.body?.ruleSet || "").trim();
     const vRuleSetFilter: 1 | 2 | null = vRequestedRuleSet === "2" ? 2 : (vRequestedRuleSet === "1" ? 1 : null);
+    if (bKillSwitch && vInstrumentType === "ALL") {
+        await pService.stop(vUserId, "Kill switch");
+    }
     const objClosedPositions = await closeOpenPositionsByInstrument(
         vUserId,
         vInstrumentType,
         `Manual exit ${vInstrumentType.toLowerCase()}`,
         vRuleSetFilter
     );
-    const objRuntime = await updateRuntimeFromUiState(vUserId, {
+    const objRuntimeOverrides: Partial<RollingOptionsPtDeRuntimeRecord> = {
         status: "stopped",
+        autoTraderEnabled: bKillSwitch && vInstrumentType === "ALL" ? false : undefined,
         lastSignal: `MANUAL_EXIT_${vInstrumentType}`,
         lastCycleAt: new Date().toISOString(),
         lastError: ""
-    });
+    };
+    if (objRuntimeOverrides.autoTraderEnabled === undefined) {
+        delete (objRuntimeOverrides as any).autoTraderEnabled;
+    }
+    const objRuntime = await updateRuntimeFromUiState(vUserId, objRuntimeOverrides);
     await logRollingOptionsPtDeEvent({
         userId: vUserId,
         eventType: vInstrumentType === "ALL" ? "kill_switch" : "manual_action",

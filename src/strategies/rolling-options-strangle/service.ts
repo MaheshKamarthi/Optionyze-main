@@ -66,6 +66,8 @@ export class RollingOptionsStrangleService {
             greenSlPct: 85,
             redTpPct: 15,
             redSlPct: 85,
+            targetOpenPnl: 0,
+            skipRenkoEntryNoOpenOptions: false,
             trailGreenTp1Enabled: true,
             trailGreenSl1Enabled: true,
             trailRedTp1Enabled: true,
@@ -1096,17 +1098,19 @@ export class RollingOptionsStrangleService {
         const objOpenOptions = objOpenPositions.filter((objRow) => objRow.instrumentType === "OPTION" && objRow.status === "OPEN");
         const objOpenOptions1 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) !== 2);
         const objOpenOptions2 = objOpenOptions.filter((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === 2);
+        const bSkipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
 
-        if (objOpenOptions.length <= 0) {
+        if (bSkipRenkoEntryNoOpenOptions && objOpenOptions.length <= 0) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
                 title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because no open option leg is running.`,
+                message: `Skipped ${vColorLabel} Renko option entry because Skip entry (0 open opts) is enabled and no option leg is running.`,
                 payload: {
                     symbol: pConfig.symbol,
-                    reason: "renko_option_skipped_no_open_option_leg"
+                    reason: "renko_option_skipped_no_open_option_leg_switch",
+                    skipRenkoEntryNoOpenOptions: true
                 }
             });
             return;
@@ -1445,42 +1449,23 @@ export class RollingOptionsStrangleService {
                         }
                     }
 
-                    if (bTrailTpEnabled && vRuleColor === "G" && vAction === "SELL" && Number.isFinite(vGreenTpMove) && vGreenTpMove > 0) {
-                        const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
-                        const vPeakDelta = Number.isFinite(vPrevPeak)
-                            ? Math.max(vPrevPeak, vCurrentDelta)
-                            : Math.max(vEntryDelta, vCurrentDelta);
+                    const vTpMove = vRuleColor === "G" ? vGreenTpMove : vRedTpMove;
+                    if (bTrailTpEnabled && Number.isFinite(vTpMove) && vTpMove > 0) {
+                        const vPrevTpBest = Number(objNextMeta.trailTpPeakDelta);
+                        const vTpBestDelta = Number.isFinite(vPrevTpBest)
+                            ? (vAction === "BUY" ? Math.max(vPrevTpBest, vCurrentDelta) : Math.min(vPrevTpBest, vCurrentDelta))
+                            : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
                         const vExistingTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
-                        const vCandidate = clamp01(vPeakDelta - vGreenTpMove);
+                        const vCandidate = vAction === "BUY"
+                            ? clamp01(vTpBestDelta + vTpMove)
+                            : clamp01(vTpBestDelta - vTpMove);
                         const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
-                            ? Math.max(vExistingTp, vCandidate)
+                            ? (vAction === "BUY" ? Math.max(vExistingTp, vCandidate) : Math.min(vExistingTp, vCandidate))
                             : vCandidate;
-                        const vExistingTpPeak = Number(objNextMeta.trailTpPeakDelta);
-                        if (!Number.isFinite(vExistingTpPeak) || Math.abs(vExistingTpPeak - vPeakDelta) > 1e-9) {
-                            objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
-                            bMetaChanged = true;
-                        }
-                        const vExistingTakeProfit = Number(objNextMeta.deltaTakeProfit ?? objNextMeta.takeProfitDelta ?? 0);
-                        if (!Number.isFinite(vExistingTakeProfit) || Math.abs(vExistingTakeProfit - vNextTp) > 1e-9) {
-                            objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
-                            objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
-                            bMetaChanged = true;
-                        }
-                    }
 
-                    if (bTrailTpEnabled && vRuleColor === "R" && vAction === "SELL" && Number.isFinite(vRedTpMove) && vRedTpMove > 0) {
-                        const vPrevPeak = Number(objNextMeta.trailTpPeakDelta);
-                        const vPeakDelta = Number.isFinite(vPrevPeak)
-                            ? Math.max(vPrevPeak, vCurrentDelta)
-                            : Math.max(vEntryDelta, vCurrentDelta);
-                        const vExistingTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
-                        const vCandidate = clamp01(vPeakDelta - vRedTpMove);
-                        const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
-                            ? Math.max(vExistingTp, vCandidate)
-                            : vCandidate;
-                        const vExistingTpPeak = Number(objNextMeta.trailTpPeakDelta);
-                        if (!Number.isFinite(vExistingTpPeak) || Math.abs(vExistingTpPeak - vPeakDelta) > 1e-9) {
-                            objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                        const vExistingTpBest = Number(objNextMeta.trailTpPeakDelta);
+                        if (!Number.isFinite(vExistingTpBest) || Math.abs(vExistingTpBest - vTpBestDelta) > 1e-9) {
+                            objNextMeta.trailTpPeakDelta = Number(vTpBestDelta.toFixed(6));
                             bMetaChanged = true;
                         }
                         const vExistingTakeProfit = Number(objNextMeta.deltaTakeProfit ?? objNextMeta.takeProfitDelta ?? 0);

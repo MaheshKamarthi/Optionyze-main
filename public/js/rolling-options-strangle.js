@@ -46,6 +46,7 @@
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
         demoBalance: document.getElementById("txtRollingDemoDemoBalance"),
+        targetOpenPnl: document.getElementById("txtRollingDemoTargetOpenPnl"),
         optionsPnl: document.getElementById("txtRollingDemoOptionsPnl"),
         totalPnl: document.getElementById("txtRollingDemoTotalPnl"),
         totalCharges: document.getElementById("txtRollingDemoTotalCharges"),
@@ -57,6 +58,7 @@
         totalMarginValue: document.getElementById("rollingDemoTotalMarginValue"),
         blockedMarginValue: document.getElementById("rollingDemoBlockedMarginValue"),
         healthValue: document.getElementById("rollingDemoHealthValue"),
+        openPnlValue: document.getElementById("rollingDemoOpenPnlValue"),
         engineStatus: document.getElementById("rollingDemoEngineStatus"),
         pageStatus: document.getElementById("rollingDemoPageStatus"),
         openCount: document.getElementById("rollingDemoOpenCount"),
@@ -78,6 +80,7 @@
         exitOptionButton2: document.getElementById("btnRollingDemoExitOption2"),
         clearOpenPositionsButton: document.getElementById("btnRollingDemoClearOpenPositions"),
         killSwitchButton: document.getElementById("btnRollingDemoKillSwitch"),
+        skipRenkoEntryNoOpenOptions: document.getElementById("chkRollingDemoSkipRenkoEntryNoOpenOptions"),
         clearClosedPositionsButton: document.getElementById("btnRollingDemoClearClosedPositions"),
         telegramAlertsEnabled: document.getElementById("chkRollingDemoTelegramAlertsEnabled"),
         telegramEventCheckboxes: Array.from(document.querySelectorAll(".rolling-demo-telegram-event")),
@@ -100,6 +103,8 @@
     let gLatestOpenPositions = [];
     let gLatestClosedPositions = [];
     let gHasLoadedProfile = false;
+    let gTargetOpenPnlTriggered = false;
+    let gLastTargetOpenPnl = null;
 
     function getSelectedConfig() {
         const selectedSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
@@ -280,6 +285,49 @@
         const vCharges = parseNumberInput(ids.totalCharges, 0);
         const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
         ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+    }
+
+    function getTargetOpenPnlValue() {
+        if (!ids.targetOpenPnl) {
+            return null;
+        }
+
+        const vTarget = parseNumberInput(ids.targetOpenPnl, 0);
+        if (!Number.isFinite(vTarget) || vTarget === 0) {
+            return null;
+        }
+        return vTarget;
+    }
+
+    function checkTargetOpenPnl(openPnl, openCount) {
+        const vTarget = getTargetOpenPnlValue();
+        if (vTarget !== gLastTargetOpenPnl) {
+            gTargetOpenPnlTriggered = false;
+            gLastTargetOpenPnl = vTarget;
+        }
+
+        if (!Number.isFinite(openCount) || openCount <= 0) {
+            gTargetOpenPnlTriggered = false;
+            return;
+        }
+
+        if (!Number.isFinite(openPnl) || !Number.isFinite(vTarget)) {
+            return;
+        }
+
+        if (gTargetOpenPnlTriggered || gIsApplyingState) {
+            return;
+        }
+
+        const bHitTarget = vTarget > 0 ? (openPnl >= vTarget) : (openPnl <= vTarget);
+        if (!bHitTarget) {
+            return;
+        }
+
+        gTargetOpenPnlTriggered = true;
+        void runServerAction(`${apiBase}/manual/exit`, {
+            instrumentType: "ALL"
+        });
     }
 
     function updateTotalChargesMetric(rows = gLatestClosedPositions) {
@@ -481,6 +529,8 @@
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
+            targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
+            skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             telegramAlertsEnabled: Boolean(ids.telegramAlertsEnabled?.checked),
             trailGreenTp2Enabled: Boolean(ids.trailGreenTp2Enabled?.checked),
             trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
@@ -553,6 +603,8 @@
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("demoBalance", uiState.demoBalance);
+        setFieldValue("targetOpenPnl", uiState.targetOpenPnl ?? 0);
+        setFieldValue("skipRenkoEntryNoOpenOptions", uiState.skipRenkoEntryNoOpenOptions ?? false);
         setFieldValue("optionsPnl", uiState.optionsPnl);
         setFieldValue("telegramAlertsEnabled", uiState.telegramAlertsEnabled);
         setFieldValue("trailGreenTp2Enabled", uiState.trailGreenTp2Enabled ?? true);
@@ -591,6 +643,7 @@
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
         const optionsPnl = Number(runtimeState?.optionsPnl);
+        const openPnl = sumNumeric(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : [], "pnl");
 
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
@@ -599,6 +652,10 @@
         if (ids.openCount) {
             ids.openCount.textContent = String(openCount);
         }
+        if (ids.openPnlValue) {
+            ids.openPnlValue.textContent = Number.isFinite(openPnl) ? formatNumericValue(openPnl, 3) : "0.000";
+        }
+        checkTargetOpenPnl(openPnl, openCount);
 
         if (ids.autoTraderButton) {
             ids.autoTraderButton.textContent = autoTraderEnabled ? "Auto Trader - ON" : "Auto Trader - OFF";
@@ -629,6 +686,13 @@
             gLatestOpenPositions = [];
             gPreviousOpenPositionLtps = new Map();
             ids.openPositionsBody.innerHTML = "<tr><td colspan=\"17\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
+            if (ids.openCount) {
+                ids.openCount.textContent = "0";
+            }
+            if (ids.openPnlValue) {
+                ids.openPnlValue.textContent = "0.000";
+            }
+            checkTargetOpenPnl(0, 0);
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
             updateTotalChargesMetric(gLatestClosedPositions);
@@ -637,6 +701,14 @@
         }
 
         gLatestOpenPositions = rows;
+        if (ids.openCount) {
+            ids.openCount.textContent = String(rows.length);
+        }
+        const openPnl = sumNumeric(rows, "pnl");
+        if (ids.openPnlValue) {
+            ids.openPnlValue.textContent = Number.isFinite(openPnl) ? formatNumericValue(openPnl, 3) : "0.000";
+        }
+        checkTargetOpenPnl(openPnl, rows.length);
         const nextLtps = new Map();
         const openRowsHtml = rows.map(function (row) {
             const tradeType = String(row.action || "-");
@@ -1019,6 +1091,9 @@
     ids.demoBalance?.addEventListener("input", function () {
         updateBalanceMetrics(gLatestOpenPositions);
     });
+    ids.targetOpenPnl?.addEventListener("input", function () {
+        gTargetOpenPnlTriggered = false;
+    });
 
     ids.trailGreenTp1Enabled?.addEventListener("change", function () {
         queueProfileSave();
@@ -1165,6 +1240,10 @@
     });
 
     ids.clearOpenPositionsButton?.addEventListener("click", function () {
+        if (ids.skipRenkoEntryNoOpenOptions) {
+            ids.skipRenkoEntryNoOpenOptions.checked = true;
+        }
+        queueProfileSave();
         void runServerAction(`${apiBase}/manual/exit`, {
             instrumentType: "ALL"
         });
@@ -1172,7 +1251,8 @@
 
     ids.killSwitchButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/manual/exit`, {
-            instrumentType: "ALL"
+            instrumentType: "ALL",
+            killSwitch: true
         });
     });
 
@@ -1226,6 +1306,8 @@
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
         ids.demoBalance,
+        ids.skipRenkoEntryNoOpenOptions,
+        ids.targetOpenPnl,
         ids.closedFromDate,
         ids.closedToDate
     ].forEach(function (objField) {

@@ -369,6 +369,22 @@
                         <div class="rolling-demo-metric-value" id="rollingDemoHealthValue">-</div>
                     </div>
                     <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Open PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingDemoOpenPnlValue">0.000</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Target Open PnL</div>
+                        <input
+                            class="rolling-demo-metric-input"
+                            type="number"
+                            min="-999999999"
+                            max="999999999"
+                            step="0.001"
+                            id="txtRollingDemoTargetOpenPnl"
+                            value="0"
+                        />
+                    </div>
+                    <div class="rolling-demo-metric">
                         <div class="rolling-demo-metric-label">Options PnL</div>
                         <input
                             class="rolling-demo-metric-input"
@@ -416,15 +432,10 @@
                 <div class="rolling-demo-card-head">
                     <h2>Open Positions</h2>
                     <div class="rolling-demo-card-tools">
-                        <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingDemoClearOpenPositions" title="Clear all open paper positions" aria-label="Clear all open paper positions">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4h8v2" />
-                                <path d="M19 6l-1 14H6L5 6" />
-                                <path d="M10 11v6" />
-                                <path d="M14 11v6" />
-                            </svg>
-                        </button>
+                        <label class="rolling-demo-check" for="chkRollingDemoSkipRenkoEntryNoOpenOptions" title="Skip renko option entry when there are no open option legs">
+                            <input type="checkbox" id="chkRollingDemoSkipRenkoEntryNoOpenOptions" />
+                            Skip entry (0 open opts)
+                        </label>
                         <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingDemoRefreshOpenPositions" title="Refresh open positions" aria-label="Refresh open positions">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -435,6 +446,15 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M12 2v10" />
                                 <path d="M6.2 6.2a8 8 0 1 0 11.3 0" />
+                            </svg>
+                        </button>
+                        <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingDemoClearOpenPositions" title="Clear all open paper positions" aria-label="Clear all open paper positions">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
                             </svg>
                         </button>
                     </div>
