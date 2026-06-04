@@ -211,6 +211,31 @@ export class RollingOptionsStrangleService {
         return objConfig;
     }
 
+    public async ensureFutureForOpenOptions(
+        pUserId: string,
+        pReason: string
+    ): Promise<RollingOptionsPtDePositionRecord | null> {
+        const objConfig = await this.loadConfig(pUserId);
+        const bFuturesEnabled = Boolean((objConfig as any).futuresEnabled ?? true);
+        if (!bFuturesEnabled) {
+            return null;
+        }
+
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const objSummary = getOpenPositionsSummary(arrOpenPositions);
+        if (!objSummary.hasOpenOption) {
+            return null;
+        }
+
+        const objExistingFuture = arrOpenPositions.find((objRow) => objRow.status === "OPEN" && objRow.instrumentType === "FUTURE") || null;
+        if (objExistingFuture) {
+            return objExistingFuture;
+        }
+
+        const vQty = Math.max(1, Math.floor(Number(objConfig.futureQty || 1)));
+        return await this.openFuturePosition(pUserId, objConfig, vQty, pReason);
+    }
+
     private getSimulatedSnapshot(pState: RollingOptionsPtDeEngineState, pConfig: RollingOptionsPtDeConfig): RollingOptionsPtDeMarketSnapshot {
         const vBase = pConfig.symbol === "ETH" ? 3200 : 64000;
         const vLastSpot = Number(pState.market.lastSpotPrice || vBase);

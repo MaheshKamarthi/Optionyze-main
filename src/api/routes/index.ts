@@ -317,6 +317,7 @@ export function createApiRouter(
         await getRollingOptionsStrangleStatus(req, res);
     });
     objRouter.get("/rollingoptions-strangle/open-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        (req as any).__rollingOptionsStrangleService = pRollingOptionsStrangleService;
         await getRollingOptionsStrangleOpenPositions(req, res);
     });
     objRouter.post("/rollingoptions-strangle/open-positions/delete", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
@@ -338,6 +339,7 @@ export function createApiRouter(
         await executeRollingOptionsStrangleManualFuture(req, res);
     });
     objRouter.post("/rollingoptions-strangle/manual/option", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        (req as any).__rollingOptionsStrangleService = pRollingOptionsStrangleService;
         await executeRollingOptionsStrangleManualOption(req, res);
     });
     objRouter.post("/rollingoptions-strangle/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {

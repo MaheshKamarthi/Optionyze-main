@@ -646,6 +646,14 @@ export async function getRollingOptionsStrangleStatus(req: Request, res: Respons
 
 export async function getRollingOptionsStrangleOpenPositions(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
+    const objUiState = await getMergedUiState(vUserId);
+    const bFuturesEnabled = Boolean(objUiState.futuresEnabled ?? true);
+    if (bFuturesEnabled) {
+        const pService = (req as any).__rollingOptionsStrangleService as RollingOptionsStrangleService | undefined;
+        if (pService) {
+            await pService.ensureFutureForOpenOptions(vUserId, "Open Positions auto future");
+        }
+    }
     const objRows = await refreshOpenPositionMarks(vUserId);
 
     res.json({
@@ -899,7 +907,10 @@ export async function executeRollingOptionsStrangleManualFuture(req: Request, re
     res.json({ status: "success", data: { position: objSavedPosition, runtime: objRuntime } });
 }
 
-export async function executeRollingOptionsStrangleManualOption(req: Request, res: Response): Promise<void> {
+export async function executeRollingOptionsStrangleManualOption(
+    req: Request,
+    res: Response
+): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
     const vRequestedRuleSet = String(req.body?.ruleSet || "").trim();
@@ -1078,6 +1089,13 @@ export async function executeRollingOptionsStrangleManualOption(req: Request, re
             };
 
             objSavedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
+        }
+    }
+
+    if (Boolean(objUiState.futuresEnabled ?? true)) {
+        const pService = (req as any).__rollingOptionsStrangleService as RollingOptionsStrangleService | undefined;
+        if (pService) {
+            await pService.ensureFutureForOpenOptions(vUserId, "Manual option auto future");
         }
     }
 
