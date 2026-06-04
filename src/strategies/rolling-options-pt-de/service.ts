@@ -775,7 +775,14 @@ export class RollingOptionsPtDeService {
                     ? Math.max(0, Math.floor(Number(objConfig.redOptionQty || 0)))
                     : this.getRenkoOptionQty(objNextSummary.futureQty, objConfig.redOptionQtyPct));
             if (vQty > 0) {
-                await this.openOptionPositions(pUserId, objConfig, vQty, "Strategy initial option entry", vRuleColor, true);
+                await this.openOptionPositions(
+                    pUserId,
+                    objConfig,
+                    vQty,
+                    "Strategy initial option entry",
+                    vRuleColor,
+                    true
+                );
             }
         }
 

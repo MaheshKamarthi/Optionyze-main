@@ -25,6 +25,7 @@ import {
     ensureLiveTickerSymbols,
     findBestLiveOptionContract,
     getLiveMarketSnapshot,
+    getCachedOptionTicker,
     getLiveOptionTicker
 } from "../rolling-options-pt-de/market-data";
 import { syncOptionsPnlWithClosedPositions } from "./options-pnl";
@@ -439,6 +440,46 @@ export class RollingOptionsStrangleService {
                 }
             });
             return null;
+        }
+
+        const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const objOpenFutures = objOpenPositions.filter((objRow) => objRow.instrumentType === "FUTURE" && objRow.status === "OPEN");
+        if (objOpenFutures.length > 0) {
+            const vDesiredAction = pConfig.futureAction ?? (pConfig.action === "sell" ? "BUY" : "SELL");
+            const vExisting = objOpenFutures[0];
+            const vExistingQty = Math.max(0, Math.floor(Number(vExisting.qty || 0)));
+            const vDesiredQty = Math.max(0, Math.floor(Number(pQty || 0)));
+            const vMismatch = (String(vExisting.action || "").trim().toUpperCase() !== vDesiredAction) || (vDesiredQty > 0 && vExistingQty !== vDesiredQty);
+            if (vMismatch) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "warning",
+                    title: "Future Mismatch",
+                    message: "Future position already open, and it does not match the requested qty/action.",
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "future_already_open_mismatch",
+                        existingAction: vExisting.action,
+                        existingQty: vExistingQty,
+                        desiredAction: vDesiredAction,
+                        desiredQty: vDesiredQty
+                    }
+                });
+            }
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "info",
+                title: "Future Already Open",
+                message: `Skipped futures entry (${pReason}) because a future position is already open.`,
+                payload: {
+                    symbol: pConfig.symbol,
+                    reason: "future_already_open",
+                    openFutures: objOpenFutures.length
+                }
+            });
+            return objOpenFutures[0];
         }
 
         const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), pConfig);
@@ -895,7 +936,8 @@ export class RollingOptionsStrangleService {
         const bHasRuleSet1 = arrOpenOptions.some((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) !== 2);
         const bHasRuleSet2 = arrOpenOptions.some((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === 2);
 
-        if (((bAction1Enabled && !bHasRuleSet1) || (bAction2Enabled && !bHasRuleSet2)) && (bFuturesEnabled ? objNextSummary.futureQty > 0 : true)) {
+        if (((bAction1Enabled && !bHasRuleSet1) || (bAction2Enabled && !bHasRuleSet2))
+            && (bFuturesEnabled ? objNextSummary.futureQty > 0 : true)) {
             const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
 
@@ -1333,19 +1375,24 @@ export class RollingOptionsStrangleService {
             const bTrailRedSl2Enabled = Boolean((objUiState as any).trailRedSl2Enabled ?? true);
 
             for (const objPosition of objOpenFutures) {
-                await saveRollingOptionsPtDePosition({
-                    ...objPosition,
-                    markPrice: objSnapshot.futuresPrice,
-                    pnl: getPositionPnl(objPosition, objSnapshot.futuresPrice),
-                    updatedAt: ""
-                });
+                const vNextPnl = getPositionPnl(objPosition, objSnapshot.futuresPrice);
+                const bShouldSave = Number(objPosition.markPrice ?? NaN) !== objSnapshot.futuresPrice
+                    || Number(objPosition.pnl ?? NaN) !== vNextPnl;
+                if (bShouldSave) {
+                    await saveRollingOptionsPtDePosition({
+                        ...objPosition,
+                        markPrice: objSnapshot.futuresPrice,
+                        pnl: vNextPnl,
+                        updatedAt: ""
+                    });
+                }
             }
 
             for (const objPosition of objOpenOptions) {
                 const vProductSymbol = String(objPosition.metadata?.productSymbol || "").trim();
-                const objLiveTicker = vProductSymbol ? await getLiveOptionTicker(vProductSymbol) : null;
-                const vCurrentDelta = Math.abs(Number(objLiveTicker?.delta || objPosition.exitDelta || objPosition.entryDelta || 0.53));
-                const vMarkPrice = Number(objLiveTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
+                const objCachedTicker = vProductSymbol ? getCachedOptionTicker(vProductSymbol) : null;
+                const vCurrentDelta = Math.abs(Number(objCachedTicker?.delta || objPosition.exitDelta || objPosition.entryDelta || 0.53));
+                const vMarkPrice = Number(objCachedTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
                 const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
                 const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                 const vAction = String(objPosition.action || "").trim().toUpperCase();
@@ -1359,6 +1406,7 @@ export class RollingOptionsStrangleService {
                 const vRedTpMove = clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
                 const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
+                let bMetaChanged = false;
 
                 if ((vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
                     const bTrailSlEnabled = vRuleSet === 2
@@ -1382,11 +1430,19 @@ export class RollingOptionsStrangleService {
                             const vNextSl = vAction === "BUY"
                                 ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
                                 : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
-                            objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
-                            objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                            const vExistingStopLoss = Number(objNextMeta.deltaStopLoss ?? objNextMeta.stopLossDelta ?? 0);
+                            if (!Number.isFinite(vExistingStopLoss) || Math.abs(vExistingStopLoss - vNextSl) > 1e-9) {
+                                objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
+                                objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                                bMetaChanged = true;
+                            }
                         }
 
-                        objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
+                        const vExistingTrailBest = Number(objNextMeta.trailBestDelta);
+                        if (!Number.isFinite(vExistingTrailBest) || Math.abs(vExistingTrailBest - vBestDelta) > 1e-9) {
+                            objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
+                            bMetaChanged = true;
+                        }
                     }
 
                     if (bTrailTpEnabled && vRuleColor === "G" && vAction === "SELL" && Number.isFinite(vGreenTpMove) && vGreenTpMove > 0) {
@@ -1399,9 +1455,17 @@ export class RollingOptionsStrangleService {
                         const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
                             ? Math.max(vExistingTp, vCandidate)
                             : vCandidate;
-                        objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
-                        objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
-                        objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                        const vExistingTpPeak = Number(objNextMeta.trailTpPeakDelta);
+                        if (!Number.isFinite(vExistingTpPeak) || Math.abs(vExistingTpPeak - vPeakDelta) > 1e-9) {
+                            objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                            bMetaChanged = true;
+                        }
+                        const vExistingTakeProfit = Number(objNextMeta.deltaTakeProfit ?? objNextMeta.takeProfitDelta ?? 0);
+                        if (!Number.isFinite(vExistingTakeProfit) || Math.abs(vExistingTakeProfit - vNextTp) > 1e-9) {
+                            objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
+                            objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                            bMetaChanged = true;
+                        }
                     }
 
                     if (bTrailTpEnabled && vRuleColor === "R" && vAction === "SELL" && Number.isFinite(vRedTpMove) && vRedTpMove > 0) {
@@ -1414,20 +1478,35 @@ export class RollingOptionsStrangleService {
                         const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
                             ? Math.max(vExistingTp, vCandidate)
                             : vCandidate;
-                        objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
-                        objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
-                        objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                        const vExistingTpPeak = Number(objNextMeta.trailTpPeakDelta);
+                        if (!Number.isFinite(vExistingTpPeak) || Math.abs(vExistingTpPeak - vPeakDelta) > 1e-9) {
+                            objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                            bMetaChanged = true;
+                        }
+                        const vExistingTakeProfit = Number(objNextMeta.deltaTakeProfit ?? objNextMeta.takeProfitDelta ?? 0);
+                        if (!Number.isFinite(vExistingTakeProfit) || Math.abs(vExistingTakeProfit - vNextTp) > 1e-9) {
+                            objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
+                            objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                            bMetaChanged = true;
+                        }
                     }
                 }
 
-                await saveRollingOptionsPtDePosition({
-                    ...objPosition,
-                    markPrice: vMarkPrice,
-                    exitDelta: vCurrentDelta,
-                    pnl: getPositionPnl(objPosition, vMarkPrice),
-                    metadata: objNextMeta,
-                    updatedAt: ""
-                });
+                const vNextPnl = getPositionPnl(objPosition, vMarkPrice);
+                const bShouldSave = bMetaChanged
+                    || Number(objPosition.markPrice ?? NaN) !== vMarkPrice
+                    || Number(objPosition.exitDelta ?? NaN) !== vCurrentDelta
+                    || Number(objPosition.pnl ?? NaN) !== vNextPnl;
+                if (bShouldSave) {
+                    await saveRollingOptionsPtDePosition({
+                        ...objPosition,
+                        markPrice: vMarkPrice,
+                        exitDelta: vCurrentDelta,
+                        pnl: vNextPnl,
+                        metadata: objNextMeta,
+                        updatedAt: ""
+                    });
+                }
 
                 if (!objState.running) {
                     continue;

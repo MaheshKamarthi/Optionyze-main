@@ -793,6 +793,31 @@ export async function executeRollingOptionsStrangleManualFuture(req: Request, re
 
     const vDemoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 0));
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    const objOpenFutures = objOpenPositions.filter((objRow) => objRow.instrumentType === "FUTURE" && objRow.status === "OPEN");
+    if (objOpenFutures.length > 0) {
+        await logRollingOptionsPtDeEvent({
+            userId: vUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "Future Already Open",
+            message: "Skipped manual future entry because a future position is already open.",
+            payload: {
+                symbol: vSymbol,
+                reason: "future_already_open",
+                openFutures: objOpenFutures.length
+            }
+        });
+        const objRuntime = await updateRuntimeFromUiState(vUserId, {
+            status: "running",
+            lastFuturesPrice: objSnapshot.futuresPrice,
+            lastSpotPrice: objSnapshot.spotPrice,
+            lastSignal: "MANUAL_FUT_ALREADY_OPEN",
+            lastCycleAt: vNow,
+            lastError: ""
+        });
+        res.json({ status: "warning", message: "A future position is already open.", data: { position: objOpenFutures[0], runtime: objRuntime } });
+        return;
+    }
     const vBlockedMargin = calculateBlockedMargin(objOpenPositions);
     const vAdditionalMargin = calculatePaperNotional(vQty, vLotSize, vEntryPrice);
     if (!(vDemoBalance > 0) || vBlockedMargin + vAdditionalMargin > vDemoBalance) {

@@ -66,6 +66,7 @@ interface RollingOptionsStranglePositionRow {
 }
 
 const gPositionsFile = path.resolve(process.cwd(), "data", "rolling-options-strangle", "positions.json");
+const gMaxJsonPositions = 5000;
 
 async function loadAllPositionsJson(): Promise<RollingOptionsStranglePositionRecord[]> {
     return readJsonFile<RollingOptionsStranglePositionRecord[]>(gPositionsFile, []);
@@ -276,7 +277,9 @@ export async function saveRollingOptionsStranglePosition(
     const objRows = await loadAllPositionsJson();
     const objOtherRows = objRows.filter((objRow) => objRow.positionId !== objPosition.positionId);
     objOtherRows.push(objPosition);
-    await writeJsonFileAtomic(gPositionsFile, objOtherRows);
+    objOtherRows.sort((objA, objB) => String(objB.createdAt || "").localeCompare(String(objA.createdAt || "")));
+    const objNextRows = objOtherRows.length > gMaxJsonPositions ? objOtherRows.slice(0, gMaxJsonPositions) : objOtherRows;
+    await writeJsonFileAtomic(gPositionsFile, objNextRows);
     return objPosition;
 }
 

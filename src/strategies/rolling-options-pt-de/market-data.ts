@@ -339,6 +339,30 @@ export function getLiveTickerSymbolsForOwner(pOwnerId: string): string[] {
     return gDeltaPublicTickerFeed.getOwnerSymbols(pOwnerId);
 }
 
+export function getCachedOptionTicker(pContractSymbol: string): RollingOptionsPtDeLiveOptionContract | null {
+    const objRow = gDeltaPublicTickerFeed.getTicker(pContractSymbol);
+    if (!objRow || !objRow.symbol) {
+        return null;
+    }
+
+    const vOptionSide = String(objRow.symbol).startsWith("P-") ? "PE" : "CE";
+    return {
+        contractSymbol: String(objRow.symbol || "").trim(),
+        optionSide: vOptionSide,
+        strike: parseNumber(objRow.strike_price, 0),
+        markPrice: parseNumber(objRow.mark_price, 0),
+        bestBid: Number.isFinite(parseNumber(objRow.quotes?.best_bid, NaN)) ? parseNumber(objRow.quotes?.best_bid, NaN) : null,
+        bestAsk: Number.isFinite(parseNumber(objRow.quotes?.best_ask, NaN)) ? parseNumber(objRow.quotes?.best_ask, NaN) : null,
+        delta: parseNumber(objRow.greeks?.delta, 0),
+        gamma: parseNumber(objRow.greeks?.gamma, 0),
+        theta: parseNumber(objRow.greeks?.theta, 0),
+        vega: parseNumber(objRow.greeks?.vega, 0),
+        expiryDate: "",
+        requestedExpiryDate: "",
+        usedNextDayFallback: false
+    };
+}
+
 export async function getLiveMarketSnapshot(
     pConfig: RollingOptionsPtDeConfig
 ): Promise<RollingOptionsPtDeMarketSnapshot> {
