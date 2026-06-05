@@ -132,6 +132,7 @@ function sleep(pDurationMs: number): Promise<void> {
 
 export class RollingOptionsLtDeService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
+    private static readonly RE_DELTA_TOLERANCE = 0.05;
     private readonly lastErrorLogByUserId = new Map<string, { message: string; loggedAtMs: number }>();
 
     public constructor(private readonly runnerManager: RunnerManager) {}
@@ -928,7 +929,8 @@ export class RollingOptionsLtDeService {
         pQty: number,
         pTargetDelta: number,
         pReason: string,
-        pColorCode: "R" | "G" = "R"
+        pColorCode: "R" | "G" = "R",
+        pUseReEntryDelta = false
     ): Promise<RollingOptionsLtDeImportedPositionRecord[]> {
         if (!(Number(pQty) > 0)) {
             return [];
@@ -941,11 +943,23 @@ export class RollingOptionsLtDeService {
             : [pConfig.legSide === "pe" ? "PE" : "CE"];
         const arrCreated: RollingOptionsLtDeImportedPositionRecord[] = [];
         const objRuleValues = this.getRuleValues(pConfig, pColorCode);
+        const arrResolvedEntries: Array<{
+            contractSymbol: string;
+            markPrice: number;
+            delta: number;
+            metadata: RollingOptionsLtDePositionMetadata;
+        }> = [];
 
         for (const vOptionSide of arrOptionSides) {
-            const objContract = await findBestLiveOptionContract(pConfig, vOptionSide, pTargetDelta);
+            const objContract = await findBestLiveOptionContract(
+                pConfig,
+                vOptionSide,
+                pTargetDelta,
+                false,
+                pUseReEntryDelta ? RollingOptionsLtDeService.RE_DELTA_TOLERANCE : undefined
+            );
             if (!objContract?.contractSymbol) {
-                continue;
+                return [];
             }
             const vEntryDelta = Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53;
             const objThresholds = this.computeOptionThresholds(objRuleValues, vPositionSide, vEntryDelta);
@@ -953,9 +967,18 @@ export class RollingOptionsLtDeService {
                 continue;
             }
 
+            arrResolvedEntries.push({
+                contractSymbol: objContract.contractSymbol,
+                markPrice: Number(objContract.markPrice || 0),
+                delta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53,
+                metadata: this.buildOptionMetadata(pConfig, pColorCode, pReason, vEntryDelta, vPositionSide)
+            });
+        }
+
+        for (const objEntry of arrResolvedEntries) {
             await client.apis.Orders.placeOrder({
                 order: {
-                    product_symbol: objContract.contractSymbol,
+                    product_symbol: objEntry.contractSymbol,
                     size: pQty,
                     side: pConfig.action,
                     order_type: "market_order",
@@ -968,18 +991,18 @@ export class RollingOptionsLtDeService {
             arrCreated.push({
                 userId: pUserId,
                 importId: crypto.randomUUID(),
-                contractName: objContract.contractSymbol,
+                contractName: objEntry.contractSymbol,
                 side: vPositionSide,
                 qty: pQty,
-                entryPrice: Number(objContract.markPrice || 0),
-                markPrice: Number(objContract.markPrice || 0),
-                entryDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
-                currentDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
+                entryPrice: objEntry.markPrice,
+                markPrice: objEntry.markPrice,
+                entryDelta: objEntry.delta,
+                currentDelta: objEntry.delta,
                 charges: 0,
                 pnl: 0,
                 margin: 0,
                 liquidationPrice: 0,
-                metadata: this.buildOptionMetadata(pConfig, pColorCode, pReason, vEntryDelta, vPositionSide),
+                metadata: objEntry.metadata,
                 openedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             });
@@ -1121,7 +1144,8 @@ export class RollingOptionsLtDeService {
             vReEntryQty,
             objRuleValues.reDelta,
             pReason === "sl" ? "SL replacement option" : "TP replacement option",
-            vActiveRuleColor
+            vActiveRuleColor,
+            true
         );
     }
 
@@ -1357,7 +1381,8 @@ export class RollingOptionsLtDeService {
                     vOptionQty,
                     objRuleValues.reDelta,
                     "Strategy initial option entry",
-                    vRuleColor
+                    vRuleColor,
+                    true
                 );
                 bOpenedOption = arrCreatedOptions.length > 0;
             }
@@ -1481,7 +1506,8 @@ export class RollingOptionsLtDeService {
                             vOptionQty,
                             objRuleValues.reDelta,
                             "Renko fallback option entry",
-                            vRuleColor
+                            vRuleColor,
+                            true
                         );
                     }
                 }

@@ -37,6 +37,7 @@ import type {
 
 export class RollingOptionsStrangleService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
+    private static readonly RE_DELTA_TOLERANCE = 0.05;
 
     public constructor(private readonly runnerManager: RunnerManager) {}
 
@@ -607,7 +608,16 @@ export class RollingOptionsStrangleService {
         }> = [];
 
         for (const vOptionSide of vOptionSides) {
-            const objLiveContract = await findBestLiveOptionContract(pConfig, vOptionSide, vTargetDelta);
+            const objLiveContract = await findBestLiveOptionContract(
+                pConfig,
+                vOptionSide,
+                vTargetDelta,
+                false,
+                pUseReEntryDelta ? RollingOptionsStrangleService.RE_DELTA_TOLERANCE : undefined
+            );
+            if (pUseReEntryDelta && !objLiveContract?.contractSymbol) {
+                return [];
+            }
             if (objLiveContract?.contractSymbol) {
                 ensureLiveTickerSymbols([objLiveContract.contractSymbol]);
             }

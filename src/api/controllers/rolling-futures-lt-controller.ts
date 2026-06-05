@@ -30,6 +30,8 @@ import {
 } from "../../storage/rolling-options-pt-de-event-store";
 import { findBestLiveOptionContract, getLiveMarketSnapshot, getLiveOptionTicker } from "../../strategies/rolling-options-pt-de/market-data";
 
+const RE_DELTA_TOLERANCE = 0.05;
+
 interface DeltaWalletBalanceRow {
     asset_symbol?: string;
     symbol?: string;
@@ -3081,7 +3083,8 @@ async function openTrackedOptionReEntry(
         objConfig,
         vLegSide === "pe" ? "PE" : "CE",
         vTargetDelta,
-        true
+        true,
+        RE_DELTA_TOLERANCE
     );
     if (!objContract) {
         return null;

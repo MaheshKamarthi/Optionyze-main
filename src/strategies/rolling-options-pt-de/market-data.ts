@@ -394,7 +394,8 @@ export async function findBestLiveOptionContract(
     pConfig: RollingOptionsPtDeConfig,
     pOptionSide: "CE" | "PE",
     pTargetDelta: number,
-    pRequireAtOrBelowTarget = false
+    pRequireAtOrBelowTarget = false,
+    pMaxDeltaGap?: number
 ): Promise<RollingOptionsPtDeLiveOptionContract | null> {
     const arrExpiryCandidates = [
         { expiryDate: pConfig.expiryDate, usedNextDayFallback: false },
@@ -433,6 +434,9 @@ export async function findBestLiveOptionContract(
             }
 
             const vGap = Math.abs(vDelta - Math.abs(pTargetDelta));
+            if (Number.isFinite(pMaxDeltaGap) && vGap > Math.abs(Number(pMaxDeltaGap))) {
+                continue;
+            }
             if (vGap >= vBestGap) {
                 continue;
             }
