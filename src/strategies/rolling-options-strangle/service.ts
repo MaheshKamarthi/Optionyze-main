@@ -1310,8 +1310,11 @@ export class RollingOptionsStrangleService {
             : (vStoredRuleColor === "G" ? "G" : "R");
         const vCloseReason = pReason === "sl" ? "SL triggered" : "TP triggered";
 
-        await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
-        if (Boolean((objUiState as any).closeAllLegsOnAnyClose)) {
+        const objClosedPositions = await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
+        const bShouldCloseAllLegs = objClosedPositions.some((objClosedPosition) => {
+            return objClosedPosition.instrumentType === "OPTION" && Number(objClosedPosition.pnl || 0) < 0;
+        });
+        if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && bShouldCloseAllLegs) {
             const objRemaining = await listRollingOptionsPtDeOpenPositions(pUserId);
             if (objRemaining.length > 0) {
                 await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");

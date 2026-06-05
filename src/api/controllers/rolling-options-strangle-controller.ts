@@ -403,7 +403,8 @@ async function getLiveOrFallbackExitPrice(
 
 async function refreshOpenPositionMarks(
     pUserId: string,
-    pPositions?: RollingOptionsPtDePositionRecord[]
+    pPositions?: RollingOptionsPtDePositionRecord[],
+    pPersist = true
 ): Promise<RollingOptionsPtDePositionRecord[]> {
     const objOpenPositions = pPositions || await listRollingOptionsPtDeOpenPositions(pUserId);
     if (objOpenPositions.length === 0) {
@@ -423,13 +424,25 @@ async function refreshOpenPositionMarks(
             ? objQuote.exitDelta
             : objPosition.exitDelta;
 
-        objUpdatedPositions.push(await saveRollingOptionsPtDePosition({
+        const objUpdatedPosition: RollingOptionsPtDePositionRecord = {
             ...objPosition,
             markPrice: vMarkPrice,
             exitDelta: vExitDelta,
             pnl: getPositionPnl(objPosition, vMarkPrice),
             updatedAt: ""
-        }));
+        };
+
+        if (pPersist) {
+            objUpdatedPositions.push(await saveRollingOptionsPtDePosition(objUpdatedPosition));
+            continue;
+        }
+
+        objUpdatedPositions.push({
+            ...objPosition,
+            markPrice: vMarkPrice,
+            exitDelta: vExitDelta,
+            pnl: getPositionPnl(objPosition, vMarkPrice)
+        });
     }
 
     return objUpdatedPositions.sort((objA, objB) => String(objB.openedAt).localeCompare(String(objA.openedAt)));
@@ -575,6 +588,14 @@ async function closeOpenPositionById(
     return objClosedPosition;
 }
 
+function shouldCloseAllLegsOnNegativeClosedOption(
+    pClosedPositions: RollingOptionsPtDePositionRecord[]
+): boolean {
+    return pClosedPositions.some((objPosition) => {
+        return objPosition.instrumentType === "OPTION" && Number(objPosition.pnl || 0) < 0;
+    });
+}
+
 export function renderRollingOptionsStranglePage(req: Request, res: Response): void {
     res.render("rolling-options-strangle", {
         pageTitle: "Rolling Option Strangle Demo | Optionyze",
@@ -655,7 +676,7 @@ export async function getRollingOptionsStrangleOpenPositions(req: Request, res: 
             await pService.ensureFutureForOpenOptions(vUserId, "Open Positions auto future");
         }
     }
-    const objRows = await refreshOpenPositionMarks(vUserId);
+    const objRows = await refreshOpenPositionMarks(vUserId, undefined, false);
 
     res.json({
         status: "success",
@@ -715,7 +736,10 @@ export async function closeRollingOptionsStrangleOpenPositionController(req: Req
     }
 
     const objUiState = await getMergedUiState(vUserId);
-    if (Boolean((objUiState as any).closeAllLegsOnAnyClose)) {
+    if (
+        Boolean((objUiState as any).closeAllLegsOnAnyClose)
+        && shouldCloseAllLegsOnNegativeClosedOption([objClosedPosition])
+    ) {
         await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
     }
 
@@ -1266,7 +1290,12 @@ export async function exitRollingOptionsStrangleManualPositions(
         `Manual exit ${vInstrumentType.toLowerCase()}`,
         vRuleSetFilter
     );
-    if (vInstrumentType !== "ALL" && objClosedPositions.length > 0 && Boolean((objUiState as any).closeAllLegsOnAnyClose)) {
+    if (
+        vInstrumentType !== "ALL"
+        && objClosedPositions.length > 0
+        && Boolean((objUiState as any).closeAllLegsOnAnyClose)
+        && shouldCloseAllLegsOnNegativeClosedOption(objClosedPositions)
+    ) {
         await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
     }
     const objRuntimeOverrides: Partial<RollingOptionsPtDeRuntimeRecord> = {

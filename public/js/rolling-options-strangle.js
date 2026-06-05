@@ -106,6 +106,12 @@
     let gHasLoadedProfile = false;
     let gTargetOpenPnlTriggered = false;
     let gLastTargetOpenPnl = null;
+    let gIsClosedPositionsVisible = false;
+    let gIsEventLogVisible = false;
+    const gStatusRefreshMs = 30000;
+    const gOpenPositionsRefreshMs = 15000;
+    const gClosedPositionsRefreshMs = 60000;
+    const gEventsRefreshMs = 60000;
 
     function getSelectedConfig() {
         const selectedSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
@@ -286,6 +292,14 @@
         const vCharges = parseNumberInput(ids.totalCharges, 0);
         const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
         ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+    }
+
+    function updateOptionsPnlMetric(rows = gLatestClosedPositions) {
+        if (!ids.optionsPnl) {
+            return;
+        }
+        const vClosedPnl = Array.isArray(rows) ? sumNumeric(rows, "pnl") : 0;
+        ids.optionsPnl.value = Number.isFinite(vClosedPnl) ? vClosedPnl.toFixed(3) : "0.000";
     }
 
     function getNetTotalPnlValue() {
@@ -663,7 +677,6 @@
         const lastSignal = String(runtimeState?.lastSignal || "-").trim() || "-";
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
-        const optionsPnl = Number(runtimeState?.optionsPnl);
 
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
@@ -684,9 +697,7 @@
             ids.lastSignal.dataset.lastSignalText = lastSignal;
         }
 
-        if (ids.optionsPnl) {
-            ids.optionsPnl.value = Number.isFinite(optionsPnl) ? optionsPnl.toFixed(3) : "0.000";
-        }
+        updateOptionsPnlMetric(gLatestClosedPositions);
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(gLatestOpenPositions);
         updateOpenPnlMetric(gLatestOpenPositions, openCount);
@@ -803,6 +814,7 @@
         if (!Array.isArray(rows) || rows.length === 0) {
             gLatestClosedPositions = [];
             ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
+            updateOptionsPnlMetric([]);
             updateTotalChargesMetric([]);
             updateTotalPnlMetric(gLatestOpenPositions);
             updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
@@ -841,6 +853,7 @@
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
             </tr>
         `;
+        updateOptionsPnlMetric(rows);
         updateTotalChargesMetric(rows);
         updateTotalPnlMetric(gLatestOpenPositions);
         updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
@@ -934,7 +947,9 @@
         }
 
         const objPayload = await objResponse.json().catch(() => ({}));
-        applyRuntimeStatus(objPayload?.data || {});
+        const objRuntimeState = objPayload?.data || {};
+        applyRuntimeStatus(objRuntimeState);
+        return objRuntimeState;
     }
 
     async function loadOpenPositions() {
@@ -989,6 +1004,29 @@
             loadClosedPositions(),
             loadEvents()
         ]);
+    }
+
+    async function loadLivePanels() {
+        await Promise.all([
+            loadStatus(),
+            loadOpenPositions()
+        ]);
+    }
+
+    function hasTrackedOpenPositions() {
+        return Array.isArray(gLatestOpenPositions) && gLatestOpenPositions.length > 0;
+    }
+
+    function canAutoRefreshEvents() {
+        return Boolean(ids.eventLog)
+            && gIsEventLogVisible
+            && document.visibilityState === "visible";
+    }
+
+    function canAutoRefreshClosedPositions() {
+        return Boolean(ids.closedPositionsBody)
+            && gIsClosedPositionsVisible
+            && document.visibilityState === "visible";
     }
 
     async function postJson(url, payload) {
@@ -1092,7 +1130,7 @@
         updateRenkoFeedVisualState();
         queueProfileSave();
         void kickRenkoCycleIfNeeded().then(function () {
-            return loadServerPanels();
+            return loadLivePanels();
         }).catch(function () { return undefined; });
     });
 
@@ -1136,12 +1174,12 @@
 
     ids.renkoFeedPts?.addEventListener("change", function () {
         void kickRenkoCycleIfNeeded().then(function () {
-            return loadServerPanels();
+            return loadLivePanels();
         }).catch(function () { return undefined; });
     });
     ids.renkoFeedPriceSrc?.addEventListener("change", function () {
         void kickRenkoCycleIfNeeded().then(function () {
-            return loadServerPanels();
+            return loadLivePanels();
         }).catch(function () { return undefined; });
     });
 
@@ -1361,12 +1399,90 @@
         updateRenkoFeedVisualState();
     });
 
+    if (ids.eventLog) {
+        if ("IntersectionObserver" in window) {
+            const objEventObserver = new IntersectionObserver(function (entries) {
+                const bVisible = entries.some(function (entry) {
+                    return entry.isIntersecting && entry.intersectionRatio > 0;
+                });
+                const bBecameVisible = bVisible && !gIsEventLogVisible;
+                gIsEventLogVisible = bVisible;
+                if (bBecameVisible && document.visibilityState === "visible") {
+                    void loadEvents().catch(function () { return undefined; });
+                }
+            }, {
+                threshold: 0.1
+            });
+            objEventObserver.observe(ids.eventLog);
+        }
+        else {
+            gIsEventLogVisible = true;
+        }
+    }
+
+    if (ids.closedPositionsBody) {
+        if ("IntersectionObserver" in window) {
+            const objClosedObserver = new IntersectionObserver(function (entries) {
+                const bVisible = entries.some(function (entry) {
+                    return entry.isIntersecting && entry.intersectionRatio > 0;
+                });
+                const bBecameVisible = bVisible && !gIsClosedPositionsVisible;
+                gIsClosedPositionsVisible = bVisible;
+                if (bBecameVisible && document.visibilityState === "visible") {
+                    void loadClosedPositions().catch(function () { return undefined; });
+                }
+            }, {
+                threshold: 0.1
+            });
+            objClosedObserver.observe(ids.closedPositionsBody);
+        }
+        else {
+            gIsClosedPositionsVisible = true;
+        }
+    }
+
     setInterval(function () {
         void kickRenkoCycleIfNeeded().then(function () {
-            return Promise.all([loadStatus(), loadOpenPositions(), loadClosedPositions(), loadEvents()]);
+            return loadStatus();
+        }).then(function (objRuntimeState) {
+            const vOpenCount = Number(objRuntimeState?.counts?.openPositions || 0);
+            if (vOpenCount > 0 && !hasTrackedOpenPositions()) {
+                return loadOpenPositions();
+            }
+            return undefined;
         }).catch(function (objError) {
             console.error(objError);
             setStatus(objError instanceof Error ? objError.message : "Unable to refresh Rolling Options data.", "danger");
         });
-    }, 15000);
+    }, gStatusRefreshMs);
+
+    setInterval(function () {
+        if (!hasTrackedOpenPositions()) {
+            return;
+        }
+        void loadOpenPositions().catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to refresh open positions.", "danger");
+        });
+    }, gOpenPositionsRefreshMs);
+
+    setInterval(function () {
+        if (!canAutoRefreshEvents()) {
+            return;
+        }
+        void loadEvents().catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to refresh activity log.", "danger");
+        });
+    }, gEventsRefreshMs);
+
+    setInterval(function () {
+        if (!canAutoRefreshClosedPositions()) {
+            return;
+        }
+        void loadClosedPositions().catch(function (objError) {
+            console.error(objError);
+            setStatus(objError instanceof Error ? objError.message : "Unable to refresh closed positions.", "danger");
+        });
+    }, gClosedPositionsRefreshMs);
 })();
