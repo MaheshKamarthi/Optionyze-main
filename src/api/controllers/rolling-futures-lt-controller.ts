@@ -32,6 +32,10 @@ import { findBestLiveOptionContract, getLiveMarketSnapshot, getLiveOptionTicker 
 
 const RE_DELTA_TOLERANCE = 0.05;
 
+function isWithinReDeltaTolerance(pActualDelta: number, pTargetDelta: number): boolean {
+    return Math.abs(Math.abs(Number(pActualDelta || 0)) - Math.abs(Number(pTargetDelta || 0))) <= RE_DELTA_TOLERANCE;
+}
+
 interface DeltaWalletBalanceRow {
     asset_symbol?: string;
     symbol?: string;
@@ -2878,6 +2882,7 @@ async function executeStrategyPlacement(
         throw new Error(`An option position is already open (${arrOpenOptions[0].contractName}). Close the existing option before opening a new one.`);
     }
     const objOptionMetadata = getLiveOptionRuleMetadataFromUiState(objUiState, "strategy_option_open");
+    const vTargetReDelta = Math.max(0, Number(objOptionMetadata.reEntryDelta || 0.53));
     const bIsDualStrategy = pStrategyCode === "rolling-futures-lt-dual";
     const arrOptionSides: Array<"CE" | "PE"> = pInput.legSide === "both"
         ? (bIsDualStrategy ? ["CE", "PE"] : [])
@@ -2898,8 +2903,8 @@ async function executeStrategyPlacement(
         optionQty: pInput.qty,
         redOptionQtyPct: 100,
         greenOptionQtyPct: 100,
-        newDelta: pInput.targetDelta,
-        reDelta: pInput.targetDelta,
+        newDelta: vTargetReDelta,
+        reDelta: vTargetReDelta,
         deltaTakeProfit: 0.25,
         deltaStopLoss: 0.65,
         reEnter: false,
@@ -2914,14 +2919,20 @@ async function executeStrategyPlacement(
     const arrContracts: Array<Record<string, unknown>> = [];
 
     for (const vOptionSide of arrOptionSides) {
-        const objContract = await findBestLiveOptionContract(objConfig, vOptionSide, pInput.targetDelta, true);
+        const objContract = await findBestLiveOptionContract(
+            objConfig,
+            vOptionSide,
+            vTargetReDelta,
+            false,
+            RE_DELTA_TOLERANCE
+        );
         if (!objContract) {
-            throw new Error(`No live ${vOptionSide} contract was found for ${pInput.symbol} with delta at or below ${pInput.targetDelta.toFixed(2)}.`);
+            throw new Error(`No live ${vOptionSide} contract was found for ${pInput.symbol} within +/- ${RE_DELTA_TOLERANCE.toFixed(2)} of Re D ${vTargetReDelta.toFixed(2)}.`);
         }
 
         const vAbsoluteDelta = Math.abs(Number(objContract.delta || 0));
-        if (!(vAbsoluteDelta <= pInput.targetDelta)) {
-            throw new Error(`The selected ${vOptionSide} contract delta ${vAbsoluteDelta.toFixed(2)} exceeded New D ${pInput.targetDelta.toFixed(2)}.`);
+        if (!isWithinReDeltaTolerance(vAbsoluteDelta, vTargetReDelta)) {
+            throw new Error(`The selected ${vOptionSide} contract delta ${vAbsoluteDelta.toFixed(2)} is outside the Re D band for ${vTargetReDelta.toFixed(2)}.`);
         }
 
         const objOrderPayload: Record<string, unknown> = {
@@ -3083,7 +3094,7 @@ async function openTrackedOptionReEntry(
         objConfig,
         vLegSide === "pe" ? "PE" : "CE",
         vTargetDelta,
-        true,
+        false,
         RE_DELTA_TOLERANCE
     );
     if (!objContract) {
@@ -3091,7 +3102,7 @@ async function openTrackedOptionReEntry(
     }
 
     const vAbsoluteDelta = Math.abs(Number(objContract.delta || 0));
-    if (!(vAbsoluteDelta <= vTargetDelta)) {
+    if (!isWithinReDeltaTolerance(vAbsoluteDelta, vTargetDelta)) {
         return null;
     }
     if (shouldTriggerTrackedOption(
@@ -4443,6 +4454,7 @@ async function executeManualOptionInternal(req: Request, res: Response, pStrateg
             throw new Error(`A ${vLegSide.toUpperCase()} option is already open. Close the existing ${vLegSide.toUpperCase()} leg before placing another one.`);
         }
         const objOptionMetadata = getLiveOptionRuleMetadataFromUiState(getMergedUiState(objProfile), "manual_option_open");
+        const vTargetReDelta = Math.max(0, Number(objOptionMetadata.reEntryDelta || 0.53));
         const objConfig = {
             symbol: vSymbol,
             contractName: getContractNameForSymbol(vSymbol),
@@ -4456,8 +4468,8 @@ async function executeManualOptionInternal(req: Request, res: Response, pStrateg
             optionQty: vQty,
             redOptionQtyPct: 100,
             greenOptionQtyPct: 100,
-            newDelta: vTargetDelta,
-            reDelta: vTargetDelta,
+            newDelta: vTargetReDelta,
+            reDelta: vTargetReDelta,
             deltaTakeProfit: 0.25,
             deltaStopLoss: 0.65,
             reEnter: false,
@@ -4467,14 +4479,20 @@ async function executeManualOptionInternal(req: Request, res: Response, pStrateg
             renkoPriceSource: "spot_price" as const,
             loopSeconds: 8
         };
-        const objContract = await findBestLiveOptionContract(objConfig, vLegSide === "pe" ? "PE" : "CE", vTargetDelta, true);
+        const objContract = await findBestLiveOptionContract(
+            objConfig,
+            vLegSide === "pe" ? "PE" : "CE",
+            vTargetReDelta,
+            false,
+            RE_DELTA_TOLERANCE
+        );
         if (!objContract) {
-            throw new Error(`No live ${vLegSide.toUpperCase()} contract was found for ${vSymbol} with delta at or below ${vTargetDelta.toFixed(2)}.`);
+            throw new Error(`No live ${vLegSide.toUpperCase()} contract was found for ${vSymbol} within +/- ${RE_DELTA_TOLERANCE.toFixed(2)} of Re D ${vTargetReDelta.toFixed(2)}.`);
         }
 
         const vAbsoluteDelta = Math.abs(Number(objContract.delta || 0));
-        if (!(vAbsoluteDelta <= vTargetDelta)) {
-            throw new Error(`The selected ${vLegSide.toUpperCase()} contract delta ${vAbsoluteDelta.toFixed(2)} exceeded New D ${vTargetDelta.toFixed(2)}.`);
+        if (!isWithinReDeltaTolerance(vAbsoluteDelta, vTargetReDelta)) {
+            throw new Error(`The selected ${vLegSide.toUpperCase()} contract delta ${vAbsoluteDelta.toFixed(2)} is outside the Re D band for ${vTargetReDelta.toFixed(2)}.`);
         }
 
         const objOrderPayload: Record<string, unknown> = {

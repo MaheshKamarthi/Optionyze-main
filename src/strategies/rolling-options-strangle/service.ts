@@ -1222,7 +1222,7 @@ export class RollingOptionsStrangleService {
                     vQty,
                     pColorCode === "R" ? "Renko RED option entry (Action 1)" : "Renko GREEN option entry (Action 1)",
                     pColorCode,
-                    false,
+                    true,
                     1
                 );
             }
@@ -1250,7 +1250,7 @@ export class RollingOptionsStrangleService {
                     vQty,
                     pColorCode === "R" ? "Renko RED option entry (Action 2)" : "Renko GREEN option entry (Action 2)",
                     pColorCode,
-                    false,
+                    true,
                     2
                 );
             }

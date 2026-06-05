@@ -37,6 +37,8 @@ import type { RollingOptionsPtDeService } from "../../strategies/rolling-options
 import { gRollingOptionsTelegramEventTypes, logRollingOptionsPtDeEvent } from "../../strategies/rolling-options-pt-de/event-logger";
 import { syncOptionsPnlWithClosedPositions } from "../../strategies/rolling-options-pt-de/options-pnl";
 
+const RE_DELTA_TOLERANCE = 0.05;
+
 function getUserIdFromReq(pReq: Request): string {
     const vUserId = String(pReq.authAccount?.accountId || pReq.body?.userId || pReq.query?.userId || "demo-paper").trim();
     return vUserId || "demo-paper";
@@ -275,7 +277,8 @@ async function getLiveOrFallbackMarketSnapshot(pUiState: Record<string, unknown>
 async function getLiveOrFallbackOptionQuote(
     pUiState: Record<string, unknown>,
     pOptionSide: "CE" | "PE",
-    pDelta: number
+    pDelta: number,
+    pMaxDeltaGap?: number
 ): Promise<{
     contractName: string;
     strike: number;
@@ -289,7 +292,7 @@ async function getLiveOrFallbackOptionQuote(
     const vFallbackStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
 
     try {
-        const objLiveContract = await findBestLiveOptionContract(objConfig, pOptionSide, pDelta);
+        const objLiveContract = await findBestLiveOptionContract(objConfig, pOptionSide, pDelta, false, pMaxDeltaGap);
         if (objLiveContract?.contractSymbol) {
             ensureLiveTickerSymbols([objLiveContract.contractSymbol]);
         }
@@ -843,7 +846,7 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     const vQty = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty1, 1)));
     const vLotSize = getLotSizeForSymbol(vSymbol);
     const vExpiryDate = String(objUiState.expiryDate1 || "");
-    const vDelta = normalizeNumber(objUiState.newDelta1, 0.53);
+    const vDelta = normalizeNumber(objUiState.greenReDelta, 0.53);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const objSides: Array<"CE" | "PE"> = vLegSide === "BOTH" ? ["CE", "PE"] : [vLegSide === "PE" ? "PE" : "CE"];
     const vNow = objSnapshot.ts;
@@ -851,7 +854,7 @@ export async function executeRollingOptionsPtDeManualOption(req: Request, res: R
     const objPlannedQuotes: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
 
     for (const vOptionSide of objSides) {
-        const objQuote = await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta);
+        const objQuote = await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta, RE_DELTA_TOLERANCE);
         objPlannedQuotes.push({ side: vOptionSide, quote: objQuote });
     }
 

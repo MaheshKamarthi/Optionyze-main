@@ -941,7 +941,8 @@ export class RollingOptionsPtDeService {
             pConfig,
             vQty,
             pColorCode === "R" ? "Renko RED option entry" : "Renko GREEN option entry",
-            pColorCode
+            pColorCode,
+            true
         );
     }
 

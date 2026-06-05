@@ -1066,9 +1066,10 @@ export class RollingOptionsLtDeService {
             pUserId,
             pConfig,
             vOptionQty,
-            Number(pConfig.newDelta || 0.53),
+            objRuleValues.reDelta,
             pColorCode === "R" ? "Renko RED option entry" : "Renko GREEN option entry",
-            pColorCode
+            pColorCode,
+            true
         );
         return arrCreated.length;
     }

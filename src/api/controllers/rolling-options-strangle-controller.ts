@@ -36,6 +36,7 @@ import type { RollingOptionsStrangleService } from "../../strategies/rolling-opt
 import { gRollingOptionsTelegramEventTypes, logRollingOptionsPtDeEvent } from "../../strategies/rolling-options-strangle/event-logger";
 
 const gStrategyCode = "rolling-options-strangle";
+const RE_DELTA_TOLERANCE = 0.05;
 
 function getUserIdFromReq(pReq: Request): string {
     const vUserId = String(pReq.authAccount?.accountId || pReq.body?.userId || pReq.query?.userId || "demo-paper").trim();
@@ -299,7 +300,8 @@ async function getLiveOrFallbackMarketSnapshot(pUiState: Record<string, unknown>
 async function getLiveOrFallbackOptionQuote(
     pUiState: Record<string, unknown>,
     pOptionSide: "CE" | "PE",
-    pDelta: number
+    pDelta: number,
+    pMaxDeltaGap?: number
 ): Promise<{
     contractName: string;
     strike: number;
@@ -313,7 +315,7 @@ async function getLiveOrFallbackOptionQuote(
     const vFallbackStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
 
     try {
-        const objLiveContract = await findBestLiveOptionContract(objConfig, pOptionSide, pDelta);
+        const objLiveContract = await findBestLiveOptionContract(objConfig, pOptionSide, pDelta, false, pMaxDeltaGap);
         if (objLiveContract?.contractSymbol) {
             ensureLiveTickerSymbols([objLiveContract.contractSymbol]);
         }
@@ -948,7 +950,6 @@ export async function executeRollingOptionsStrangleManualOption(
     const vSymbol = String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
     const vLotSize = getLotSizeForSymbol(vSymbol);
     const vExpiryDate = String(objUiState.expiryDate1 || "");
-    const vDelta = 0.53;
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const vNow = objSnapshot.ts;
     const objSavedPositions: RollingOptionsPtDePositionRecord[] = [];
@@ -967,10 +968,14 @@ export async function executeRollingOptionsStrangleManualOption(
     if ((vRuleSetFilter === null || vRuleSetFilter === 1) && vAction1 !== "NONE") {
         const vLegSide1 = String(objUiState.legSide1 || "ce").trim().toUpperCase();
         const vQty1 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty1, 1)));
+        const vTargetDelta1 = normalizeNumber(objUiState.greenReDelta, 0.53);
         const vSides1: Array<"CE" | "PE"> = vLegSide1 === "BOTH" ? ["CE", "PE"] : [vLegSide1 === "PE" ? "PE" : "CE"];
         const arrPlanned1: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
         for (const vOptionSide of vSides1) {
-            arrPlanned1.push({ side: vOptionSide, quote: await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vDelta) });
+            arrPlanned1.push({
+                side: vOptionSide,
+                quote: await getLiveOrFallbackOptionQuote(objUiState, vOptionSide, vTargetDelta1, RE_DELTA_TOLERANCE)
+            });
         }
         objLegPlans.push({
             action: vAction1 === "BUY" ? "BUY" : "SELL",
@@ -988,6 +993,7 @@ export async function executeRollingOptionsStrangleManualOption(
     if ((vRuleSetFilter === null || vRuleSetFilter === 2) && vAction2 !== "NONE") {
         const vLegSide2 = String(objUiState.legSide2 || "pe").trim().toUpperCase();
         const vQty2 = Math.max(1, Math.floor(normalizeNumber(objUiState.manualOptQty2, 1)));
+        const vTargetDelta2 = normalizeNumber((objUiState as any).greenReDelta2, 0.53);
         const vSides2: Array<"CE" | "PE"> = vLegSide2 === "BOTH" ? ["CE", "PE"] : [vLegSide2 === "PE" ? "PE" : "CE"];
         const arrPlanned2: Array<{ side: "CE" | "PE"; quote: Awaited<ReturnType<typeof getLiveOrFallbackOptionQuote>>; }> = [];
         for (const vOptionSide of vSides2) {
@@ -997,7 +1003,7 @@ export async function executeRollingOptionsStrangleManualOption(
                     ...(objUiState || {}),
                     expiryMode1: objUiState.expiryMode2,
                     expiryDate1: objUiState.expiryDate2
-                } as Record<string, unknown>, vOptionSide, vDelta)
+                } as Record<string, unknown>, vOptionSide, vTargetDelta2, RE_DELTA_TOLERANCE)
             });
         }
         objLegPlans.push({

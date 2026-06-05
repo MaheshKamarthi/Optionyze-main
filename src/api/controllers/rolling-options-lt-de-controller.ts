@@ -29,6 +29,8 @@ import { gRollingOptionsTelegramEventTypes, logRollingOptionsLtDeEvent } from ".
 import { findBestLiveOptionContract, getLiveMarketSnapshot, getLiveOptionTicker } from "../../strategies/rolling-options-pt-de/market-data";
 import { buildConfigFromUiState } from "../../strategies/rolling-options-pt-de/engine";
 
+const RE_DELTA_TOLERANCE = 0.05;
+
 interface DeltaWalletBalanceRow {
     asset_symbol?: string;
     symbol?: string;
@@ -1244,11 +1246,25 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
         const { client, profile } = await getDeltaClientForAccountId(vUserId, vSelectedApiProfileId);
         const arrOrders: Array<Record<string, unknown>> = [];
         const arrContracts: Array<Record<string, unknown>> = [];
+        const objProfileState = await readLiveProfile(vUserId);
+        const objRuntime = await loadRollingOptionsLtDeRuntime(vUserId);
+        const objUiState = getMergedLiveUiState(objProfileState);
+        const vRuleColor: "R" | "G" = String(objRuntime?.state?.renkoLastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
+        const objRuleConfig = buildConfigFromUiState(objUiState);
+        const vReEntryDelta = vRuleColor === "G"
+            ? Number(objRuleConfig.greenReDelta ?? objRuleConfig.reDelta ?? 0.53)
+            : Number(objRuleConfig.redReDelta ?? objRuleConfig.reDelta ?? 0.53);
 
         for (const vOptionSide of arrOptionSides) {
-            const objContract = await findBestLiveOptionContract(objConfig, vOptionSide, vTargetDelta);
+            const objContract = await findBestLiveOptionContract(
+                objConfig,
+                vOptionSide,
+                vReEntryDelta,
+                false,
+                RE_DELTA_TOLERANCE
+            );
             if (!objContract) {
-                throw new Error(`No live ${vOptionSide} contract was found for ${vSymbol} near delta ${vTargetDelta.toFixed(2)}.`);
+                throw new Error(`No live ${vOptionSide} contract was found for ${vSymbol} within +/- ${RE_DELTA_TOLERANCE.toFixed(2)} of Re D ${vReEntryDelta.toFixed(2)}.`);
             }
 
             const vOrderSide = vOperation === "exit"
@@ -1299,10 +1315,6 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
         });
         let arrTrackedPositions = await listRollingOptionsLtDeImportedPositions(vUserId);
         if (vOperation === "open") {
-            const objProfileState = await readLiveProfile(vUserId);
-            const objRuntime = await loadRollingOptionsLtDeRuntime(vUserId);
-            const objUiState = getMergedLiveUiState(objProfileState);
-            const vRuleColor: "R" | "G" = String(objRuntime?.state?.renkoLastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
             arrTrackedPositions = await appendTrackedLivePositions(vUserId, arrContracts.map((objContract) => ({
                 userId: vUserId,
                 importId: crypto.randomUUID(),
