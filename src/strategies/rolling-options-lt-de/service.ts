@@ -1062,6 +1062,7 @@ export class RollingOptionsLtDeService {
         if (!(vOptionQty > 0)) {
             return 0;
         }
+        const objRuleValues = this.getRuleValues(pConfig, pColorCode);
         const arrCreated = await this.openOptionEntries(
             pUserId,
             pConfig,
