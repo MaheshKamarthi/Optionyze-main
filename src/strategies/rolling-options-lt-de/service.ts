@@ -15,6 +15,7 @@ import {
     saveRollingOptionsLtDeRuntime,
     type RollingOptionsLtDeRuntimeRecord
 } from "../../storage/rolling-options-lt-de-runtime-store";
+import { calculateDeltaStylePnl } from "../../lib/delta-style-pnl";
 import { buildConfigFromUiState, updateRenkoState } from "../rolling-options-pt-de/engine";
 import {
     ensureLiveTickerSymbolsForOwner,
@@ -70,19 +71,14 @@ function getLotSizeForContractName(pContractName: string): number {
 }
 
 function calculateImportedPnl(pPosition: RollingOptionsLtDeImportedPositionRecord, pMarkPrice: number): number {
-    const vEntryPrice = Number(pPosition.entryPrice || 0);
-    const vQty = Math.max(0, Number(pPosition.qty || 0));
-    const vLotSize = Math.max(0, getLotSizeForContractName(pPosition.contractName));
-    const vMarkPrice = Number(pMarkPrice || 0);
-    const vSide = String(pPosition.side || "").trim().toUpperCase();
-    if (!(vQty > 0) || !(vLotSize > 0) || !(Number.isFinite(vMarkPrice))) {
-        return Number(pPosition.pnl || 0);
-    }
-
-    const vRawPnl = vSide === "BUY"
-        ? ((vMarkPrice - vEntryPrice) * vQty * vLotSize)
-        : ((vEntryPrice - vMarkPrice) * vQty * vLotSize);
-    return Number(vRawPnl.toFixed(2));
+    return calculateDeltaStylePnl(
+        pPosition.side,
+        Number(pPosition.qty || 0),
+        getLotSizeForContractName(pPosition.contractName),
+        Number(pPosition.entryPrice || 0),
+        Number(pMarkPrice || 0),
+        Number(pPosition.pnl || 0)
+    );
 }
 
 function shouldTriggerImportedOption(
@@ -739,7 +735,10 @@ export class RollingOptionsLtDeService {
             }
 
             const objTicker = objTickerByContract.get(String(objPosition.contractName || "").trim()) || null;
-            const vMarkPrice = Number(objTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
+            const bHasLiveMark = Number.isFinite(Number(objTicker?.markPrice));
+            const vMarkPrice = bHasLiveMark
+                ? Number(objTicker?.markPrice || 0)
+                : Number(objPosition.markPrice || objPosition.entryPrice || 0);
             const vCurrentDelta = objTicker?.delta === null || objTicker?.delta === undefined
                 ? null
                 : Math.abs(Number(objTicker.delta));
@@ -747,7 +746,7 @@ export class RollingOptionsLtDeService {
                 ...objPosition,
                 markPrice: vMarkPrice,
                 entryDelta: objPosition.entryDelta ?? (Number.isFinite(Number(vCurrentDelta)) ? Number(vCurrentDelta) : null),
-                pnl: calculateImportedPnl(objPosition, vMarkPrice),
+                pnl: bHasLiveMark ? calculateImportedPnl(objPosition, vMarkPrice) : Number(objPosition.pnl || 0),
                 updatedAt: new Date().toISOString(),
                 currentDelta: Number.isFinite(Number(vCurrentDelta)) ? Number(vCurrentDelta) : null,
                 isOption: true

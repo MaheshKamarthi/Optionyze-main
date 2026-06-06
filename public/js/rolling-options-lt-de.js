@@ -955,7 +955,7 @@
             const vTpDelta = Number.isFinite(vTpDeltaRaw) && vTpDeltaRaw > 0 ? fmt(vTpDeltaRaw, 2) : "-";
             const vSlDelta = Number.isFinite(vSlDeltaRaw) && vSlDeltaRaw > 0 ? fmt(vSlDeltaRaw, 2) : "-";
             const vCharges = estimateOpenPositionCharges(row);
-            const vPnl = calculateOpenPositionPnl(row);
+            const vPnl = Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row);
             const vLtpBlinkClass = getLtpBlinkClass(vImportId, row.markPrice);
             const vCurrentLtp = Number(row.markPrice);
             if (vImportId && Number.isFinite(vCurrentLtp)) {
@@ -1002,7 +1002,7 @@
             return sum + estimateOpenPositionCharges(row);
         }, 0);
         const totalPnl = arrRows.reduce(function (sum, row) {
-            return sum + calculateOpenPositionPnl(row);
+            return sum + (Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row));
         }, 0);
         ids.openPositionsBody.innerHTML = `${openRowsHtml}
             <tr class="rolling-demo-total-row">

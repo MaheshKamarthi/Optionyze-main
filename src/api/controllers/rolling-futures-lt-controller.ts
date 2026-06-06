@@ -22,6 +22,7 @@ import {
     saveRollingFuturesLtRuntime,
     type RollingFuturesLtRuntimeRecord
 } from "../../storage/rolling-futures-lt-runtime-store";
+import { calculateDeltaStylePnl } from "../../lib/delta-style-pnl";
 import {
     clearRollingOptionsEventsByStrategy,
     deleteRollingOptionsEventByStrategy,
@@ -713,17 +714,7 @@ function calculateLivePositionPnl(
     pEntryPrice: number,
     pMarkPrice: number
 ): number {
-    const vLotSize = Math.max(0, Number(pLotSize || 0));
-    const vQty = Math.max(0, Number(pQty || 0));
-    const vEntryPrice = Number(pEntryPrice || 0);
-    const vMarkPrice = Number(pMarkPrice || 0);
-    if (!(vLotSize > 0) || !(vQty > 0) || !Number.isFinite(vEntryPrice) || !Number.isFinite(vMarkPrice)) {
-        return 0;
-    }
-    const vSignedMove = String(pSide || "").trim().toUpperCase() === "BUY"
-        ? (vMarkPrice - vEntryPrice)
-        : (vEntryPrice - vMarkPrice);
-    return Number((vSignedMove * vQty * vLotSize).toFixed(2));
+    return calculateDeltaStylePnl(pSide, pQty, pLotSize, pEntryPrice, pMarkPrice);
 }
 
 function getLiveOptionRuleMetadataFromUiState(
@@ -1450,13 +1441,15 @@ async function enrichTrackedOpenPositions(
             Number(objPosition.entryPrice || 0),
             vUnderlyingPrice
         );
-        const vPnl = calculateLivePositionPnl(
-            objPosition.side,
-            vQty,
-            vLotSize,
-            Number(objPosition.entryPrice || 0),
-            vMarkPrice
-        );
+        const vPnl = Number.isFinite(Number(objPosition.pnl))
+            ? Number(objPosition.pnl)
+            : calculateLivePositionPnl(
+                objPosition.side,
+                vQty,
+                vLotSize,
+                Number(objPosition.entryPrice || 0),
+                vMarkPrice
+            );
         const objGreeks: RollingFuturesLtPositionGreeks = {
             deltaPerContract: Number((vSideMultiplier * (Number.isFinite(vDeltaRaw) ? vDeltaRaw : 0)).toFixed(6)),
             deltaTotal: Number((vSideMultiplier * (Number.isFinite(vDeltaRaw) ? vDeltaRaw : 0) * vQty).toFixed(6)),

@@ -1075,8 +1075,11 @@ export class RollingOptionsPtDeService {
             for (const objPosition of objOpenOptions) {
                 const vProductSymbol = String(objPosition.metadata?.productSymbol || "").trim();
                 const objLiveTicker = vProductSymbol ? await getLiveOptionTicker(vProductSymbol) : null;
+                const bHasLiveMark = Number.isFinite(Number(objLiveTicker?.markPrice));
                 const vCurrentDelta = Math.abs(Number(objLiveTicker?.delta || objPosition.exitDelta || objPosition.entryDelta || 0.53));
-                const vMarkPrice = Number(objLiveTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
+                const vMarkPrice = bHasLiveMark
+                    ? Number(objLiveTicker?.markPrice || 0)
+                    : Number(objPosition.markPrice || objPosition.entryPrice || 0);
                 const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
                 const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                 const vAction = String(objPosition.action || "").trim().toUpperCase();
@@ -1134,7 +1137,7 @@ export class RollingOptionsPtDeService {
                     ...objPosition,
                     markPrice: vMarkPrice,
                     exitDelta: vCurrentDelta,
-                    pnl: getPositionPnl(objPosition, vMarkPrice),
+                    pnl: bHasLiveMark ? getPositionPnl(objPosition, vMarkPrice) : Number(objPosition.pnl || 0),
                     metadata: objNextMeta,
                     updatedAt: ""
                 });

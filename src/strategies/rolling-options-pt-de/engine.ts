@@ -4,6 +4,7 @@ import type {
     RollingOptionsPtDeEngineState,
     RollingOptionsPtDeMarketSnapshot
 } from "./types";
+import { calculateDeltaStylePnl } from "../../lib/delta-style-pnl";
 
 const gFutureBrokeragePct = 0.05;
 const gOptionBrokeragePct = 0.01;
@@ -261,13 +262,14 @@ export function getPositionPnl(
     pPosition: RollingOptionsPtDePositionRecord,
     pExitPrice: number
 ): number {
-    const vEntryPrice = Number(pPosition.entryPrice || 0);
-    const vQty = Math.max(1, Number(pPosition.qty || 1));
-    const vLotSize = Math.max(0, Number(pPosition.lotSize || 0));
-    const vSignedMove = pPosition.action === "BUY"
-        ? (pExitPrice - vEntryPrice)
-        : (vEntryPrice - pExitPrice);
-    return Number((vSignedMove * vQty * vLotSize).toFixed(2));
+    return calculateDeltaStylePnl(
+        pPosition.action,
+        Number(pPosition.qty || 0),
+        Number(pPosition.lotSize || 0),
+        Number(pPosition.entryPrice || 0),
+        Number(pExitPrice || 0),
+        Number(pPosition.pnl || 0)
+    );
 }
 
 export function estimatePositionCharges(

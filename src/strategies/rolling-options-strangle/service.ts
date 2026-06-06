@@ -1421,8 +1421,11 @@ export class RollingOptionsStrangleService {
             for (const objPosition of objOpenOptions) {
                 const vProductSymbol = String(objPosition.metadata?.productSymbol || "").trim();
                 const objCachedTicker = vProductSymbol ? getCachedOptionTicker(vProductSymbol) : null;
+                const bHasLiveMark = Number.isFinite(Number(objCachedTicker?.markPrice));
                 const vCurrentDelta = Math.abs(Number(objCachedTicker?.delta || objPosition.exitDelta || objPosition.entryDelta || 0.53));
-                const vMarkPrice = Number(objCachedTicker?.markPrice || objPosition.markPrice || objPosition.entryPrice || 0);
+                const vMarkPrice = bHasLiveMark
+                    ? Number(objCachedTicker?.markPrice || 0)
+                    : Number(objPosition.markPrice || objPosition.entryPrice || 0);
                 const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
                 const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                 const vAction = String(objPosition.action || "").trim().toUpperCase();
@@ -1503,7 +1506,7 @@ export class RollingOptionsStrangleService {
                     }
                 }
 
-                const vNextPnl = getPositionPnl(objPosition, vMarkPrice);
+                const vNextPnl = bHasLiveMark ? getPositionPnl(objPosition, vMarkPrice) : Number(objPosition.pnl || 0);
                 const bShouldSave = bMetaChanged
                     || Number(objPosition.markPrice ?? NaN) !== vMarkPrice
                     || Number(objPosition.exitDelta ?? NaN) !== vCurrentDelta

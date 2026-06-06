@@ -365,19 +365,21 @@ async function getLiveOrFallbackOptionQuote(
 async function getLiveOrFallbackExitPrice(
     pPosition: RollingOptionsPtDePositionRecord,
     pUiState?: Record<string, unknown>
-): Promise<{ exitPrice: number; exitDelta: number | null; }> {
+): Promise<{ exitPrice: number; exitDelta: number | null; hasLivePrice: boolean; }> {
     if (pPosition.instrumentType === "FUTURE") {
         if (pUiState) {
             const objSnapshot = await getLiveOrFallbackMarketSnapshot(pUiState);
             return {
                 exitPrice: objSnapshot.futuresPrice,
-                exitDelta: null
+                exitDelta: null,
+                hasLivePrice: true
             };
         }
 
         return {
             exitPrice: getSimulatedFuturePrice(pPosition.symbol),
-            exitDelta: null
+            exitDelta: null,
+            hasLivePrice: false
         };
     }
 
@@ -389,7 +391,8 @@ async function getLiveOrFallbackExitPrice(
             if (objLiveTicker?.markPrice) {
                 return {
                     exitPrice: objLiveTicker.markPrice,
-                    exitDelta: Math.abs(Number(objLiveTicker.delta || pPosition.exitDelta || pPosition.entryDelta || 0.53))
+                    exitDelta: Math.abs(Number(objLiveTicker.delta || pPosition.exitDelta || pPosition.entryDelta || 0.53)),
+                    hasLivePrice: true
                 };
             }
         }
@@ -398,8 +401,11 @@ async function getLiveOrFallbackExitPrice(
     }
 
     return {
-        exitPrice: getSimulatedOptionPrice(pPosition.symbol, pPosition.exitDelta ?? pPosition.entryDelta ?? 0.53),
-        exitDelta: pPosition.exitDelta ?? pPosition.entryDelta ?? 0.53
+        exitPrice: Number.isFinite(Number(pPosition.markPrice))
+            ? Number(pPosition.markPrice)
+            : Number(pPosition.entryPrice || 0),
+        exitDelta: pPosition.exitDelta ?? pPosition.entryDelta ?? null,
+        hasLivePrice: false
     };
 }
 
@@ -425,12 +431,15 @@ async function refreshOpenPositionMarks(
         const vExitDelta = objPosition.instrumentType === "OPTION"
             ? objQuote.exitDelta
             : objPosition.exitDelta;
+        const vNextPnl = objPosition.instrumentType === "OPTION" && !objQuote.hasLivePrice
+            ? Number(objPosition.pnl || 0)
+            : getPositionPnl(objPosition, vMarkPrice);
 
         const objUpdatedPosition: RollingOptionsPtDePositionRecord = {
             ...objPosition,
             markPrice: vMarkPrice,
             exitDelta: vExitDelta,
-            pnl: getPositionPnl(objPosition, vMarkPrice),
+            pnl: vNextPnl,
             updatedAt: ""
         };
 
