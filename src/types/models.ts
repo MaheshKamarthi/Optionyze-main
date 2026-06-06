@@ -1,4 +1,4 @@
-export type StrategyType = "covered-call-live" | "strategy-fo-greeks-paper" | "rolling-options-pt-de" | "rolling-options-lt-de" | "rolling-options-strangle";
+export type StrategyType = "covered-call-live" | "strategy-fo-greeks-paper" | "rolling-options-pt-de" | "rolling-options-lt-de" | "rolling-options-strangle" | "rolling-options-strangle-live";
 export type BrokerType = "delta-exchange";
 
 export interface CoveredCallConfig {

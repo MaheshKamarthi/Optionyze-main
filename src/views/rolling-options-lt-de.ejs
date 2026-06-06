@@ -345,6 +345,9 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="rolling-demo-payoff" id="rollingLiveOpenPayoffGraph">
+                    <div class="rolling-demo-payoff-empty">Payoff graph appears when open legs are available.</div>
+                </div>
             </div>
         </section>
 
@@ -473,6 +476,14 @@
                     <div class="rolling-demo-event-log" id="rollingLiveEventLog">
                         <div class="rolling-demo-event-empty">No live activity has been logged yet.</div>
                     </div>
+                    <label class="rolling-demo-check rolling-demo-check-wide" for="chkRollingLiveHideRenkoEvents" title="Hide Renko Change Detected messages in the activity log">
+                        <input type="checkbox" id="chkRollingLiveHideRenkoEvents" />
+                        <span>Hide Renko Changes</span>
+                    </label>
+                    <label class="rolling-demo-check rolling-demo-check-wide" for="chkRollingLiveHideRenkoGreenSkippedEvents" title="Hide Renko GREEN Skipped and Renko RED Skipped messages in the activity log">
+                        <input type="checkbox" id="chkRollingLiveHideRenkoGreenSkippedEvents" />
+                        <span>Hide Renko Skipped</span>
+                    </label>
                 </div>
             </div>
         </section>
@@ -501,6 +512,7 @@
         </div>
     </section>
 
+    <script src="/js/open-position-payoff-graph.js"></script>
     <script src="/js/rolling-options-lt-de.js"></script>
 </body>
 </html>

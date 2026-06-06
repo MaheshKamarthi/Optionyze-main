@@ -1,82 +1,112 @@
 (function () {
     const ids = {
-        apiProfile: document.getElementById("ddlRollingLiveApiProfile"),
-        checkConnectionButton: document.getElementById("btnRollingLiveCheckConnection"),
-        connectionStatus: document.getElementById("rollingLiveConnectionStatus"),
-        connectionStateValue: document.getElementById("rollingLiveConnectionStateValue"),
-        lastCheckedValue: document.getElementById("rollingLiveLastCheckedValue"),
-        whitelistIpValue: document.getElementById("rollingLiveWhitelistIpValue"),
-        copyWhitelistIpButton: document.getElementById("btnRollingLiveCopyWhitelistIp"),
-        symbol: document.getElementById("ddlRollingLiveSymbol"),
-        lotSize: document.getElementById("txtRollingLiveLotSize"),
-        futQty: document.getElementById("txtRollingLiveFutQty"),
-        futureOrderType: document.getElementById("ddlRollingLiveOrderType"),
-        oneLotValue: document.getElementById("rollingLiveOneLotValue"),
-        totalBalanceValue: document.getElementById("rollingLiveTotalBalanceValue"),
-        blockedMarginValue: document.getElementById("rollingLiveBlockedMarginValue"),
-        availableBalanceValue: document.getElementById("rollingLiveAvailableBalanceValue"),
-        healthValue: document.getElementById("rollingLiveHealthValue"),
-        optionsPnlValue: document.getElementById("rollingLiveOptionsPnlValue"),
-        totalChargesValue: document.getElementById("rollingLiveTotalChargesValue"),
-        totalPnlValue: document.getElementById("rollingLiveTotalPnlValue"),
-        profileLabel: document.getElementById("rollingLiveProfileLabel"),
-        openCount: document.getElementById("rollingLiveOpenCount"),
-        openRenkoSignal: document.getElementById("rollingLiveOpenRenkoSignal"),
-        engineStatus: document.getElementById("rollingLiveEngineStatus"),
-        pageStatus: document.getElementById("rollingLivePageStatus"),
-        importStatus: document.getElementById("rollingLiveImportStatus"),
-        autoTraderButton: document.getElementById("btnRollingLiveAutoTrader"),
-        manualFutAction: document.getElementById("ddlRollingLiveFutAction"),
-        placeFutureButton: document.getElementById("btnRollingLivePlaceFuture"),
-        execStrategyButton: document.getElementById("btnRollingLiveExecStrategy"),
-        openOptionButton: document.getElementById("btnRollingLiveOpenOption"),
-        exitOptionButton: document.getElementById("btnRollingLiveExitOption"),
-        optionAction: document.getElementById("ddlRollingLiveAction1"),
-        optionLegSide: document.getElementById("ddlRollingLiveLegSide1"),
-        optionExpiryMode: document.getElementById("ddlRollingLiveExpiryMode1"),
-        optionExpiryDate: document.getElementById("txtRollingLiveExpiry1"),
-        optionQty: document.getElementById("txtRollingLiveOptQty1"),
-        optionNewDelta: document.getElementById("txtRollingLiveNewDelta1"),
-        optionReEnter: document.getElementById("chkRollingLiveReEnter1"),
-        redOptQty: document.getElementById("txtRollingLiveRedOptQty"),
-        reRedDelta: document.getElementById("txtRollingLiveReRedD"),
-        redTpPct: document.getElementById("txtRollingLiveRedTp"),
-        redSlPct: document.getElementById("txtRollingLiveRedSl"),
-        greenOptQty: document.getElementById("txtRollingLiveGreenOptQty"),
-        greenReDelta: document.getElementById("txtRollingLiveReGreenD"),
-        greenTpPct: document.getElementById("txtRollingLiveGreenTp"),
-        greenSlPct: document.getElementById("txtRollingLiveGreenSl"),
-        updateGreenRulesButton: document.getElementById("btnRollingLiveUpdateGreenRules"),
-        addOneLotFuture: document.getElementById("chkRollingLiveAddOneLotFuture"),
-        renkoValue: document.getElementById("txtRollingLiveRenkoValue"),
-        renkoPriceSrc: document.getElementById("ddlRollingLiveRenkoPriceSrc"),
-        renkoBoxButton: document.getElementById("btnRollingLiveRenkoBox"),
-        updateRedRulesButton: document.getElementById("btnRollingLiveUpdateRedRules"),
-        importButton: document.getElementById("btnRollingLiveImportPositions"),
-        refreshOpenPositionsButton: document.getElementById("btnRollingLiveRefreshOpenPositions"),
-        killSwitchButton: document.getElementById("btnRollingLiveKillSwitch"),
-        openPositionsBody: document.getElementById("rollingLiveOpenPositionsBody"),
-        payoffGraph: document.getElementById("rollingLiveOpenPayoffGraph"),
-        closedFromDate: document.getElementById("txtRollingLiveClosedFromDate"),
-        closedToDate: document.getElementById("txtRollingLiveClosedToDate"),
-        clearClosedFiltersButton: document.getElementById("btnRollingLiveClearClosedFilters"),
-        refreshClosedPositionsButton: document.getElementById("btnRollingLiveRefreshClosedPositions"),
-        closedPositionsBody: document.getElementById("rollingLiveClosedPositionsBody"),
-        closedPrevPageButton: document.getElementById("btnRollingLiveClosedPrevPage"),
-        closedNextPageButton: document.getElementById("btnRollingLiveClosedNextPage"),
-        closedPageInfo: document.getElementById("rollingLiveClosedPositionsPageInfo"),
-        closedPageNumbers: document.getElementById("rollingLiveClosedPageNumbers"),
-        hideRenkoEvents: document.getElementById("chkRollingLiveHideRenkoEvents"),
-        hideRenkoGreenSkippedEvents: document.getElementById("chkRollingLiveHideRenkoGreenSkippedEvents"),
-        refreshEventsButton: document.getElementById("btnRollingLiveRefreshEvents"),
-        clearEventsButton: document.getElementById("btnRollingLiveClearEvents"),
-        eventLog: document.getElementById("rollingLiveEventLog"),
+        apiProfile: document.getElementById("ddlRollingStrangleLiveApiProfile"),
+        checkConnectionButton: document.getElementById("btnRollingStrangleLiveCheckConnection"),
+        connectionStatus: document.getElementById("rollingStrangleLiveConnectionStatus"),
+        connectionStateValue: document.getElementById("rollingStrangleLiveConnectionStateValue"),
+        lastCheckedValue: document.getElementById("rollingStrangleLiveLastCheckedValue"),
+        whitelistIpValue: document.getElementById("rollingStrangleLiveWhitelistIpValue"),
+        copyWhitelistIpButton: document.getElementById("btnRollingStrangleLiveCopyWhitelistIp"),
+        symbol: document.getElementById("ddlRollingStrangleLiveSymbol"),
+        lotSize: document.getElementById("txtRollingStrangleLiveLotSize"),
+        futQty: document.getElementById("txtRollingStrangleLiveFutQty"),
+        futureOrderType: document.getElementById("ddlRollingStrangleLiveOrderType"),
+        futuresEnabled: document.getElementById("chkRollingStrangleLiveFuturesEnabled"),
+        oneLotValue: document.getElementById("rollingStrangleLiveOneLotValue"),
+        totalMarginValue: document.getElementById("rollingStrangleLiveTotalMarginValue"),
+        blockedMarginValue: document.getElementById("rollingStrangleLiveBlockedMarginValue"),
+        availableBalanceValue: document.getElementById("rollingStrangleLiveAvailableBalanceValue"),
+        healthValue: document.getElementById("rollingStrangleLiveHealthValue"),
+        openPnlValue: document.getElementById("rollingStrangleLiveOpenPnlValue"),
+        targetOpenPnl: document.getElementById("txtRollingStrangleLiveTargetOpenPnl"),
+        optionsPnlValue: document.getElementById("rollingStrangleLiveOptionsPnlValue"),
+        totalChargesValue: document.getElementById("rollingStrangleLiveTotalChargesValue"),
+        totalPnlValue: document.getElementById("rollingStrangleLiveTotalPnlValue"),
+        profileLabel: document.getElementById("rollingStrangleLiveProfileLabel"),
+        openCount: document.getElementById("rollingStrangleLiveOpenCount"),
+        openRenkoSignal: document.getElementById("rollingStrangleLiveOpenRenkoSignal"),
+        engineStatus: document.getElementById("rollingStrangleLiveEngineStatus"),
+        pageStatus: document.getElementById("rollingStrangleLivePageStatus"),
+        importStatus: document.getElementById("rollingStrangleLiveImportStatus"),
+        autoTraderButton: document.getElementById("btnRollingStrangleLiveAutoTrader"),
+        manualFutAction: document.getElementById("ddlRollingStrangleLiveFutAction"),
+        placeFutureButton: document.getElementById("btnRollingStrangleLivePlaceFuture"),
+        execStrategyButton: document.getElementById("btnRollingStrangleLiveExecStrategy"),
+        openOptionButton: document.getElementById("btnRollingStrangleLiveOpenOption"),
+        exitOptionButton: document.getElementById("btnRollingStrangleLiveExitOption"),
+        optionAction: document.getElementById("ddlRollingStrangleLiveAction1"),
+        optionLegSide: document.getElementById("ddlRollingStrangleLiveLegSide1"),
+        optionExpiryMode: document.getElementById("ddlRollingStrangleLiveExpiryMode1"),
+        optionExpiryDate: document.getElementById("txtRollingStrangleLiveExpiry1"),
+        optionQty: document.getElementById("txtRollingStrangleLiveOptQty1"),
+        optionReEnter: document.getElementById("chkRollingStrangleLiveReEnter1"),
+        optionAction2: document.getElementById("ddlRollingStrangleLiveAction2"),
+        optionLegSide2: document.getElementById("ddlRollingStrangleLiveLegSide2"),
+        optionExpiryMode2: document.getElementById("ddlRollingStrangleLiveExpiryMode2"),
+        optionExpiryDate2: document.getElementById("txtRollingStrangleLiveExpiry2"),
+        optionQty2: document.getElementById("txtRollingStrangleLiveOptQty2"),
+        optionReEnter2: document.getElementById("chkRollingStrangleLiveReEnter2"),
+        redOptQty: document.getElementById("txtRollingStrangleLiveRedOptQty"),
+        reRedDelta: document.getElementById("txtRollingStrangleLiveReRedD"),
+        redTpPct: document.getElementById("txtRollingStrangleLiveRedTp"),
+        redSlPct: document.getElementById("txtRollingStrangleLiveRedSl"),
+        greenOptQty: document.getElementById("txtRollingStrangleLiveGreenOptQty"),
+        greenReDelta: document.getElementById("txtRollingStrangleLiveReGreenD"),
+        greenTpPct: document.getElementById("txtRollingStrangleLiveGreenTp"),
+        greenSlPct: document.getElementById("txtRollingStrangleLiveGreenSl"),
+        trailGreenTp1Enabled: document.getElementById("chkRollingStrangleLiveTrailGreenTp1Enabled"),
+        trailGreenSl1Enabled: document.getElementById("chkRollingStrangleLiveTrailGreenSl1Enabled"),
+        trailRedTp1Enabled: document.getElementById("chkRollingStrangleLiveTrailRedTp1Enabled"),
+        trailRedSl1Enabled: document.getElementById("chkRollingStrangleLiveTrailRedSl1Enabled"),
+        greenOptQty2: document.getElementById("txtRollingStrangleLiveGreenOptQty2"),
+        greenReDelta2: document.getElementById("txtRollingStrangleLiveReGreenD2"),
+        greenTpPct2: document.getElementById("txtRollingStrangleLiveGreenTp2"),
+        greenSlPct2: document.getElementById("txtRollingStrangleLiveGreenSl2"),
+        trailGreenTp2Enabled: document.getElementById("chkRollingStrangleLiveTrailGreenTp2Enabled"),
+        trailGreenSl2Enabled: document.getElementById("chkRollingStrangleLiveTrailGreenSl2Enabled"),
+        redOptQty2: document.getElementById("txtRollingStrangleLiveRedOptQty2"),
+        redReDelta2: document.getElementById("txtRollingStrangleLiveReRedD2"),
+        redTpPct2: document.getElementById("txtRollingStrangleLiveRedTp2"),
+        redSlPct2: document.getElementById("txtRollingStrangleLiveRedSl2"),
+        trailRedTp2Enabled: document.getElementById("chkRollingStrangleLiveTrailRedTp2Enabled"),
+        trailRedSl2Enabled: document.getElementById("chkRollingStrangleLiveTrailRedSl2Enabled"),
+        updateGreenRulesButton: document.getElementById("btnRollingStrangleLiveUpdateGreenRules"),
+        updateGreenRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateGreenRules2"),
+        addOneLotFuture: document.getElementById("chkRollingStrangleLiveAddOneLotFuture"),
+        renkoValue: document.getElementById("txtRollingStrangleLiveRenkoValue"),
+        renkoPriceSrc: document.getElementById("ddlRollingStrangleLiveRenkoPriceSrc"),
+        renkoBoxButton: document.getElementById("btnRollingStrangleLiveRenkoBox"),
+        updateRedRulesButton: document.getElementById("btnRollingStrangleLiveUpdateRedRules"),
+        updateRedRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateRedRules2"),
+        importButton: document.getElementById("btnRollingStrangleLiveImportPositions"),
+        refreshOpenPositionsButton: document.getElementById("btnRollingStrangleLiveRefreshOpenPositions"),
+        killSwitchButton: document.getElementById("btnRollingStrangleLiveKillSwitch"),
+        closeAllLegsOnAnyClose: document.getElementById("chkRollingStrangleLiveCloseAllLegsOnAnyClose"),
+        skipRenkoEntryNoOpenOptions: document.getElementById("chkRollingStrangleLiveSkipRenkoEntryNoOpenOptions"),
+        openOptionButton2: document.getElementById("btnRollingStrangleLiveOpenOption2"),
+        exitOptionButton2: document.getElementById("btnRollingStrangleLiveExitOption2"),
+        openPositionsBody: document.getElementById("rollingStrangleLiveOpenPositionsBody"),
+        payoffGraph: document.getElementById("rollingStrangleLiveOpenPayoffGraph"),
+        closedFromDate: document.getElementById("txtRollingStrangleLiveClosedFromDate"),
+        closedToDate: document.getElementById("txtRollingStrangleLiveClosedToDate"),
+        clearClosedFiltersButton: document.getElementById("btnRollingStrangleLiveClearClosedFilters"),
+        refreshClosedPositionsButton: document.getElementById("btnRollingStrangleLiveRefreshClosedPositions"),
+        closedPositionsBody: document.getElementById("rollingStrangleLiveClosedPositionsBody"),
+        closedPrevPageButton: document.getElementById("btnRollingStrangleLiveClosedPrevPage"),
+        closedNextPageButton: document.getElementById("btnRollingStrangleLiveClosedNextPage"),
+        closedPageInfo: document.getElementById("rollingStrangleLiveClosedPositionsPageInfo"),
+        closedPageNumbers: document.getElementById("rollingStrangleLiveClosedPageNumbers"),
+        hideRenkoEvents: document.getElementById("chkRollingStrangleLiveHideRenkoEvents"),
+        hideRenkoGreenSkippedEvents: document.getElementById("chkRollingStrangleLiveHideRenkoGreenSkippedEvents"),
+        refreshEventsButton: document.getElementById("btnRollingStrangleLiveRefreshEvents"),
+        clearEventsButton: document.getElementById("btnRollingStrangleLiveClearEvents"),
+        eventLog: document.getElementById("rollingStrangleLiveEventLog"),
         telegramEventCheckboxes: Array.from(document.querySelectorAll(".rolling-demo-telegram-event")),
-        importOverlay: document.getElementById("rollingLiveImportOverlay"),
-        importModal: document.getElementById("rollingLiveImportModal"),
-        importList: document.getElementById("rollingLiveImportList"),
-        closeImportModalButton: document.getElementById("btnRollingLiveCloseImportModal"),
-        applyImportedPositionsButton: document.getElementById("btnRollingLiveApplyImportedPositions")
+        importOverlay: document.getElementById("rollingStrangleLiveImportOverlay"),
+        importModal: document.getElementById("rollingStrangleLiveImportModal"),
+        importList: document.getElementById("rollingStrangleLiveImportList"),
+        closeImportModalButton: document.getElementById("btnRollingStrangleLiveCloseImportModal"),
+        applyImportedPositionsButton: document.getElementById("btnRollingStrangleLiveApplyImportedPositions")
     };
 
     const symbolConfig = {
@@ -104,8 +134,8 @@
     const gFutureBrokeragePct = 0.05;
     const gOptionBrokeragePct = 0.01;
     const gBrokerageGstMultiplier = 1.18;
-    const gHideRenkoEventsStorageKey = "optionyze:rolling-options-lt-de:hide-renko-events";
-    const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-lt-de:hide-renko-green-skipped-events";
+    const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle-live:hide-renko-events";
+    const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle-live:hide-renko-green-skipped-events";
 
     function readBooleanPreference(storageKey) {
         try {
@@ -306,7 +336,7 @@
         }
 
         target.textContent = String(message || "").trim();
-        target.className = "rolling-live-status";
+        target.className = "rolling-strangle-live-status";
         if (!message) {
             return;
         }
@@ -353,19 +383,19 @@
         }
     }
 
-    function applyExpiryModeDefaults(force) {
-        if (!ids.optionExpiryMode || !ids.optionExpiryDate) {
+    function applyExpiryModeDefaults(force, expiryModeField, expiryDateField) {
+        if (!expiryModeField || !expiryDateField) {
             return;
         }
 
-        if (!force && String(ids.optionExpiryDate.value || "").trim()) {
+        if (!force && String(expiryDateField.value || "").trim()) {
             return;
         }
 
-        const resolvedDate = resolveExpiryDateByMode(ids.optionExpiryMode.value);
+        const resolvedDate = resolveExpiryDateByMode(expiryModeField.value);
         const formattedDate = formatDateInputValue(resolvedDate);
         if (formattedDate) {
-            ids.optionExpiryDate.value = formattedDate;
+            expiryDateField.value = formattedDate;
         }
     }
 
@@ -375,13 +405,19 @@
             manualFutQty: parseNumberInput(ids.futQty, 1),
             manualFutOrderType: String(ids.futureOrderType?.value || "market_order"),
             manualFutAction: String(ids.manualFutAction?.value || "SELL"),
+            futuresEnabled: Boolean(ids.futuresEnabled?.checked),
             action1: String(ids.optionAction?.value || "sell"),
             legSide1: String(ids.optionLegSide?.value || "ce"),
             expiryMode1: String(ids.optionExpiryMode?.value || "1"),
             expiryDate1: String(ids.optionExpiryDate?.value || ""),
             manualOptQty1: parseNumberInput(ids.optionQty, 1),
-            newDelta1: parseNumberInput(ids.optionNewDelta, 0.53),
             reEnter1: Boolean(ids.optionReEnter?.checked),
+            action2: String(ids.optionAction2?.value || "none"),
+            legSide2: String(ids.optionLegSide2?.value || "pe"),
+            expiryMode2: String(ids.optionExpiryMode2?.value || "1"),
+            expiryDate2: String(ids.optionExpiryDate2?.value || ""),
+            manualOptQty2: parseNumberInput(ids.optionQty2, 1),
+            reEnter2: Boolean(ids.optionReEnter2?.checked),
             redOptQty: parseNumberInput(ids.redOptQty, 1),
             reRedDelta: parseNumberInput(ids.reRedDelta, 0.53),
             redTpPct: parseNumberInput(ids.redTpPct, 15),
@@ -390,9 +426,28 @@
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
             greenTpPct: parseNumberInput(ids.greenTpPct, 15),
             greenSlPct: parseNumberInput(ids.greenSlPct, 85),
+            trailGreenTp1Enabled: Boolean(ids.trailGreenTp1Enabled?.checked),
+            trailGreenSl1Enabled: Boolean(ids.trailGreenSl1Enabled?.checked),
+            trailRedTp1Enabled: Boolean(ids.trailRedTp1Enabled?.checked),
+            trailRedSl1Enabled: Boolean(ids.trailRedSl1Enabled?.checked),
+            greenOptQty2: parseNumberInput(ids.greenOptQty2, 1),
+            greenReDelta2: parseNumberInput(ids.greenReDelta2, 0.53),
+            greenTpPct2: parseNumberInput(ids.greenTpPct2, 15),
+            greenSlPct2: parseNumberInput(ids.greenSlPct2, 85),
+            trailGreenTp2Enabled: Boolean(ids.trailGreenTp2Enabled?.checked),
+            trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
+            redOptQty2: parseNumberInput(ids.redOptQty2, 1),
+            redReDelta2: parseNumberInput(ids.redReDelta2, 0.53),
+            redTpPct2: parseNumberInput(ids.redTpPct2, 15),
+            redSlPct2: parseNumberInput(ids.redSlPct2, 85),
+            trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
+            trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoValue, 10),
             renkoFeedPriceSrc: String(ids.renkoPriceSrc?.value || "mark_price"),
+            targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
+            closeAllLegsOnAnyClose: Boolean(ids.closeAllLegsOnAnyClose?.checked),
+            skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             closedFromDate: String(ids.closedFromDate?.value || ""),
             closedToDate: String(ids.closedToDate?.value || ""),
             telegramAlertsEnabled: ids.telegramEventCheckboxes.some(function (objCheckbox) { return objCheckbox.checked; }),
@@ -423,13 +478,19 @@
         setFieldValue(ids.futQty, uiState.manualFutQty);
         setFieldValue(ids.futureOrderType, uiState.manualFutOrderType);
         setFieldValue(ids.manualFutAction, uiState.manualFutAction ?? "SELL");
+        setFieldValue(ids.futuresEnabled, uiState.futuresEnabled ?? true);
         setFieldValue(ids.optionAction, uiState.action1);
         setFieldValue(ids.optionLegSide, uiState.legSide1);
         setFieldValue(ids.optionExpiryMode, uiState.expiryMode1);
         setFieldValue(ids.optionExpiryDate, uiState.expiryDate1);
         setFieldValue(ids.optionQty, uiState.manualOptQty1);
-        setFieldValue(ids.optionNewDelta, uiState.newDelta1);
         setFieldValue(ids.optionReEnter, uiState.reEnter1);
+        setFieldValue(ids.optionAction2, uiState.action2 ?? "none");
+        setFieldValue(ids.optionLegSide2, uiState.legSide2 ?? "pe");
+        setFieldValue(ids.optionExpiryMode2, uiState.expiryMode2 ?? "1");
+        setFieldValue(ids.optionExpiryDate2, uiState.expiryDate2);
+        setFieldValue(ids.optionQty2, uiState.manualOptQty2 ?? 1);
+        setFieldValue(ids.optionReEnter2, uiState.reEnter2);
         const vManualFutQty = Math.max(1, Math.floor(Number(uiState.manualFutQty || 1)));
         const vRedOptQtyLegacyPct = Number(uiState.redOptQtyPct ?? uiState.autoOptQtyPct ?? 0);
         const vRedOptQty = Number.isFinite(Number(uiState.redOptQty))
@@ -459,9 +520,28 @@
         const vGreenSlPct = Number(uiState.greenSlPct ?? (vGreenSlLegacy > 0 ? (vGreenSlLegacy <= 2 ? vGreenSlLegacy * 100 : vGreenSlLegacy) : 85));
         setFieldValue(ids.greenTpPct, vGreenTpPct);
         setFieldValue(ids.greenSlPct, vGreenSlPct);
+        setFieldValue(ids.trailGreenTp1Enabled, uiState.trailGreenTp1Enabled ?? true);
+        setFieldValue(ids.trailGreenSl1Enabled, uiState.trailGreenSl1Enabled ?? true);
+        setFieldValue(ids.trailRedTp1Enabled, uiState.trailRedTp1Enabled ?? true);
+        setFieldValue(ids.trailRedSl1Enabled, uiState.trailRedSl1Enabled ?? true);
+        setFieldValue(ids.greenOptQty2, uiState.greenOptQty2 ?? 1);
+        setFieldValue(ids.greenReDelta2, uiState.greenReDelta2 ?? 0.53);
+        setFieldValue(ids.greenTpPct2, uiState.greenTpPct2 ?? 15);
+        setFieldValue(ids.greenSlPct2, uiState.greenSlPct2 ?? 85);
+        setFieldValue(ids.trailGreenTp2Enabled, uiState.trailGreenTp2Enabled ?? true);
+        setFieldValue(ids.trailGreenSl2Enabled, uiState.trailGreenSl2Enabled ?? true);
+        setFieldValue(ids.redOptQty2, uiState.redOptQty2 ?? 1);
+        setFieldValue(ids.redReDelta2, uiState.redReDelta2 ?? 0.53);
+        setFieldValue(ids.redTpPct2, uiState.redTpPct2 ?? 15);
+        setFieldValue(ids.redSlPct2, uiState.redSlPct2 ?? 85);
+        setFieldValue(ids.trailRedTp2Enabled, uiState.trailRedTp2Enabled ?? true);
+        setFieldValue(ids.trailRedSl2Enabled, uiState.trailRedSl2Enabled ?? true);
         setFieldValue(ids.addOneLotFuture, uiState.addOneLotFuture);
         setFieldValue(ids.renkoValue, uiState.renkoFeedPts);
         setFieldValue(ids.renkoPriceSrc, uiState.renkoFeedPriceSrc ?? "mark_price");
+        setFieldValue(ids.targetOpenPnl, uiState.targetOpenPnl ?? 0);
+        setFieldValue(ids.closeAllLegsOnAnyClose, uiState.closeAllLegsOnAnyClose ?? false);
+        setFieldValue(ids.skipRenkoEntryNoOpenOptions, uiState.skipRenkoEntryNoOpenOptions ?? false);
         setFieldValue(ids.closedFromDate, uiState.closedFromDate);
         setFieldValue(ids.closedToDate, uiState.closedToDate);
         const arrSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -472,7 +552,8 @@
         });
 
         applySymbolDefaults();
-        applyExpiryModeDefaults(false);
+        applyExpiryModeDefaults(false, ids.optionExpiryMode, ids.optionExpiryDate);
+        applyExpiryModeDefaults(false, ids.optionExpiryMode2, ids.optionExpiryDate2);
         gIsApplyingState = false;
     }
 
@@ -482,7 +563,7 @@
             : ids.apiProfile?.value;
         const vProfileId = String(vProfileIdSource || "").trim();
         gSelectedApiProfileId = vProfileId;
-        await postJson("/api/rollingoptions-lt-de/profile", {
+        await postJson("/api/rollingoptions-strangle-live/profile", {
             selectedApiProfileId: vProfileId,
             uiState: (payload && payload.uiState) || getUiState()
         });
@@ -507,11 +588,13 @@
         await enqueueProfileSave({ uiState: getUiState() });
     }
 
-    async function updateRuleSettings(colorCode) {
+    async function updateRuleSettings(colorCode, ruleSet) {
         const vColor = String(colorCode || "").trim().toUpperCase() === "G" ? "G" : "R";
+        const vRuleSet = Number(ruleSet) === 2 ? 2 : 1;
         await flushProfileSave();
-        const objResult = await postJson("/api/rollingoptions-lt-de/rules/update", {
-            color: vColor
+        const objResult = await postJson("/api/rollingoptions-strangle-live/rules/update", {
+            color: vColor,
+            ruleSet: vRuleSet
         });
         const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
         if (arrTracked) {
@@ -668,7 +751,7 @@
     }
 
     async function loadLiveProfile() {
-        const objResult = await getJson("/api/rollingoptions-lt-de/profile");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/profile");
         const objData = objResult?.data || {};
         gSelectedApiProfileId = String(objData.selectedApiProfileId || "").trim();
         if (ids.apiProfile) {
@@ -679,7 +762,7 @@
     }
 
     async function loadConnectionStatus() {
-        const objResult = await getJson("/api/rollingoptions-lt-de/connection/status");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/connection/status");
         const objData = objResult?.data || {};
         if (objData.selectedApiProfileId) {
             gSelectedApiProfileId = String(objData.selectedApiProfileId || "").trim();
@@ -691,14 +774,14 @@
     }
 
     async function loadRuntimeStatus() {
-        const objResult = await getJson("/api/rollingoptions-lt-de/runtime");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/runtime");
         applyRuntimeStatus(objResult?.data || {});
     }
 
     async function checkConnection() {
         const vProfileId = String(ids.apiProfile?.value || "").trim();
         gSelectedApiProfileId = vProfileId;
-        const objResult = await postJson("/api/rollingoptions-lt-de/connection/check", {
+        const objResult = await postJson("/api/rollingoptions-strangle-live/connection/check", {
             profileId: vProfileId
         });
         const objData = objResult?.data || {};
@@ -711,8 +794,8 @@
 
     async function toggleAutoTrader() {
         const vUrl = gAutoTraderEnabled
-            ? "/api/rollingoptions-lt-de/auto-trader/stop"
-            : "/api/rollingoptions-lt-de/auto-trader/start";
+            ? "/api/rollingoptions-strangle-live/auto-trader/stop"
+            : "/api/rollingoptions-strangle-live/auto-trader/start";
         const objResult = await postJson(vUrl, {});
         applyRuntimeStatus(objResult?.data || {});
         return objResult;
@@ -728,7 +811,7 @@
         }
 
         await flushProfileSave();
-        const objResult = await postJson("/api/rollingoptions-lt-de/strategy/cycle", {});
+        const objResult = await postJson("/api/rollingoptions-strangle-live/strategy/cycle", {});
         if (objResult?.data?.runtime) {
             applyRuntimeStatus(objResult.data.runtime);
         }
@@ -746,7 +829,7 @@
         }
 
         await flushProfileSave();
-        const objResult = await postJson("/api/rollingoptions-lt-de/strategy/execute", {
+        const objResult = await postJson("/api/rollingoptions-strangle-live/strategy/execute", {
             renkoColor: getCurrentRenkoColor()
         });
         if (objResult?.data?.runtime) {
@@ -758,7 +841,7 @@
     async function toggleRenkoBox() {
         const vCurrentColor = String(ids.renkoBoxButton?.textContent || "R").trim().toUpperCase() === "G" ? "G" : "R";
         const vNextColor = vCurrentColor === "R" ? "G" : "R";
-        const objResult = await postJson("/api/rollingoptions-lt-de/renko/signal", {
+        const objResult = await postJson("/api/rollingoptions-strangle-live/renko/signal", {
             color: vNextColor
         });
         applyRuntimeStatus(objResult?.data || {});
@@ -807,7 +890,7 @@
             : "market_order";
         const vSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
 
-        return postJson("/api/rollingoptions-lt-de/manual/future", {
+        return postJson("/api/rollingoptions-strangle-live/manual/future", {
             action: vAction,
             symbol: vSymbol,
             qty: vQty,
@@ -815,22 +898,23 @@
         });
     }
 
-    async function placeManualOption(operation) {
+    async function placeManualOption(operation, ruleSet) {
         const vOperation = String(operation || "").trim().toLowerCase() === "exit" ? "exit" : "open";
+        const vRuleSet = Number(ruleSet) === 2 ? 2 : 1;
         await checkConnection();
         if (!canUseLiveActions()) {
             throw new Error("Delta connection is not healthy enough to place a live option order.");
         }
 
-        const vAction = String(ids.optionAction?.value || "").trim().toLowerCase();
-        const vQty = Math.max(1, Math.floor(Number(ids.optionQty?.value || 1)));
-        const vExpiryDate = String(ids.optionExpiryDate?.value || "").trim();
-        const vLegSide = String(ids.optionLegSide?.value || "ce").trim().toLowerCase();
-        const vExpiryMode = String(ids.optionExpiryMode?.value || "1").trim();
+        const vAction = String(vRuleSet === 2 ? (ids.optionAction2?.value || "") : (ids.optionAction?.value || "")).trim().toLowerCase();
+        const vQty = Math.max(1, Math.floor(Number(vRuleSet === 2 ? (ids.optionQty2?.value || 1) : (ids.optionQty?.value || 1))));
+        const vExpiryDate = String(vRuleSet === 2 ? (ids.optionExpiryDate2?.value || "") : (ids.optionExpiryDate?.value || "")).trim();
+        const vLegSide = String(vRuleSet === 2 ? (ids.optionLegSide2?.value || "pe") : (ids.optionLegSide?.value || "ce")).trim().toLowerCase();
+        const vExpiryMode = String(vRuleSet === 2 ? (ids.optionExpiryMode2?.value || "1") : (ids.optionExpiryMode?.value || "1")).trim();
         const vRenkoColor = getCurrentRenkoColor();
         const vTargetDeltaRaw = vRenkoColor === "G"
-            ? Number(ids.greenReDelta?.value || 0.53)
-            : Number(ids.reRedDelta?.value || 0.53);
+            ? Number(vRuleSet === 2 ? (ids.greenReDelta2?.value || 0.53) : (ids.greenReDelta?.value || 0.53))
+            : Number(vRuleSet === 2 ? (ids.redReDelta2?.value || 0.53) : (ids.reRedDelta?.value || 0.53));
         const vTargetDelta = Math.max(0, vTargetDeltaRaw);
         const vSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
 
@@ -841,7 +925,7 @@
             throw new Error("Select an expiry date in the option row before placing a live option order.");
         }
 
-        return postJson("/api/rollingoptions-lt-de/manual/option", {
+        return postJson("/api/rollingoptions-strangle-live/manual/option", {
             operation: vOperation,
             action: vAction,
             symbol: vSymbol,
@@ -849,7 +933,8 @@
             expiryMode: vExpiryMode,
             expiryDate: vExpiryDate,
             qty: vQty,
-            targetDelta: vTargetDelta
+            targetDelta: vTargetDelta,
+            ruleSet: vRuleSet
         });
     }
 
@@ -868,7 +953,7 @@
             throw new Error("Delta connection is not healthy enough to close this live position.");
         }
 
-        return postJson("/api/rollingoptions-lt-de/open-positions/close", {
+        return postJson("/api/rollingoptions-strangle-live/open-positions/close", {
             importId: vImportId,
             contractName: vContractName,
             side: vSide,
@@ -911,8 +996,8 @@
 
     async function loadAccountSummary(symbolOverride) {
         if (!canUseLiveActions()) {
-            if (ids.totalBalanceValue) {
-                ids.totalBalanceValue.textContent = "-";
+            if (ids.totalMarginValue) {
+                ids.totalMarginValue.textContent = "-";
             }
             if (ids.blockedMarginValue) {
                 ids.blockedMarginValue.textContent = "-";
@@ -938,11 +1023,14 @@
         if (vSymbol) {
             objSearch.set("symbol", vSymbol);
         }
-        const objResult = await getJson(`/api/rollingoptions-lt-de/account-summary${objSearch.toString() ? `?${objSearch.toString()}` : ""}`);
+        const objResult = await getJson(`/api/rollingoptions-strangle-live/account-summary${objSearch.toString() ? `?${objSearch.toString()}` : ""}`);
         const objData = objResult?.data || {};
 
-        if (ids.totalBalanceValue) {
-            ids.totalBalanceValue.textContent = fmtUsd(objData.totalBalance);
+        if (ids.totalMarginValue) {
+            const vTotalMargin = Number(objData.selectedFuturePositionValue);
+            ids.totalMarginValue.textContent = Number.isFinite(vTotalMargin) && vTotalMargin > 0
+                ? fmtUsd(vTotalMargin)
+                : "-";
         }
         if (ids.blockedMarginValue) {
             ids.blockedMarginValue.textContent = fmtUsd(objData.blockedMargin);
@@ -988,6 +1076,9 @@
             if (ids.openCount) {
                 ids.openCount.textContent = "0";
             }
+            if (ids.openPnlValue) {
+                ids.openPnlValue.textContent = "0.000";
+            }
             renderPayoffGraph([]);
             return;
         }
@@ -1030,13 +1121,13 @@
                     <td>${escapeHtml(formatDateTime(row.openedAt))}</td>
                     <td>OPEN</td>
                     <td>
-                        <button class="rolling-demo-icon-btn primary rolling-live-close-open-position" type="button" data-import-id="${escapeHtml(vImportId)}" title="Close this open position" aria-label="Close this open position">
+                        <button class="rolling-demo-icon-btn primary rolling-strangle-live-close-open-position" type="button" data-import-id="${escapeHtml(vImportId)}" title="Close this open position" aria-label="Close this open position">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="m6 6 12 12" />
                                 <path d="M18 6 6 18" />
                             </svg>
                         </button>
-                        <button class="rolling-demo-icon-btn warn rolling-live-delete-open-position" type="button" data-import-id="${escapeHtml(vImportId)}" title="Delete this open position permanently" aria-label="Delete this open position permanently">
+                        <button class="rolling-demo-icon-btn warn rolling-strangle-live-delete-open-position" type="button" data-import-id="${escapeHtml(vImportId)}" title="Delete this open position permanently" aria-label="Delete this open position permanently">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M3 6h18" />
                                 <path d="M8 6V4h8v2" />
@@ -1067,6 +1158,9 @@
 
         if (ids.openCount) {
             ids.openCount.textContent = String(arrRows.length);
+        }
+        if (ids.openPnlValue) {
+            ids.openPnlValue.textContent = fmt(totalPnl, 3);
         }
         renderPayoffGraph(arrRows);
     }
@@ -1196,7 +1290,7 @@
             const vNormalizedStartPage = Math.max(1, vEndPage - 4);
             let vHtml = "";
             for (let vPage = vNormalizedStartPage; vPage <= vEndPage; vPage += 1) {
-                vHtml += `<button class="rolling-demo-icon-btn ${vPage === gClosedPositionsPage ? "primary" : "warn"} rolling-live-closed-page-btn" type="button" data-page="${vPage}" title="Go to closed-positions page ${vPage}" aria-label="Go to closed-positions page ${vPage}">${escapeHtml(String(vPage))}</button>`;
+                vHtml += `<button class="rolling-demo-icon-btn ${vPage === gClosedPositionsPage ? "primary" : "warn"} rolling-strangle-live-closed-page-btn" type="button" data-page="${vPage}" title="Go to closed-positions page ${vPage}" aria-label="Go to closed-positions page ${vPage}">${escapeHtml(String(vPage))}</button>`;
             }
             ids.closedPageNumbers.innerHTML = vHtml;
         }
@@ -1253,14 +1347,14 @@
 
         ids.importList.innerHTML = arrRows.map(function (row, index) {
             return `
-                <label class="rolling-live-import-item" for="rolling-live-import-${index}">
-                    <input type="checkbox" id="rolling-live-import-${index}" value="${escapeHtml(row.importId)}" />
+                <label class="rolling-strangle-live-import-item" for="rolling-strangle-live-import-${index}">
+                    <input type="checkbox" id="rolling-strangle-live-import-${index}" value="${escapeHtml(row.importId)}" />
                     <div>
-                        <div class="rolling-live-import-head">
-                            <div class="rolling-live-import-title">${escapeHtml(row.contractName || "-")}</div>
+                        <div class="rolling-strangle-live-import-head">
+                            <div class="rolling-strangle-live-import-title">${escapeHtml(row.contractName || "-")}</div>
                             <div>${escapeHtml(row.side || "-")}</div>
                         </div>
-                        <div class="rolling-live-import-metrics">
+                        <div class="rolling-strangle-live-import-metrics">
                             <div>Qty: <strong>${escapeHtml(fmt(row.qty, 0))}</strong></div>
                             <div>Entry: <strong>${escapeHtml(fmt(row.entryPrice, 2))}</strong></div>
                             <div>Mark: <strong>${escapeHtml(fmt(row.markPrice, 2))}</strong></div>
@@ -1284,7 +1378,7 @@
 
         openImportModal();
         setStatus(ids.importStatus, "Loading open positions from Delta Exchange...", "");
-        const objResult = await getJson("/api/rollingoptions-lt-de/open-positions/importable");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/open-positions/importable");
         const arrPositions = Array.isArray(objResult?.data?.positions) ? objResult.data.positions : [];
         renderImportablePositions(arrPositions);
         setStatus(ids.importStatus, `Loaded ${arrPositions.length} open position${arrPositions.length === 1 ? "" : "s"} from Delta Exchange.`, "success");
@@ -1296,14 +1390,14 @@
             return [];
         }
 
-        const objResult = await getJson("/api/rollingoptions-lt-de/open-positions/importable");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/open-positions/importable");
         const arrPositions = Array.isArray(objResult?.data?.positions) ? objResult.data.positions : [];
         gImportablePositions = arrPositions;
         return arrPositions;
     }
 
     async function loadSavedOpenPositions() {
-        const objResult = await getJson("/api/rollingoptions-lt-de/open-positions");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/open-positions");
         const arrPositions = Array.isArray(objResult?.data) ? objResult.data : [];
         renderOpenPositions(arrPositions);
         return arrPositions;
@@ -1321,7 +1415,7 @@
 
     async function saveOpenPositions(rows) {
         const arrRows = Array.isArray(rows) ? rows : [];
-        const objResult = await postJson("/api/rollingoptions-lt-de/open-positions", {
+        const objResult = await postJson("/api/rollingoptions-strangle-live/open-positions", {
             positions: arrRows
         });
         const arrSaved = Array.isArray(objResult?.data) ? objResult.data : [];
@@ -1330,13 +1424,13 @@
     }
 
     async function deleteSavedOpenPosition(importId) {
-        return postJson("/api/rollingoptions-lt-de/open-positions/delete", {
+        return postJson("/api/rollingoptions-strangle-live/open-positions/delete", {
             importId: String(importId || "").trim()
         });
     }
 
     async function reconcileOpenPositions() {
-        return postJson("/api/rollingoptions-lt-de/open-positions/reconcile", {
+        return postJson("/api/rollingoptions-strangle-live/open-positions/reconcile", {
             symbol: String(ids.symbol?.value || "BTC").trim().toUpperCase()
         });
     }
@@ -1346,7 +1440,7 @@
         if (!canUseLiveActions()) {
             throw new Error("Delta connection is not healthy enough to execute the live kill switch.");
         }
-        return postJson("/api/rollingoptions-lt-de/kill-switch", {});
+        return postJson("/api/rollingoptions-strangle-live/kill-switch", {});
     }
 
     async function loadClosedPositions(preservePage) {
@@ -1367,7 +1461,7 @@
         }
 
         const vQuery = objSearch.toString();
-        const objResult = await getJson(`/api/rollingoptions-lt-de/closed-positions${vQuery ? `?${vQuery}` : ""}`);
+        const objResult = await getJson(`/api/rollingoptions-strangle-live/closed-positions${vQuery ? `?${vQuery}` : ""}`);
         gClosedPositions = Array.isArray(objResult?.data?.positions) ? objResult.data.positions : [];
         if (!shouldPreservePage) {
             gClosedPositionsPage = 1;
@@ -1376,12 +1470,12 @@
     }
 
     async function loadEvents() {
-        const objResult = await getJson("/api/rollingoptions-lt-de/events");
+        const objResult = await getJson("/api/rollingoptions-strangle-live/events");
         renderEvents(Array.isArray(objResult?.data) ? objResult.data : []);
     }
 
     function applyImportedPositions() {
-        const arrCheckedIds = Array.from(document.querySelectorAll(".rolling-live-import-list input[type='checkbox']:checked"))
+        const arrCheckedIds = Array.from(document.querySelectorAll(".rolling-strangle-live-import-list input[type='checkbox']:checked"))
             .map(function (objNode) {
                 return String(objNode instanceof HTMLInputElement ? objNode.value : "").trim();
             })
@@ -1424,16 +1518,25 @@
     ids.futQty?.addEventListener("input", queueProfileSave);
     ids.futureOrderType?.addEventListener("change", queueProfileSave);
     ids.manualFutAction?.addEventListener("change", queueProfileSave);
+    ids.futuresEnabled?.addEventListener("change", queueProfileSave);
     ids.optionAction?.addEventListener("change", queueProfileSave);
     ids.optionLegSide?.addEventListener("change", queueProfileSave);
     ids.optionExpiryMode?.addEventListener("change", function () {
-        applyExpiryModeDefaults(true);
+        applyExpiryModeDefaults(true, ids.optionExpiryMode, ids.optionExpiryDate);
         queueProfileSave();
     });
     ids.optionExpiryDate?.addEventListener("change", queueProfileSave);
     ids.optionQty?.addEventListener("input", queueProfileSave);
-    ids.optionNewDelta?.addEventListener("input", queueProfileSave);
     ids.optionReEnter?.addEventListener("change", queueProfileSave);
+    ids.optionAction2?.addEventListener("change", queueProfileSave);
+    ids.optionLegSide2?.addEventListener("change", queueProfileSave);
+    ids.optionExpiryMode2?.addEventListener("change", function () {
+        applyExpiryModeDefaults(true, ids.optionExpiryMode2, ids.optionExpiryDate2);
+        queueProfileSave();
+    });
+    ids.optionExpiryDate2?.addEventListener("change", queueProfileSave);
+    ids.optionQty2?.addEventListener("input", queueProfileSave);
+    ids.optionReEnter2?.addEventListener("change", queueProfileSave);
     ids.redOptQty?.addEventListener("input", queueProfileSave);
     ids.reRedDelta?.addEventListener("input", queueProfileSave);
     ids.redTpPct?.addEventListener("input", queueProfileSave);
@@ -1442,7 +1545,26 @@
     ids.greenReDelta?.addEventListener("input", queueProfileSave);
     ids.greenTpPct?.addEventListener("input", queueProfileSave);
     ids.greenSlPct?.addEventListener("input", queueProfileSave);
+    ids.trailGreenTp1Enabled?.addEventListener("change", queueProfileSave);
+    ids.trailGreenSl1Enabled?.addEventListener("change", queueProfileSave);
+    ids.trailRedTp1Enabled?.addEventListener("change", queueProfileSave);
+    ids.trailRedSl1Enabled?.addEventListener("change", queueProfileSave);
+    ids.greenOptQty2?.addEventListener("input", queueProfileSave);
+    ids.greenReDelta2?.addEventListener("input", queueProfileSave);
+    ids.greenTpPct2?.addEventListener("input", queueProfileSave);
+    ids.greenSlPct2?.addEventListener("input", queueProfileSave);
+    ids.trailGreenTp2Enabled?.addEventListener("change", queueProfileSave);
+    ids.trailGreenSl2Enabled?.addEventListener("change", queueProfileSave);
+    ids.redOptQty2?.addEventListener("input", queueProfileSave);
+    ids.redReDelta2?.addEventListener("input", queueProfileSave);
+    ids.redTpPct2?.addEventListener("input", queueProfileSave);
+    ids.redSlPct2?.addEventListener("input", queueProfileSave);
+    ids.trailRedTp2Enabled?.addEventListener("change", queueProfileSave);
+    ids.trailRedSl2Enabled?.addEventListener("change", queueProfileSave);
     ids.addOneLotFuture?.addEventListener("change", queueProfileSave);
+    ids.targetOpenPnl?.addEventListener("input", queueProfileSave);
+    ids.closeAllLegsOnAnyClose?.addEventListener("change", queueProfileSave);
+    ids.skipRenkoEntryNoOpenOptions?.addEventListener("change", queueProfileSave);
     ids.renkoValue?.addEventListener("input", function () {
         queueProfileSave();
         if (gRenkoKickTimer) {
@@ -1526,7 +1648,7 @@
         });
     });
     ids.openOptionButton?.addEventListener("click", function () {
-        void placeManualOption("open").then(function (objResult) {
+        void placeManualOption("open", 1).then(function (objResult) {
             const arrContracts = Array.isArray(objResult?.data?.contracts) ? objResult.data.contracts : [];
             const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
             const vContracts = arrContracts.map(function (objRow) {
@@ -1542,8 +1664,25 @@
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place OPEN OPTION order.", "danger");
         });
     });
+    ids.openOptionButton2?.addEventListener("click", function () {
+        void placeManualOption("open", 2).then(function (objResult) {
+            const arrContracts = Array.isArray(objResult?.data?.contracts) ? objResult.data.contracts : [];
+            const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
+            const vContracts = arrContracts.map(function (objRow) {
+                return String(objRow?.contractSymbol || "").trim();
+            }).filter(Boolean).join(", ");
+            const vMessage = objResult?.message || "Open option 2 live order placed.";
+            if (arrTracked) {
+                renderOpenPositions(arrTracked);
+            }
+            setStatus(ids.pageStatus, vContracts ? `${vMessage} ${vContracts}` : vMessage, "success");
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place OPEN OPTION 2 order.", "danger");
+        });
+    });
     ids.exitOptionButton?.addEventListener("click", function () {
-        void placeManualOption("exit").then(function (objResult) {
+        void placeManualOption("exit", 1).then(function (objResult) {
             const arrContracts = Array.isArray(objResult?.data?.contracts) ? objResult.data.contracts : [];
             const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
             const vContracts = arrContracts.map(function (objRow) {
@@ -1557,6 +1696,23 @@
             return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place EXIT OPTION order.", "danger");
+        });
+    });
+    ids.exitOptionButton2?.addEventListener("click", function () {
+        void placeManualOption("exit", 2).then(function (objResult) {
+            const arrContracts = Array.isArray(objResult?.data?.contracts) ? objResult.data.contracts : [];
+            const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions) ? objResult.data.trackedOpenPositions : null;
+            const vContracts = arrContracts.map(function (objRow) {
+                return String(objRow?.contractSymbol || "").trim();
+            }).filter(Boolean).join(", ");
+            const vMessage = objResult?.message || "Exit option 2 live order placed.";
+            if (arrTracked) {
+                renderOpenPositions(arrTracked);
+            }
+            setStatus(ids.pageStatus, vContracts ? `${vMessage} ${vContracts}` : vMessage, "success");
+            return Promise.all([loadAccountSummary(), loadConnectionStatus(), loadClosedPositions(true).catch(function () { return undefined; }), loadEvents().catch(function () { return undefined; })]);
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to place EXIT OPTION 2 order.", "danger");
         });
     });
     ids.importButton?.addEventListener("click", function () {
@@ -1598,7 +1754,7 @@
     });
     ids.closedPageNumbers?.addEventListener("click", function (objEvent) {
         const objTarget = objEvent.target instanceof Element
-            ? objEvent.target.closest(".rolling-live-closed-page-btn")
+            ? objEvent.target.closest(".rolling-strangle-live-closed-page-btn")
             : null;
         if (!(objTarget instanceof HTMLButtonElement)) {
             return;
@@ -1656,7 +1812,7 @@
         });
     }
     ids.clearEventsButton?.addEventListener("click", function () {
-        void postJson("/api/rollingoptions-lt-de/events/clear", {}).then(function (objResult) {
+        void postJson("/api/rollingoptions-strangle-live/events/clear", {}).then(function (objResult) {
             renderEvents([]);
             setStatus(ids.pageStatus, objResult?.message || "Live activity log cleared.", "success");
         }).catch(function (objError) {
@@ -1672,19 +1828,35 @@
         });
     });
     ids.updateGreenRulesButton?.addEventListener("click", function () {
-        void updateRuleSettings("G").then(function (objResult) {
+        void updateRuleSettings("G", 1).then(function (objResult) {
             setStatus(ids.pageStatus, objResult?.message || "Updated Green rule settings for open options.", "success");
             return loadEvents().catch(function () { return undefined; });
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Green rule settings.", "danger");
         });
     });
+    ids.updateGreenRulesButton2?.addEventListener("click", function () {
+        void updateRuleSettings("G", 2).then(function (objResult) {
+            setStatus(ids.pageStatus, objResult?.message || "Updated Green rule 2 settings for open options.", "success");
+            return loadEvents().catch(function () { return undefined; });
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Green rule 2 settings.", "danger");
+        });
+    });
     ids.updateRedRulesButton?.addEventListener("click", function () {
-        void updateRuleSettings("R").then(function (objResult) {
+        void updateRuleSettings("R", 1).then(function (objResult) {
             setStatus(ids.pageStatus, objResult?.message || "Updated Red rule settings for open options.", "success");
             return loadEvents().catch(function () { return undefined; });
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Red rule settings.", "danger");
+        });
+    });
+    ids.updateRedRulesButton2?.addEventListener("click", function () {
+        void updateRuleSettings("R", 2).then(function (objResult) {
+            setStatus(ids.pageStatus, objResult?.message || "Updated Red rule 2 settings for open options.", "success");
+            return loadEvents().catch(function () { return undefined; });
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Red rule 2 settings.", "danger");
         });
     });
     ids.copyWhitelistIpButton?.addEventListener("click", function () {
@@ -1702,7 +1874,7 @@
     });
     ids.openPositionsBody?.addEventListener("click", function (event) {
         const objTarget = event.target instanceof Element ? event.target : null;
-        const objCloseButton = objTarget ? objTarget.closest(".rolling-live-close-open-position") : null;
+        const objCloseButton = objTarget ? objTarget.closest(".rolling-strangle-live-close-open-position") : null;
         if (objCloseButton instanceof HTMLButtonElement) {
             const vImportId = String(objCloseButton.dataset.importId || "").trim();
             const objRow = gDisplayedPositions.find(function (row) {
@@ -1742,7 +1914,7 @@
             return;
         }
 
-        const objDeleteButton = objTarget ? objTarget.closest(".rolling-live-delete-open-position") : null;
+        const objDeleteButton = objTarget ? objTarget.closest(".rolling-strangle-live-delete-open-position") : null;
         if (objDeleteButton instanceof HTMLButtonElement) {
             const vImportId = String(objDeleteButton.dataset.importId || "").trim();
             const arrRemaining = gDisplayedPositions.filter(function (row) {

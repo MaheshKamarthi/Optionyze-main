@@ -41,6 +41,7 @@
         autoTraderButton: document.getElementById("btnRollingDemoAutoTrader"),
         lastSignal: document.getElementById("rollingDemoLastSignal"),
         openPositionsBody: document.getElementById("rollingDemoOpenPositionsBody"),
+        payoffGraph: document.getElementById("rollingDemoOpenPayoffGraph"),
         closedPositionsBody: document.getElementById("rollingDemoClosedPositionsBody"),
         refreshOpenPositionsButton: document.getElementById("btnRollingDemoRefreshOpenPositions"),
         clearClosedFiltersButton: document.getElementById("btnRollingDemoClearClosedFilters"),
@@ -56,6 +57,8 @@
         telegramAlertsEnabled: document.getElementById("chkRollingDemoTelegramAlertsEnabled"),
         telegramEventCheckboxes: Array.from(document.querySelectorAll(".rolling-demo-telegram-event")),
         eventLog: document.getElementById("rollingDemoEventLog"),
+        hideRenkoEvents: document.getElementById("chkRollingDemoHideRenkoEvents"),
+        hideRenkoGreenSkippedEvents: document.getElementById("chkRollingDemoHideRenkoGreenSkippedEvents"),
         refreshEventsButton: document.getElementById("btnRollingDemoRefreshEvents"),
         clearEventsButton: document.getElementById("btnRollingDemoClearEvents")
     };
@@ -73,6 +76,50 @@
     let gLatestRuntimeState = null;
     let gLatestOpenPositions = [];
     let gHasLoadedProfile = false;
+    let gLatestEvents = [];
+    const gHideRenkoEventsStorageKey = "optionyze:rolling-options-pt-de:hide-renko-events";
+    const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-pt-de:hide-renko-green-skipped-events";
+
+    function readBooleanPreference(storageKey) {
+        try {
+            return window.localStorage.getItem(storageKey) === "1";
+        }
+        catch (_objError) {
+            return false;
+        }
+    }
+
+    function writeBooleanPreference(storageKey, value) {
+        try {
+            window.localStorage.setItem(storageKey, value ? "1" : "0");
+        }
+        catch (_objError) {
+        }
+    }
+
+    function isRenkoChangeEvent(row) {
+        const eventType = String(row?.eventType || "").trim().toLowerCase();
+        const title = String(row?.title || "").trim().toLowerCase();
+        return eventType === "renko_change_detected" || title === "renko change detected";
+    }
+
+    function isRenkoSkippedEvent(row) {
+        const title = String(row?.title || "").trim().toLowerCase();
+        return title === "renko green skipped" || title === "renko red skipped";
+    }
+
+    function getVisibleEvents(rows) {
+        const arrRows = Array.isArray(rows) ? rows : [];
+        return arrRows.filter(function (row) {
+            if (ids.hideRenkoEvents?.checked && isRenkoChangeEvent(row)) {
+                return false;
+            }
+            if (ids.hideRenkoGreenSkippedEvents?.checked && isRenkoSkippedEvent(row)) {
+                return false;
+            }
+            return true;
+        });
+    }
 
     function getSelectedConfig() {
         const selectedSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
@@ -511,6 +558,21 @@
         }
 
         updateOneLotMetric(runtimeState);
+        renderPayoffGraph(gLatestOpenPositions);
+    }
+
+    function renderPayoffGraph(rows) {
+        if (!ids.payoffGraph || !window.OptionyzePayoffGraph) {
+            return;
+        }
+
+        window.OptionyzePayoffGraph.render(ids.payoffGraph, rows, {
+            title: "Open Position Payoff",
+            subtitle: "Expiry payoff across the current open option and future legs.",
+            currentPriceLabel: "Current spot",
+            referencePrice: Number(gLatestRuntimeState?.lastSpotPrice ?? gLatestRuntimeState?.lastFuturesPrice ?? NaN),
+            emptyMessage: "Payoff graph appears when open legs are available."
+        });
     }
 
     function renderOpenPositions(rows) {
@@ -524,6 +586,7 @@
             ids.openPositionsBody.innerHTML = "<tr><td colspan=\"17\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
+            renderPayoffGraph([]);
             return;
         }
 
@@ -599,6 +662,7 @@
         gPreviousOpenPositionLtps = nextLtps;
         updateTotalMarginMetric(rows);
         updateBalanceMetrics(rows);
+        renderPayoffGraph(rows);
     }
 
     function renderClosedPositions(rows) {
@@ -649,12 +713,14 @@
             return;
         }
 
-        if (!Array.isArray(rows) || rows.length === 0) {
+        gLatestEvents = Array.isArray(rows) ? rows : [];
+        const arrRows = getVisibleEvents(gLatestEvents);
+        if (!arrRows.length) {
             ids.eventLog.innerHTML = "<div class=\"rolling-demo-event-empty\">No server activity has been logged yet.</div>";
             return;
         }
 
-        ids.eventLog.innerHTML = rows.map(function (row) {
+        ids.eventLog.innerHTML = arrRows.map(function (row) {
             const vSeverity = String(row.severity || "info").trim();
             return `
                 <div class="rolling-demo-event-item ${escapeHtml(vSeverity)}">
@@ -942,6 +1008,20 @@
     ids.refreshEventsButton?.addEventListener("click", function () {
         void loadEvents();
     });
+    if (ids.hideRenkoEvents instanceof HTMLInputElement) {
+        ids.hideRenkoEvents.checked = readBooleanPreference(gHideRenkoEventsStorageKey);
+        ids.hideRenkoEvents.addEventListener("change", function () {
+            writeBooleanPreference(gHideRenkoEventsStorageKey, ids.hideRenkoEvents.checked);
+            renderEvents(gLatestEvents);
+        });
+    }
+    if (ids.hideRenkoGreenSkippedEvents instanceof HTMLInputElement) {
+        ids.hideRenkoGreenSkippedEvents.checked = readBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey);
+        ids.hideRenkoGreenSkippedEvents.addEventListener("change", function () {
+            writeBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey, ids.hideRenkoGreenSkippedEvents.checked);
+            renderEvents(gLatestEvents);
+        });
+    }
 
     ids.clearEventsButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/events/clear`);

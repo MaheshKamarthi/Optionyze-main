@@ -910,6 +910,33 @@ export class RollingOptionsStrangleService {
         return Math.max(1, Math.round(vBaseQty * vPercent / 100));
     }
 
+    private getConfiguredOptionQty(
+        pUiState: Record<string, unknown>,
+        pConfig: RollingOptionsPtDeConfig,
+        pRuleSet: 1 | 2,
+        pColorCode: "R" | "G",
+        pFutureQty: number
+    ): number {
+        if (pRuleSet === 2) {
+            const vRaw = pColorCode === "G"
+                ? Number((pUiState as any).greenOptQty2)
+                : Number((pUiState as any).redOptQty2);
+            return Number.isFinite(vRaw) ? Math.max(0, Math.floor(vRaw)) : 0;
+        }
+
+        const vExplicitQty = pColorCode === "R"
+            ? Number(pConfig.redOptionQty)
+            : Number(pConfig.greenOptionQty);
+        if (Number.isFinite(vExplicitQty)) {
+            return Math.max(0, Math.floor(vExplicitQty));
+        }
+
+        const vPctQty = pColorCode === "R"
+            ? this.getRenkoOptionQty(pFutureQty, pConfig.redOptionQtyPct)
+            : this.getRenkoOptionQty(pFutureQty, pConfig.greenOptionQtyPct);
+        return vPctQty > 0 ? vPctQty : 1;
+    }
+
     private async openGreenRenkoFuturePosition(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
@@ -1329,8 +1356,52 @@ export class RollingOptionsStrangleService {
             if (objRemaining.length > 0) {
                 await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");
             }
+            return;
         }
-        return;
+
+        if (!bTriggeredActionEnabled || !objTriggeredConfig.reEnter) {
+            return;
+        }
+
+        const objRemainingPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const vOptionSide = String(pPosition.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+        const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
+            return objRow.status === "OPEN"
+                && objRow.instrumentType === "OPTION"
+                && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vTriggeredRuleSet
+                && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
+        });
+        if (bSameLegAlreadyOpen) {
+            return;
+        }
+
+        const vFutureQty = objRemainingPositions
+            .filter((objRow) => objRow.status === "OPEN" && objRow.instrumentType === "FUTURE")
+            .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
+        const vBaseQty = bFuturesEnabled
+            ? Math.max(0, vFutureQty || Number(pPosition.qty || 0))
+            : Math.max(0, Number(pPosition.qty || 0));
+        const vReEntryQty = this.getConfiguredOptionQty(
+            objUiState,
+            objTriggeredConfig,
+            vTriggeredRuleSet,
+            vActiveRuleColor,
+            vBaseQty
+        );
+        if (!(vReEntryQty > 0)) {
+            return;
+        }
+
+        await this.openOptionPositions(
+            pUserId,
+            objTriggeredConfig,
+            vReEntryQty,
+            pReason === "sl" ? "SL replacement option" : "TP replacement option",
+            vActiveRuleColor,
+            true,
+            vTriggeredRuleSet,
+            [vOptionSide]
+        );
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {

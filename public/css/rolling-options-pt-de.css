@@ -648,6 +648,181 @@
     padding:36px 14px;
 }
 
+.rolling-demo-payoff {
+    margin-top:16px;
+    padding:16px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:16px;
+    background:rgba(255,255,255,.02);
+}
+
+.rolling-demo-payoff-panel {
+    display:grid;
+    gap:12px;
+}
+
+.rolling-demo-payoff-head {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    flex-wrap:wrap;
+}
+
+.rolling-demo-payoff-title {
+    font-size:.98rem;
+    font-weight:700;
+    color:var(--app-text);
+}
+
+.rolling-demo-payoff-subtitle {
+    margin-top:4px;
+    color:var(--app-muted);
+    font-size:.88rem;
+}
+
+.rolling-demo-payoff-metrics {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+}
+
+.rolling-demo-payoff-chip {
+    padding:6px 10px;
+    border-radius:999px;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.08);
+    color:var(--app-text);
+    font-size:.84rem;
+}
+
+.rolling-demo-payoff-loss {
+    color:var(--app-warn);
+    font-size:.9rem;
+}
+
+.rolling-demo-payoff-chart {
+    width:100%;
+    overflow-x:auto;
+    position:relative;
+}
+
+.rolling-demo-payoff-chart svg {
+    width:100%;
+    min-width:560px;
+    height:auto;
+    display:block;
+}
+
+.rolling-demo-payoff-axis {
+    stroke:rgba(255,255,255,.18);
+    stroke-width:1;
+}
+
+.rolling-demo-payoff-current {
+    stroke:rgba(96,165,250,.7);
+    stroke-width:1.5;
+    stroke-dasharray:6 4;
+}
+
+.rolling-demo-payoff-current-dot {
+    fill:#60a5fa;
+    stroke:#dbeafe;
+    stroke-width:1.5;
+}
+
+.rolling-demo-payoff-line {
+    fill:none;
+    stroke:#4ade80;
+    stroke-width:3;
+    stroke-linejoin:round;
+    stroke-linecap:round;
+}
+
+.rolling-demo-payoff-area-profit {
+    fill:rgba(74,222,128,.12);
+}
+
+.rolling-demo-payoff-area-loss {
+    fill:rgba(248,113,113,.14);
+}
+
+.rolling-demo-payoff-breakeven {
+    stroke:rgba(250,204,21,.55);
+    stroke-width:1.25;
+    stroke-dasharray:5 5;
+}
+
+.rolling-demo-payoff-breakeven-label {
+    fill:#fde68a;
+    font-size:11px;
+    text-anchor:middle;
+}
+
+.rolling-demo-payoff-strike {
+    stroke:rgba(148,163,184,.35);
+    stroke-width:1;
+    stroke-dasharray:3 5;
+}
+
+.rolling-demo-payoff-strike-label {
+    fill:#cbd5e1;
+    font-size:10px;
+    text-anchor:middle;
+}
+
+.rolling-demo-payoff-hover-line {
+    stroke:rgba(255,255,255,.38);
+    stroke-width:1;
+    stroke-dasharray:4 4;
+}
+
+.rolling-demo-payoff-hover-dot {
+    fill:#f8fafc;
+    stroke:#0f172a;
+    stroke-width:1.5;
+}
+
+.rolling-demo-payoff-label {
+    fill:var(--app-muted);
+    font-size:12px;
+}
+
+.rolling-demo-payoff-empty {
+    color:var(--app-muted);
+    font-size:.9rem;
+}
+
+.rolling-demo-payoff-tooltip {
+    position:absolute;
+    left:0;
+    top:0;
+    z-index:2;
+    min-width:120px;
+    padding:8px 10px;
+    border-radius:10px;
+    background:rgba(15,23,42,.92);
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow:0 8px 20px rgba(0,0,0,.25);
+    pointer-events:none;
+}
+
+.rolling-demo-payoff-tooltip-price {
+    color:#e2e8f0;
+    font-size:.8rem;
+}
+
+.rolling-demo-payoff-tooltip-pnl {
+    color:#86efac;
+    font-size:.84rem;
+    font-weight:700;
+}
+
+.rolling-demo-payoff-tooltip-pnl.negative {
+    color:#fca5a5;
+}
+
 @media (max-width: 1180px) {
     .rolling-demo-grid.futures,
     .rolling-demo-grid.options,

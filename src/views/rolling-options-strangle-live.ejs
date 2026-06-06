@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= pageTitle %></title>
+    <link rel="stylesheet" href="/css/app-shell.css" />
+    <link rel="stylesheet" href="/css/account-menu.css" />
+    <link rel="stylesheet" href="/css/rolling-options-strangle-live.css" />
+</head>
+<body class="app-page">
+    <div class="app-layout rolling-demo-layout">
+        <%- include('partials/app-header', { currentAccount }) %>
+
+        <section class="rolling-demo-hero">
+            <div class="app-panel rolling-demo-card rolling-strangle-live-title-card">
+                <h1 class="rolling-demo-title">Rolling Option Strangle - Live</h1>
+                <div class="rolling-demo-grid metrics rolling-demo-section rolling-strangle-live-manual-metrics rolling-strangle-live-title-metrics">
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">1 x / Lot</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveOneLotValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Total Margin</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveTotalMarginValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Blocked Margin</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveBlockedMarginValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Available Balance</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveAvailableBalanceValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Health</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveHealthValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Open PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveOpenPnlValue">0.000</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Target Open PnL</div>
+                        <input class="rolling-demo-metric-input" type="number" min="-999999999" max="999999999" step="0.001" id="txtRollingStrangleLiveTargetOpenPnl" value="0" />
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Closed PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveOptionsPnlValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Total PnL</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveTotalPnlValue">-</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Charges</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveTotalChargesValue">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="app-panel rolling-demo-card rolling-strangle-live-manual-card">
+                <div class="rolling-demo-card-head">
+                    <h2>Exchange Connection</h2>
+                    <div class="rolling-demo-card-tools">
+                        <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveCheckConnection" title="Check Delta connection" aria-label="Check Delta connection">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="rolling-strangle-live-connection-grid">
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveApiProfile">API Name</label>
+                        <select id="ddlRollingStrangleLiveApiProfile">
+                            <option value="">Select API profile</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label">Connection Status</div>
+                        <div class="rolling-demo-metric-value" id="rollingStrangleLiveConnectionStateValue">Not Selected</div>
+                    </div>
+                    <div class="rolling-demo-metric">
+                        <div class="rolling-demo-metric-label rolling-strangle-live-ip-label">
+                            <span>Whitelist IP</span>
+                            <button class="rolling-strangle-live-copy-ip-btn" type="button" id="btnRollingStrangleLiveCopyWhitelistIp" title="Copy this server IP for Delta Exchange whitelist" aria-label="Copy this server IP for Delta Exchange whitelist">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M9 9h10v12H9z" />
+                                    <path d="M5 15V5h10" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="rolling-strangle-live-ip-row">
+                            <div class="rolling-demo-metric-value" id="rollingStrangleLiveWhitelistIpValue">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="rolling-strangle-live-status" id="rollingStrangleLiveConnectionStatus"></div>
+                <div class="rolling-demo-summary rolling-strangle-live-summary">
+                    <div class="app-stat rolling-demo-stat">
+                        <div class="rolling-demo-stat-label">Engine Status</div>
+                        <div class="rolling-demo-stat-value" id="rollingStrangleLiveEngineStatus">Idle</div>
+                    </div>
+                    <div class="app-stat rolling-demo-stat">
+                        <div class="rolling-demo-stat-label">Last Checked</div>
+                        <div class="rolling-demo-stat-value" id="rollingStrangleLiveLastCheckedValue">-</div>
+                    </div>
+                    <div class="app-stat rolling-demo-stat">
+                        <div class="rolling-demo-stat-label">Open Positions</div>
+                        <div class="rolling-demo-stat-value" id="rollingStrangleLiveOpenCount">0</div>
+                    </div>
+                    <div class="app-stat rolling-demo-stat">
+                        <div class="rolling-demo-stat-label">Profile</div>
+                        <div class="rolling-demo-stat-value" id="rollingStrangleLiveProfileLabel">-</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">Manual Trader 1</span>
+                    </div>
+                    <div class="rolling-demo-card-tools">
+                        <button class="rolling-demo-btn warn" type="button" id="btnRollingStrangleLiveAutoTrader">Auto Trader - OFF</button>
+                    </div>
+                </div>
+                <div class="rolling-strangle-live-status rolling-strangle-live-status-inline" id="rollingStrangleLivePageStatus"></div>
+
+                <div class="rolling-demo-grid futures rolling-strangle-live-manual-futures">
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveSymbol">Symbols List</label>
+                        <select id="ddlRollingStrangleLiveSymbol">
+                            <option value="BTC" selected>BTCUSD</option>
+                            <option value="ETH">ETHUSD</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveLotSize">Lot Size</label>
+                        <input type="text" id="txtRollingStrangleLiveLotSize" value="0.001" readonly />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveFutQty">Qty</label>
+                        <input type="number" min="1" step="1" id="txtRollingStrangleLiveFutQty" value="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveOrderType">Order Type</label>
+                        <select id="ddlRollingStrangleLiveOrderType">
+                            <option value="limit_order">Limit Order</option>
+                            <option value="market_order" selected>Market Order</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveFutAction">Action</label>
+                        <select id="ddlRollingStrangleLiveFutAction">
+                            <option value="SELL" selected>Sell</option>
+                            <option value="BUY">Buy</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveFuturesEnabled">FUT Enabled</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveFuturesEnabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveFuturesEnabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-futures-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLivePlaceFuture">Place FUT</button>
+                    </div>
+                </div>
+
+                <div class="rolling-demo-grid options rolling-demo-section rolling-strangle-live-manual-options">
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveAction1">Action</label>
+                        <select id="ddlRollingStrangleLiveAction1">
+                            <option value="none">None</option>
+                            <option value="buy">Buy</option>
+                            <option value="sell" selected>Sell</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveLegSide1">Legs</label>
+                        <select id="ddlRollingStrangleLiveLegSide1">
+                            <option value="both">Both</option>
+                            <option value="ce" selected>CE</option>
+                            <option value="pe">PE</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveExpiryMode1">Expiry Type</label>
+                        <select id="ddlRollingStrangleLiveExpiryMode1">
+                            <option value="1" selected>DAILY T+1</option>
+                            <option value="2">DAILY T+2</option>
+                            <option value="4">WEEKLY</option>
+                            <option value="5">BI-WEEKLY</option>
+                            <option value="6">MONTHLY</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveExpiry1">Select Expiry</label>
+                        <input type="date" id="txtRollingStrangleLiveExpiry1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveOptQty1">Qty</label>
+                        <input type="number" min="0" value="1" id="txtRollingStrangleLiveOptQty1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReEnter1">Re Enter</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReEnter1">
+                                <input type="checkbox" id="chkRollingStrangleLiveReEnter1" />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-option-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn buy" type="button" id="btnRollingStrangleLiveOpenOption">OPEN OPTION</button>
+                    </div>
+                </div>
+
+                <div class="rolling-demo-subgrid rolling-strangle-live-manual-subgrid">
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveGreenOptQty">Green Opt Qty</label>
+                        <input type="number" min="0" step="1" id="txtRollingStrangleLiveGreenOptQty" value="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveReGreenD">Re Green D</label>
+                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingStrangleLiveReGreenD" value="0.53" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveGreenTp">Green TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveGreenTp" value="15" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailGreenTp1Enabled">Trail Green TP 1</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailGreenTp1Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailGreenTp1Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveGreenSl">Green SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveGreenSl" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailGreenSl1Enabled">Trail Green SL 1</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailGreenSl1Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailGreenSl1Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-rule-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateGreenRules">Update Green</button>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-red-opt-qty">
+                        <label for="txtRollingStrangleLiveRedOptQty">Red Opt Qty</label>
+                        <input type="number" min="0" step="1" id="txtRollingStrangleLiveRedOptQty" value="1" />
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-re-red-d">
+                        <label for="txtRollingStrangleLiveReRedD">Re Red D</label>
+                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingStrangleLiveReRedD" value="0.53" />
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-red-tp">
+                        <label for="txtRollingStrangleLiveRedTp">Red TP %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveRedTp" value="15" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailRedTp1Enabled">Trail Red TP 1</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailRedTp1Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailRedTp1Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-red-sl">
+                        <label for="txtRollingStrangleLiveRedSl">Red SL %</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveRedSl" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailRedSl1Enabled">Trail Red SL 1</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailRedSl1Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailRedSl1Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-rule-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateRedRules">Update Red</button>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-dual-action">
+                        <label>&nbsp;</label>
+                        <div class="rolling-demo-inline">
+                            <button class="rolling-demo-btn warn" type="button" id="btnRollingStrangleLiveExitOption">EXIT OPTION</button>
+                            <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveExecStrategy">Exec Strategy</button>
+                        </div>
+                    </div>
+                    <div class="rolling-strangle-live-manual-section-title">Manual Trader 2</div>
+                    <div class="rolling-demo-field rolling-demo-field-new-row">
+                        <label for="ddlRollingStrangleLiveAction2">Action 2</label>
+                        <select id="ddlRollingStrangleLiveAction2">
+                            <option value="none" selected>None</option>
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveLegSide2">Legs 2</label>
+                        <select id="ddlRollingStrangleLiveLegSide2">
+                            <option value="both">Both</option>
+                            <option value="ce">CE</option>
+                            <option value="pe" selected>PE</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveExpiryMode2">Expiry Type 2</label>
+                        <select id="ddlRollingStrangleLiveExpiryMode2">
+                            <option value="1" selected>DAILY T+1</option>
+                            <option value="2">DAILY T+2</option>
+                            <option value="4">WEEKLY</option>
+                            <option value="5">BI-WEEKLY</option>
+                            <option value="6">MONTHLY</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveExpiry2">Select Expiry 2</label>
+                        <input type="date" id="txtRollingStrangleLiveExpiry2" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveOptQty2">Qty 2</label>
+                        <input type="number" min="0" value="1" id="txtRollingStrangleLiveOptQty2" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReEnter2">Re Enter 2</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReEnter2">
+                                <input type="checkbox" id="chkRollingStrangleLiveReEnter2" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="rolling-demo-subgrid rolling-strangle-live-manual-subgrid">
+                    <div class="rolling-demo-field rolling-demo-field-new-row">
+                        <label for="txtRollingStrangleLiveGreenOptQty2">Green Opt Qty 2</label>
+                        <input type="number" min="0" step="1" id="txtRollingStrangleLiveGreenOptQty2" value="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveReGreenD2">Re Green D 2</label>
+                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingStrangleLiveReGreenD2" value="0.53" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveGreenTp2">Green TP % 2</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveGreenTp2" value="15" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailGreenTp2Enabled">Trail Green TP 2</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailGreenTp2Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailGreenTp2Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveGreenSl2">Green SL % 2</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveGreenSl2" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailGreenSl2Enabled">Trail Green SL 2</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailGreenSl2Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailGreenSl2Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-rule-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateGreenRules2">Update Green</button>
+                    </div>
+                    <div class="rolling-demo-field rolling-demo-field-new-row">
+                        <label for="txtRollingStrangleLiveRedOptQty2">Red Opt Qty 2</label>
+                        <input type="number" min="0" step="1" id="txtRollingStrangleLiveRedOptQty2" value="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveReRedD2">Re Red D 2</label>
+                        <input type="number" min="0.0" max="2.0" step="0.01" id="txtRollingStrangleLiveReRedD2" value="0.53" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveRedTp2">Red TP % 2</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveRedTp2" value="15" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailRedTp2Enabled">Trail Red TP 2</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailRedTp2Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailRedTp2Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveRedSl2">Red SL % 2</label>
+                        <input type="number" min="0" max="100" step="0.1" id="txtRollingStrangleLiveRedSl2" value="85" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveTrailRedSl2Enabled">Trail Red SL 2</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveTrailRedSl2Enabled">
+                                <input type="checkbox" id="chkRollingStrangleLiveTrailRedSl2Enabled" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-rule-action">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateRedRules2">Update Red</button>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-dual-action">
+                        <label>&nbsp;</label>
+                        <div class="rolling-demo-inline">
+                            <button class="rolling-demo-btn buy" type="button" id="btnRollingStrangleLiveOpenOption2">OPEN OPTION 2</button>
+                            <button class="rolling-demo-btn warn" type="button" id="btnRollingStrangleLiveExitOption2">EXIT OPTION 2</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="rolling-demo-subgrid rolling-strangle-live-manual-footer">
+                    <div class="rolling-demo-field rolling-strangle-live-renko-group">
+                        <label for="txtRollingStrangleLiveRenkoValue">Renko Control</label>
+                        <div class="rolling-strangle-live-renko-controls">
+                            <input type="number" min="1" step="1" id="txtRollingStrangleLiveRenkoValue" value="10" />
+                            <button class="rolling-demo-btn rolling-strangle-live-renko-button" type="button" id="btnRollingStrangleLiveRenkoBox">R</button>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveRenkoPriceSrc">Renko Source</label>
+                        <select id="ddlRollingStrangleLiveRenkoPriceSrc">
+                            <option value="mark_price" selected>Mark Price</option>
+                            <option value="spot_price">Spot Price</option>
+                            <option value="best_bid">Best Bid</option>
+                            <option value="best_ask">Best Ask</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field rolling-strangle-live-add-one-lot">
+                        <label for="chkRollingStrangleLiveAddOneLotFuture">Add 1 Lot Future</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveAddOneLotFuture">
+                                <input type="checkbox" id="chkRollingStrangleLiveAddOneLotFuture" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head rolling-strangle-live-open-head">
+                    <h2>Open Positions</h2>
+                    <div class="rolling-strangle-live-open-signal" id="rollingStrangleLiveOpenRenkoSignal">-</div>
+                    <div class="rolling-demo-card-tools">
+                        <label class="rolling-demo-check" for="chkRollingStrangleLiveCloseAllLegsOnAnyClose" title="When enabled, closing a negative option leg will close all open legs">
+                            <input type="checkbox" id="chkRollingStrangleLiveCloseAllLegsOnAnyClose" />
+                            Close all on negative options
+                        </label>
+                        <label class="rolling-demo-check" for="chkRollingStrangleLiveSkipRenkoEntryNoOpenOptions" title="Skip renko option entry when there are no open option legs">
+                            <input type="checkbox" id="chkRollingStrangleLiveSkipRenkoEntryNoOpenOptions" />
+                            Skip entry (0 open opts)
+                        </label>
+                        <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveImportPositions" title="Import existing live positions" aria-label="Import existing live positions">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 3v12" />
+                                <path d="m7 10 5 5 5-5" />
+                                <path d="M5 21h14" />
+                            </svg>
+                        </button>
+                        <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveRefreshOpenPositions" title="Refresh open positions" aria-label="Refresh open positions">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                        </button>
+                        <button class="rolling-demo-icon-btn sell" type="button" id="btnRollingStrangleLiveKillSwitch" title="Kill switch to close live legs" aria-label="Kill switch to close live legs">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 2v10" />
+                                <path d="M6.2 6.2a8 8 0 1 0 11.3 0" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="rolling-demo-table-wrap">
+                    <table class="rolling-demo-table rolling-demo-table-open">
+                        <thead>
+                            <tr>
+                                <th>Delta</th>
+                                <th>C Delta</th>
+                                <th>TP Delta</th>
+                                <th>SL Delta</th>
+                                <th>Symbol</th>
+                                <th>Tr Type</th>
+                                <th>Lot Sz</th>
+                                <th>Qty</th>
+                                <th>Buy Price</th>
+                                <th>Sell Price</th>
+                                <th>LTP</th>
+                                <th>Charges</th>
+                                <th>P &amp; L</th>
+                                <th>Start DT</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rollingStrangleLiveOpenPositionsBody">
+                            <tr>
+                                <td colspan="16" class="rolling-demo-empty">Select an API profile and import existing live positions from Delta Exchange.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="rolling-demo-payoff" id="rollingStrangleLiveOpenPayoffGraph">
+                    <div class="rolling-demo-payoff-empty">Payoff graph appears when open legs are available.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <h2>Closed Positions</h2>
+                    <div class="rolling-demo-card-tools">
+                        <div class="rolling-demo-filters rolling-strangle-live-filters">
+                            <div class="rolling-demo-field">
+                                <input type="datetime-local" id="txtRollingStrangleLiveClosedFromDate" title="Filter closed positions from this date and time" aria-label="Filter closed positions from this date and time" />
+                            </div>
+                            <div class="rolling-demo-field">
+                                <input type="datetime-local" id="txtRollingStrangleLiveClosedToDate" title="Filter closed positions up to this date and time" aria-label="Filter closed positions up to this date and time" />
+                            </div>
+                            <div class="rolling-demo-field">
+                                <div class="rolling-demo-check-wrap">
+                                    <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingStrangleLiveClearClosedFilters" title="Clear closed-position date filters" aria-label="Clear closed-position date filters">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M18 6 6 18" />
+                                            <path d="m6 6 12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="rolling-demo-field">
+                                <div class="rolling-demo-check-wrap">
+                                    <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveRefreshClosedPositions" title="Refresh closed positions from Delta Exchange" aria-label="Refresh closed positions from Delta Exchange">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                            <path d="M21 3v6h-6" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="rolling-demo-table-wrap">
+                    <table class="rolling-demo-table rolling-demo-table-closed">
+                        <thead>
+                            <tr>
+                                <th>Start DT</th>
+                                <th>End DT</th>
+                                <th>Delta</th>
+                                <th>C Delta</th>
+                                <th>Symbol</th>
+                                <th>Tr Type</th>
+                                <th>Lot Sz</th>
+                                <th>Qty</th>
+                                <th>Buy Price</th>
+                                <th>Sell Price</th>
+                                <th>Charges</th>
+                                <th>P &amp; L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rollingStrangleLiveClosedPositionsBody">
+                            <tr>
+                                <td colspan="12" class="rolling-demo-empty">No Delta fill history found for the selected date range.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="rolling-demo-card-tools rolling-strangle-live-pagination">
+                    <div class="rolling-strangle-live-open-signal" id="rollingStrangleLiveClosedPositionsPageInfo">Page 0 of 0</div>
+                    <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingStrangleLiveClosedPrevPage" title="Previous closed-positions page" aria-label="Previous closed-positions page">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m15 18-6-6 6-6" />
+                        </svg>
+                    </button>
+                    <div class="rolling-strangle-live-page-numbers" id="rollingStrangleLiveClosedPageNumbers"></div>
+                    <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveClosedNextPage" title="Next closed-positions page" aria-label="Next closed-positions page">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m9 6 6 6-6 6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="rolling-demo-log-grid">
+                <div class="app-panel rolling-demo-card">
+                    <div class="rolling-demo-card-head">
+                        <h2>Telegram Alerts</h2>
+                    </div>
+                    <p class="app-copy">Alert preferences can follow the same strategy-level model as the paper page while live execution wiring is added server-side.</p>
+                    <div class="rolling-demo-notice">
+                        <% if (currentAccount?.telegramChatId) { %>
+                            Telegram Chat ID configured: <strong><%= currentAccount.telegramChatId %></strong>
+                        <% } else { %>
+                            Telegram Chat ID is not set on your profile yet. Add it in <a href="/account/profile">My Profile</a> to receive alerts.
+                        <% } %>
+                    </div>
+                    <div class="rolling-demo-event-prefs">
+                        <% for (const eventType of rollingTelegramEventTypes || []) { %>
+                            <label class="rolling-demo-check rolling-demo-check-wide" for="live-pref-<%= eventType %>">
+                                <input type="checkbox" class="rolling-demo-telegram-event" id="live-pref-<%= eventType %>" value="<%= eventType %>" />
+                                <span><%= eventType.replaceAll('_', ' ') %></span>
+                            </label>
+                        <% } %>
+                    </div>
+                </div>
+
+                <div class="app-panel rolling-demo-card">
+                    <div class="rolling-demo-card-head">
+                        <h2>Activity Log</h2>
+                        <div class="rolling-demo-card-tools">
+                            <button class="rolling-demo-icon-btn primary" type="button" id="btnRollingStrangleLiveRefreshEvents" title="Refresh activity log" aria-label="Refresh activity log">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                    <path d="M21 3v6h-6" />
+                                </svg>
+                            </button>
+                            <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingStrangleLiveClearEvents" title="Clear activity log" aria-label="Clear activity log">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M3 6h18" />
+                                    <path d="M8 6V4h8v2" />
+                                    <path d="M19 6l-1 14H6L5 6" />
+                                    <path d="M10 11v6" />
+                                    <path d="M14 11v6" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-event-log" id="rollingStrangleLiveEventLog">
+                        <div class="rolling-demo-event-empty">No live activity has been logged yet.</div>
+                    </div>
+                    <label class="rolling-demo-check rolling-demo-check-wide" for="chkRollingStrangleLiveHideRenkoEvents" title="Hide Renko Change Detected messages in the activity log">
+                        <input type="checkbox" id="chkRollingStrangleLiveHideRenkoEvents" />
+                        <span>Hide Renko Changes</span>
+                    </label>
+                    <label class="rolling-demo-check rolling-demo-check-wide" for="chkRollingStrangleLiveHideRenkoGreenSkippedEvents" title="Hide Renko GREEN Skipped and Renko RED Skipped messages in the activity log">
+                        <input type="checkbox" id="chkRollingStrangleLiveHideRenkoGreenSkippedEvents" />
+                        <span>Hide Renko Skipped</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="rolling-strangle-live-overlay" id="rollingStrangleLiveImportOverlay"></div>
+    <section class="app-panel rolling-strangle-live-modal" id="rollingStrangleLiveImportModal" aria-hidden="true">
+        <div class="rolling-strangle-live-modal-head">
+            <div>
+                <h2 class="rolling-strangle-live-modal-title">Import Existing Positions</h2>
+                <p class="app-copy">Pick one or more open Delta Exchange positions to mirror in the live grid.</p>
+            </div>
+            <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingStrangleLiveCloseImportModal" title="Close import dialog" aria-label="Close import dialog">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="rolling-strangle-live-status" id="rollingStrangleLiveImportStatus"></div>
+        <div class="rolling-strangle-live-import-list" id="rollingStrangleLiveImportList">
+            <div class="rolling-demo-event-empty">Select an API profile to load open live positions.</div>
+        </div>
+        <div class="rolling-strangle-live-modal-actions">
+            <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveApplyImportedPositions">Import Selected</button>
+        </div>
+    </section>
+
+    <script src="/js/open-position-payoff-graph.js"></script>
+    <script src="/js/rolling-options-strangle-live.js"></script>
+</body>
+</html>

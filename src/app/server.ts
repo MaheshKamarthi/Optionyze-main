@@ -10,6 +10,8 @@ import { ensurePostgresSchema, isPostgresConfigured } from "../storage/postgres"
 import { StrategyFoGreeksPaperService } from "../strategies/strategy-fo-greeks-paper/service";
 import { startRollingOptionsLtDeConnectionMonitor, runRollingOptionsLtDeConnectionMonitorCycle } from "../strategies/rolling-options-lt-de/connection-monitor";
 import { RollingOptionsLtDeService } from "../strategies/rolling-options-lt-de/service";
+import { startRollingOptionsStrangleLiveConnectionMonitor, runRollingOptionsStrangleLiveConnectionMonitorCycle } from "../strategies/rolling-options-strangle-live/connection-monitor";
+import { RollingOptionsStrangleLiveService } from "../strategies/rolling-options-strangle-live/service";
 import { RollingOptionsPtDeService } from "../strategies/rolling-options-pt-de/service";
 import { RollingOptionsStrangleService } from "../strategies/rolling-options-strangle/service";
 import {
@@ -22,6 +24,7 @@ import {
 import { recoverRollingFuturesLtAutoTraderCycles } from "../api/controllers/rolling-futures-lt-controller";
 import { renderRollingOptionsPaperDemoPage, renderRollingOptionsStranglePage } from "../api/controllers/rolling-options-pt-de-controller";
 import { renderRollingOptionsLivePage } from "../api/controllers/rolling-options-lt-de-controller";
+import { renderRollingOptionsLivePage as renderRollingOptionsStrangleLivePage } from "../api/controllers/rolling-options-strangle-live-controller";
 import {
     changePassword,
     renderChangePasswordPage,
@@ -84,6 +87,7 @@ async function bootstrap(): Promise<void> {
     const rollingOptionsPtDeService = new RollingOptionsPtDeService(runnerManager);
     const rollingOptionsStrangleService = new RollingOptionsStrangleService(runnerManager);
     const rollingOptionsLtDeService = new RollingOptionsLtDeService(runnerManager);
+    const rollingOptionsStrangleLiveService = new RollingOptionsStrangleLiveService(runnerManager);
 
     await ensurePostgresSchema();
     await ensureBootstrapAdminAccount();
@@ -92,9 +96,12 @@ async function bootstrap(): Promise<void> {
     await rollingOptionsPtDeService.hydrate();
     await rollingOptionsStrangleService.hydrate();
     await rollingOptionsLtDeService.hydrate();
+    await rollingOptionsStrangleLiveService.hydrate();
     await recoverRollingFuturesLtAutoTraderCycles();
     startRollingOptionsLtDeConnectionMonitor(5 * 60 * 1000);
     void runRollingOptionsLtDeConnectionMonitorCycle();
+    startRollingOptionsStrangleLiveConnectionMonitor(5 * 60 * 1000);
+    void runRollingOptionsStrangleLiveConnectionMonitorCycle();
 
     app.set("view engine", "ejs");
     app.set("views", path.resolve(process.cwd(), "src", "views"));
@@ -128,6 +135,7 @@ async function bootstrap(): Promise<void> {
     app.get("/rollingoptions-strangle", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsStranglePage);
     app.get("/rollingfutures-pt-de", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesPaperDemoPage);
     app.get("/rollingoptions-lt-de", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsLivePage);
+    app.get("/rollingoptions-strangle-live", requireAuthPage, requireFreshPasswordPage, renderRollingOptionsStrangleLivePage);
     app.get("/rollingfutures-lt-long", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesLiveLongPage);
     app.get("/rollingfutures-lt-short", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesLiveShortPage);
     app.get("/rollingfutures-lt-dual", requireAuthPage, requireFreshPasswordPage, renderRollingFuturesLiveDualPage);
@@ -145,7 +153,7 @@ async function bootstrap(): Promise<void> {
         await changePassword(req, res);
     });
     app.get("/strategyfogreeks", requireAuthPage, requireFreshPasswordPage, renderStrategyFoPaperPage);
-    app.use("/api", createApiRouter(runnerManager, strategyFoPaperService, rollingOptionsPtDeService, rollingOptionsStrangleService, rollingOptionsLtDeService));
+    app.use("/api", createApiRouter(runnerManager, strategyFoPaperService, rollingOptionsPtDeService, rollingOptionsStrangleService, rollingOptionsLtDeService, rollingOptionsStrangleLiveService));
 
     const vPort = await listenOnAvailablePort(app, vPreferredPort, !vEnvPort);
     console.log(`Optionyze server listening on port ${vPort}`);
@@ -155,7 +163,6 @@ void bootstrap().catch((objError) => {
     console.error("Failed to bootstrap Optionyze", objError);
     process.exitCode = 1;
 });
-
 
 
 

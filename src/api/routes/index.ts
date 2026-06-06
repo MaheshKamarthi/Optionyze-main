@@ -89,6 +89,32 @@ import {
     updateRollingOptionsLtDeRuleSettings
 } from "../controllers/rolling-options-lt-de-controller";
 import {
+    checkRollingOptionsStrangleLiveConnection,
+    clearRollingOptionsStrangleLiveEventsController,
+    closeRollingOptionsStrangleLiveImportedOpenPosition,
+    deleteRollingOptionsStrangleLiveOpenPosition,
+    disableRollingOptionsStrangleLiveAutoTrader,
+    enableRollingOptionsStrangleLiveAutoTrader,
+    executeRollingOptionsStrangleLiveKillSwitch,
+    executeRollingOptionsStrangleLiveManualFuture,
+    executeRollingOptionsStrangleLiveManualOption,
+    executeRollingOptionsStrangleLiveStrategy,
+    getRollingOptionsStrangleLiveAccountSummary,
+    getRollingOptionsStrangleLiveClosedPositions,
+    getRollingOptionsStrangleLiveConnectionStatus,
+    getRollingOptionsStrangleLiveEvents,
+    getRollingOptionsStrangleLiveImportableOpenPositions,
+    getRollingOptionsStrangleLiveOpenPositions,
+    getRollingOptionsStrangleLiveProfile,
+    getRollingOptionsStrangleLiveRuntimeStatus,
+    reconcileRollingOptionsStrangleLiveOpenPositions,
+    runRollingOptionsStrangleLiveStrategyCycle,
+    saveRollingOptionsStrangleLiveOpenPositions,
+    saveRollingOptionsStrangleLiveProfileController,
+    setRollingOptionsStrangleLiveManualRenkoSignal,
+    updateRollingOptionsStrangleLiveRuleSettings
+} from "../controllers/rolling-options-strangle-live-controller";
+import {
     checkRollingFuturesLtLongConnection,
     checkRollingFuturesLtShortConnection,
     checkRollingFuturesLtDualConnection,
@@ -168,6 +194,7 @@ import {
 } from "../controllers/delta-api-controller";
 import type { RunnerManager } from "../../runners/runner-manager";
 import type { RollingOptionsLtDeService } from "../../strategies/rolling-options-lt-de/service";
+import type { RollingOptionsStrangleLiveService } from "../../strategies/rolling-options-strangle-live/service";
 import type { StrategyFoGreeksPaperService } from "../../strategies/strategy-fo-greeks-paper/service";
 import type { RollingOptionsPtDeService } from "../../strategies/rolling-options-pt-de/service";
 import type { RollingOptionsStrangleService } from "../../strategies/rolling-options-strangle/service";
@@ -178,7 +205,8 @@ export function createApiRouter(
     pStrategyFoPaperService: StrategyFoGreeksPaperService,
     pRollingOptionsPtDeService: RollingOptionsPtDeService,
     pRollingOptionsStrangleService: RollingOptionsStrangleService,
-    pRollingOptionsLtDeService: RollingOptionsLtDeService
+    pRollingOptionsLtDeService: RollingOptionsLtDeService,
+    pRollingOptionsStrangleLiveService: RollingOptionsStrangleLiveService
 ): Router {
     const objRouter = Router();
 
@@ -438,6 +466,79 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-lt-de/events/clear", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await clearRollingOptionsLtDeEventsController(req, res);
+    });
+
+    objRouter.get("/rollingoptions-strangle-live/account-summary", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveAccountSummary(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/profile", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveProfile(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/profile", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await saveRollingOptionsStrangleLiveProfileController(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/connection/status", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveConnectionStatus(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/runtime", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveRuntimeStatus(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/connection/check", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await checkRollingOptionsStrangleLiveConnection(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/auto-trader/start", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await enableRollingOptionsStrangleLiveAutoTrader(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/auto-trader/stop", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await disableRollingOptionsStrangleLiveAutoTrader(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/strategy/execute", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await executeRollingOptionsStrangleLiveStrategy(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/strategy/cycle", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await runRollingOptionsStrangleLiveStrategyCycle(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/kill-switch", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await executeRollingOptionsStrangleLiveKillSwitch(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/manual/future", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await executeRollingOptionsStrangleLiveManualFuture(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/manual/option", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await executeRollingOptionsStrangleLiveManualOption(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleLiveRuleSettings(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/open-positions/close", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await closeRollingOptionsStrangleLiveImportedOpenPosition(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.get("/rollingoptions-strangle-live/open-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveOpenPositions(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/open-positions/reconcile", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await reconcileRollingOptionsStrangleLiveOpenPositions(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/renko/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await setRollingOptionsStrangleLiveManualRenkoSignal(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/open-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await saveRollingOptionsStrangleLiveOpenPositions(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/open-positions/delete", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await deleteRollingOptionsStrangleLiveOpenPosition(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/open-positions/importable", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveImportableOpenPositions(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/closed-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveClosedPositions(req, res);
+    });
+    objRouter.get("/rollingoptions-strangle-live/events", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleLiveEvents(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/events/clear", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await clearRollingOptionsStrangleLiveEventsController(req, res);
     });
 
     objRouter.get("/rollingfutures-lt-long/profile", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
