@@ -605,6 +605,13 @@
         return value >= 10 ? `${value.toFixed(0)}d` : `${value.toFixed(1)}d`;
     }
 
+    function normalizeCustomSpotPrice(value) {
+        const normalized = toNumber(value);
+        return Number.isFinite(normalized) && normalized > 0
+            ? Number(normalized.toFixed(2))
+            : NaN;
+    }
+
     function getLegStrokeColor(index) {
         const colors = [
             "#60a5fa",
@@ -874,6 +881,32 @@
         });
     }
 
+    function bindCustomSpotControls(container, graphConfig) {
+        const spotInput = container.querySelector(".rolling-demo-payoff-spot-input");
+        const resetButton = container.querySelector(".rolling-demo-payoff-spot-reset");
+        if (!(spotInput instanceof HTMLInputElement) || typeof graphConfig?.onCustomSpotPriceChange !== "function") {
+            return;
+        }
+
+        const applySpotValue = function () {
+            const rawValue = String(spotInput.value || "").trim();
+            graphConfig.onCustomSpotPriceChange(rawValue ? normalizeCustomSpotPrice(rawValue) : null);
+        };
+
+        spotInput.addEventListener("change", applySpotValue);
+        spotInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                applySpotValue();
+            }
+        });
+
+        if (resetButton instanceof HTMLButtonElement) {
+            resetButton.addEventListener("click", function () {
+                graphConfig.onCustomSpotPriceChange(null);
+            });
+        }
+    }
+
     function render(container, rows, options) {
         if (!(container instanceof HTMLElement)) {
             return;
@@ -885,7 +918,10 @@
             return;
         }
 
-        const referencePrice = getReferencePrice(normalizedRows, options?.referencePrice);
+        const marketReferencePrice = getReferencePrice(normalizedRows, options?.referencePrice);
+        const customSpotPrice = normalizeCustomSpotPrice(options?.customSpotPrice);
+        const isCustomSpotActive = Number.isFinite(customSpotPrice);
+        const referencePrice = isCustomSpotActive ? customSpotPrice : marketReferencePrice;
         const projectionScale = 4;
         const maxProjectionDays = normalizedRows.reduce(function (bestValue, row) {
             if (row.instrumentType !== "OPTION") {
@@ -967,6 +1003,7 @@
             ? "Expiry curve"
             : (projectionDays <= 0.01 ? "Current premium curve" : "Projected premium curve");
         const currentPriceLabel = String(options?.currentPriceLabel || "Current spot");
+        const graphSpotLabel = isCustomSpotActive ? `${currentPriceLabel} Preview` : currentPriceLabel;
         const breakEvenSummary = breakEvens.length ? breakEvens.map(formatPrice).join(" / ") : "None in range";
         const chartId = `payoff-${String(container.id || "graph").replace(/[^a-z0-9_-]/gi, "-")}-${Date.now()}`;
         const maxProfit = Math.max.apply(null, points.map(function (point) { return point.pnl; }));
@@ -1045,7 +1082,8 @@
                         </div>
                         <div class="rolling-demo-payoff-badges">
                             <span class="rolling-demo-payoff-badge neutral">${escapeHtml(curveModeLabel)}</span>
-                            <span class="rolling-demo-payoff-badge success">${escapeHtml(currentPriceLabel)} ${escapeHtml(formatPrice(referencePrice))}</span>
+                            <span class="rolling-demo-payoff-badge neutral">${escapeHtml(`Live ${currentPriceLabel} ${formatPrice(marketReferencePrice)}`)}</span>
+                            <span class="rolling-demo-payoff-badge success">${escapeHtml(`${graphSpotLabel} ${formatPrice(referencePrice)}`)}</span>
                         </div>
                     </div>
                     <div class="rolling-demo-payoff-summary-grid">
@@ -1062,7 +1100,7 @@
                             <div class="rolling-demo-payoff-summary-value">${escapeHtml(breakEvenSummary)}</div>
                         </div>
                         <div class="rolling-demo-payoff-summary-card">
-                            <div class="rolling-demo-payoff-summary-label">${escapeHtml(currentPriceLabel)}</div>
+                            <div class="rolling-demo-payoff-summary-label">${escapeHtml(graphSpotLabel)}</div>
                             <div class="rolling-demo-payoff-summary-value">${escapeHtml(formatPrice(referencePrice))}</div>
                         </div>
                     </div>
@@ -1137,6 +1175,32 @@
                                         <span>Max horizon</span>
                                         <strong>${escapeHtml(formatDayCount(maxProjectionDays))}</strong>
                                     </div>
+                                </div>
+                                <div class="rolling-demo-payoff-spot-controls">
+                                    <div class="rolling-demo-payoff-hover-panel">
+                                        <div class="rolling-demo-payoff-hover-row">
+                                            <span>Live ${escapeHtml(currentPriceLabel)}</span>
+                                            <strong>${escapeHtml(formatPrice(marketReferencePrice))}</strong>
+                                        </div>
+                                        <div class="rolling-demo-payoff-hover-row">
+                                            <span>Graph spot used</span>
+                                            <strong>${escapeHtml(formatPrice(referencePrice))}</strong>
+                                        </div>
+                                    </div>
+                                    <div class="rolling-demo-payoff-spot-actions">
+                                        <input
+                                            type="number"
+                                            class="rolling-demo-payoff-spot-input"
+                                            inputmode="decimal"
+                                            min="0"
+                                            step="0.01"
+                                            placeholder="${escapeHtml(formatPrice(marketReferencePrice))}"
+                                            value="${isCustomSpotActive ? escapeHtml(referencePrice.toFixed(2)) : ""}"
+                                            ${typeof options?.onCustomSpotPriceChange === "function" ? "" : "disabled"}
+                                        >
+                                        <button type="button" class="rolling-demo-payoff-spot-reset"${typeof options?.onCustomSpotPriceChange === "function" && isCustomSpotActive ? "" : " disabled"}>Use Live Spot</button>
+                                    </div>
+                                    <div class="rolling-demo-payoff-sl-help">${escapeHtml("Enter a custom spot price to move the spot line and preview payoff at that level without changing the live/runtime spot feed.")}</div>
                                 </div>
                                 <div class="rolling-demo-payoff-projection-controls">
                                     <input
@@ -1273,6 +1337,9 @@
             bindProjectionControls(container, {
                 projectionScale,
                 onProjectionDaysChange: options?.onProjectionDaysChange
+            });
+            bindCustomSpotControls(container, {
+                onCustomSpotPriceChange: options?.onCustomSpotPriceChange
             });
             return;
         }

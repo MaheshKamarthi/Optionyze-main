@@ -293,13 +293,55 @@
 }
 
 .rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-controls,
+.rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-spot-controls,
 .rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sl-help {
     grid-column: 1 / -1;
 }
 
 .rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-controls,
+.rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-spot-controls,
 .rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sl-help {
     margin-top: 0;
+}
+
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-controls {
+    display: grid;
+    gap: 10px;
+}
+
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-input {
+    flex: 1 1 180px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.55);
+    color: var(--app-text);
+    font: inherit;
+}
+
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-reset {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--app-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-reset:disabled,
+.rolling-strangle-live-payoff .rolling-demo-payoff-spot-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .rolling-strangle-live-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-actions {

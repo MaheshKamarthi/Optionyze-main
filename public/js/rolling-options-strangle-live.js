@@ -135,6 +135,7 @@
     let gPayoffSlCheckpoints = [];
     let gPayoffSlSelectedLegKey = PAYOFF_SL_ALL_LEGS_KEY;
     let gPayoffProjectionDays = 0;
+    let gPayoffCustomSpotPrice = NaN;
     const gClosedPositionsPageSize = 10;
     const gFutureBrokeragePct = 0.05;
     const gOptionBrokeragePct = 0.01;
@@ -205,6 +206,12 @@
         return typeof shared.normalizePayoffProjectionDays === "function"
             ? shared.normalizePayoffProjectionDays(value)
             : 0;
+    }
+
+    function normalizePayoffCustomSpotPrice(value) {
+        return typeof shared.normalizePayoffCustomSpotPrice === "function"
+            ? shared.normalizePayoffCustomSpotPrice(value)
+            : NaN;
     }
 
     function getSelectedConfig() {
@@ -422,6 +429,9 @@
             payoffSlCheckpoints: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints),
             payoffSlSelectedLegKey: normalizePayoffSlSelectedLegKey(gPayoffSlSelectedLegKey),
             payoffProjectionDays: normalizePayoffProjectionDays(gPayoffProjectionDays),
+            payoffCustomSpotPrice: Number.isFinite(normalizePayoffCustomSpotPrice(gPayoffCustomSpotPrice))
+                ? normalizePayoffCustomSpotPrice(gPayoffCustomSpotPrice)
+                : null,
             closeAllLegsOnAnyClose: Boolean(ids.closeAllLegsOnAnyClose?.checked),
             skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             closedFromDate: String(ids.closedFromDate?.value || ""),
@@ -452,6 +462,7 @@
         gPayoffSlCheckpoints = normalizePayoffSlCheckpoints(uiState?.payoffSlCheckpoints, uiState?.payoffSlCheckpointPrices ?? uiState?.payoffSlCheckpointPrice);
         gPayoffSlSelectedLegKey = normalizePayoffSlSelectedLegKey(uiState?.payoffSlSelectedLegKey);
         gPayoffProjectionDays = normalizePayoffProjectionDays(uiState?.payoffProjectionDays);
+        gPayoffCustomSpotPrice = normalizePayoffCustomSpotPrice(uiState?.payoffCustomSpotPrice);
 
         setFieldValue(ids.symbol, normalizeSymbolValue(uiState.symbol));
         setFieldValue(ids.futQty, uiState.manualFutQty);
@@ -1165,6 +1176,7 @@
             subtitle: "Delta-style projected payoff view with time decay across the imported live option and future legs.",
             currentPriceLabel: "Spot",
             referencePrice: Number(gLatestRuntimeState?.lastSpotPrice ?? gLatestRuntimeState?.lastFuturesPrice ?? NaN),
+            customSpotPrice: gPayoffCustomSpotPrice,
             slCheckpoints: gPayoffSlCheckpoints,
             selectedSlLegKey: gPayoffSlSelectedLegKey,
             projectionDays: gPayoffProjectionDays,
@@ -1180,6 +1192,11 @@
             },
             onProjectionDaysChange: function (days) {
                 gPayoffProjectionDays = normalizePayoffProjectionDays(days);
+                queueProfileSave();
+                renderPayoffGraph(gDisplayedPositions);
+            },
+            onCustomSpotPriceChange: function (spotPrice) {
+                gPayoffCustomSpotPrice = normalizePayoffCustomSpotPrice(spotPrice);
                 queueProfileSave();
                 renderPayoffGraph(gDisplayedPositions);
             },

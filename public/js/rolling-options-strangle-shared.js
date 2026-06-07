@@ -133,6 +133,13 @@
         return Number.isFinite(normalized) ? Math.max(0, normalized) : 0;
     }
 
+    function normalizePayoffCustomSpotPrice(value) {
+        const normalized = Number(value);
+        return Number.isFinite(normalized) && normalized > 0
+            ? Number(normalized.toFixed(2))
+            : NaN;
+    }
+
     function normalizePayoffSlCheckpoints(checkpoints, legacyValues) {
         const arrRaw = Array.isArray(checkpoints)
             ? checkpoints
@@ -188,6 +195,7 @@
         normalizePayoffSlCheckpointPrices,
         normalizePayoffSlSelectedLegKey,
         normalizePayoffProjectionDays,
+        normalizePayoffCustomSpotPrice,
         normalizePayoffSlCheckpoints
     };
 })();
