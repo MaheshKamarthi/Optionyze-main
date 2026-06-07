@@ -6,7 +6,10 @@ import {
     saveRollingOptionsPtDePosition,
     type RollingOptionsPtDePositionRecord
 } from "../../storage/rolling-options-strangle-position-store";
-import { loadRollingOptionsPtDeProfile } from "../../storage/rolling-options-strangle-profile-store";
+import {
+    loadRollingOptionsPtDeProfile,
+    saveRollingOptionsPtDeProfile
+} from "../../storage/rolling-options-strangle-profile-store";
 import {
     listRollingOptionsPtDeRuntime,
     saveRollingOptionsPtDeRuntime,
@@ -284,6 +287,168 @@ export class RollingOptionsStrangleService {
             reDelta: Number(pConfig.redReDelta ?? pConfig.reDelta ?? 0.53),
             takeProfitDelta: Number(pConfig.redDeltaTakeProfit ?? pConfig.deltaTakeProfit ?? 0.15),
             stopLossDelta: Number(pConfig.redDeltaStopLoss ?? pConfig.deltaStopLoss ?? 0.85)
+        };
+    }
+
+    private getPayoffSlCheckpoints(pUiState: Record<string, unknown>): Array<{ legKey: string; price: number; }> {
+        const vAllLegsKey = "__all_legs__";
+        const arrStructuredRaw = Array.isArray((pUiState as any)?.payoffSlCheckpoints)
+            ? (pUiState as any).payoffSlCheckpoints
+            : [];
+        const arrStructured = arrStructuredRaw
+            .map((pRow: unknown) => {
+                const objRow = pRow && typeof pRow === "object"
+                    ? pRow as { legKey?: unknown; price?: unknown; }
+                    : null;
+                const vPrice = Number(objRow?.price);
+                if (!Number.isFinite(vPrice)) {
+                    return null;
+                }
+                return {
+                    legKey: String(objRow?.legKey || vAllLegsKey).trim() || vAllLegsKey,
+                    price: vPrice
+                };
+            })
+            .filter((pRow: { legKey: string; price: number; } | null): pRow is { legKey: string; price: number; } => Boolean(pRow));
+        if (arrStructured.length > 0) {
+            return arrStructured
+                .filter((pRow: { legKey: string; price: number; }, pIndex: number, pRows: Array<{ legKey: string; price: number; }>) => {
+                    return pRows.findIndex((pCandidate: { legKey: string; price: number; }) => {
+                        return pCandidate.legKey === pRow.legKey && Math.abs(pCandidate.price - pRow.price) < 0.01;
+                    }) === pIndex;
+                })
+                .sort((pLeft: { legKey: string; price: number; }, pRight: { legKey: string; price: number; }) => {
+                    if (pLeft.legKey === pRight.legKey) {
+                        return pLeft.price - pRight.price;
+                    }
+                    return pLeft.legKey.localeCompare(pRight.legKey);
+                });
+        }
+
+        const arrRaw = Array.isArray((pUiState as any)?.payoffSlCheckpointPrices)
+            ? (pUiState as any).payoffSlCheckpointPrices
+            : (Number.isFinite(Number((pUiState as any)?.payoffSlCheckpointPrice))
+                ? [Number((pUiState as any).payoffSlCheckpointPrice)]
+                : []);
+
+        return arrRaw
+            .map((pValue: unknown) => Number(pValue))
+            .filter((pValue: number) => Number.isFinite(pValue))
+            .filter((pValue: number, pIndex: number, pValues: number[]) => {
+                return pValues.findIndex((pCandidate) => Math.abs(pCandidate - pValue) < 0.01) === pIndex;
+            })
+            .sort((pLeft: number, pRight: number) => pLeft - pRight)
+            .map((pPrice: number) => ({
+                legKey: vAllLegsKey,
+                price: pPrice
+            }));
+    }
+
+    private getCrossedPayoffSlCheckpoints(
+        pPreviousSpotPrice: number,
+        pCurrentSpotPrice: number,
+        pCheckpoints: Array<{ legKey: string; price: number; }>
+    ): Array<{ legKey: string; price: number; }> {
+        if (!Number.isFinite(pPreviousSpotPrice) || !Number.isFinite(pCurrentSpotPrice)) {
+            return [];
+        }
+
+        if (Math.abs(pPreviousSpotPrice - pCurrentSpotPrice) < 0.000001) {
+            return [];
+        }
+
+        const vMinPrice = Math.min(pPreviousSpotPrice, pCurrentSpotPrice);
+        const vMaxPrice = Math.max(pPreviousSpotPrice, pCurrentSpotPrice);
+        return pCheckpoints.filter((pCheckpoint) => {
+            return pCheckpoint.price >= vMinPrice && pCheckpoint.price <= vMaxPrice;
+        });
+    }
+
+    private async handlePayoffSlCheckpointTrigger(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pOpenPositions: RollingOptionsPtDePositionRecord[],
+        pPreviousSpotPrice: number,
+        pCurrentSpotPrice: number
+    ): Promise<{ triggered: boolean; signal: string; message: string; }> {
+        const arrOpenPositions = (Array.isArray(pOpenPositions) ? pOpenPositions : [])
+            .filter((pPosition) => pPosition?.status === "OPEN");
+        if (arrOpenPositions.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        const vAllLegsKey = "__all_legs__";
+        const objUiState = ((pConfig as any).__uiState || await this.loadUiState(pUserId)) as Record<string, unknown>;
+        const arrCheckpoints = this.getPayoffSlCheckpoints(objUiState);
+        const arrTriggeredCheckpoints = this.getCrossedPayoffSlCheckpoints(
+            pPreviousSpotPrice,
+            pCurrentSpotPrice,
+            arrCheckpoints
+        );
+        if (arrTriggeredCheckpoints.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        const arrRemainingCheckpoints = arrCheckpoints.filter((pCheckpoint) => {
+            return !arrTriggeredCheckpoints.some((pTriggeredCheckpoint) => {
+                return pTriggeredCheckpoint.legKey === pCheckpoint.legKey && Math.abs(pTriggeredCheckpoint.price - pCheckpoint.price) < 0.01;
+            });
+        });
+        const arrTargetPositions = arrTriggeredCheckpoints.some((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)
+            ? arrOpenPositions
+            : arrOpenPositions.filter((pPosition) => {
+                const vPositionId = String((pPosition as any)?.positionId || "").trim();
+                return arrTriggeredCheckpoints.some((pCheckpoint) => pCheckpoint.legKey === vPositionId);
+            });
+        const arrTargetPositionIds = arrTargetPositions
+            .map((pPosition) => String((pPosition as any)?.positionId || "").trim())
+            .filter(Boolean);
+
+        const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
+        const objNextUiState = {
+            ...(objProfile?.uiState || {}),
+            ...objUiState,
+            payoffSlCheckpointPrices: arrRemainingCheckpoints
+                .filter((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)
+                .map((pCheckpoint) => pCheckpoint.price),
+            payoffSlCheckpoints: arrRemainingCheckpoints
+        } as Record<string, unknown>;
+        await saveRollingOptionsPtDeProfile({
+            userId: pUserId,
+            uiState: objNextUiState,
+            updatedAt: objProfile?.updatedAt || ""
+        });
+        (pConfig as any).__uiState = objNextUiState;
+
+        if (arrTargetPositions.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        const vCheckpointLabel = arrTriggeredCheckpoints
+            .map((pCheckpoint) => `${pCheckpoint.legKey === vAllLegsKey ? "All legs" : pCheckpoint.legKey} @ ${pCheckpoint.price.toFixed(2)}`)
+            .join(", ");
+        await this.closePositions(arrTargetPositions, pConfig, `Payoff graph exit point triggered @ ${vCheckpointLabel}`);
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "warning",
+            title: "Payoff Exit Point Triggered",
+            message: `Closed ${arrTargetPositions.length} paper position(s) after spot crossed payoff exit point(s).`,
+            payload: {
+                symbol: pConfig.symbol,
+                qty: arrTargetPositions.length,
+                reason: "payoff_graph_exit_point_triggered",
+                previousSpotPrice: pPreviousSpotPrice,
+                currentSpotPrice: pCurrentSpotPrice,
+                checkpoints: arrTriggeredCheckpoints,
+                remainingCheckpoints: arrRemainingCheckpoints,
+                targetPositionIds: arrTargetPositionIds
+            }
+        });
+        return {
+            triggered: true,
+            signal: "PAYOFF_EXIT_POINT_TRIGGERED",
+            message: `Cycle completed with payoff exit point close at ${vCheckpointLabel}.`
         };
     }
 
@@ -1414,6 +1579,7 @@ export class RollingOptionsStrangleService {
         try {
             const objConfig = await this.loadConfig(pUserId);
             const objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const vPreviousSpotPrice = Number(objState.market.lastSpotPrice ?? NaN);
             ensureLiveTickerSymbols([
                 objConfig.contractName,
                 ...objCurrentOpenPositions
@@ -1424,6 +1590,29 @@ export class RollingOptionsStrangleService {
             objState.market.lastSpotPrice = objSnapshot.spotPrice;
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
+
+            const objPayoffSlTrigger = await this.handlePayoffSlCheckpointTrigger(
+                pUserId,
+                objConfig,
+                objCurrentOpenPositions,
+                vPreviousSpotPrice,
+                objSnapshot.spotPrice
+            );
+            if (objPayoffSlTrigger.triggered) {
+                objState.cycleCount += 1;
+                objState.consecutiveFailures = 0;
+                objState.lastError = "";
+                objState.lastCycleAt = new Date().toISOString();
+                await this.syncRuntime(pUserId, objConfig, objState, {
+                    status: objState.running ? "running" : "stopped",
+                    autoTraderEnabled: objState.running,
+                    lastSpotPrice: objSnapshot.spotPrice,
+                    lastFuturesPrice: objSnapshot.futuresPrice,
+                    lastSignal: objPayoffSlTrigger.signal,
+                    lastCycleAt: objState.lastCycleAt
+                });
+                return { status: "success", message: objPayoffSlTrigger.message };
+            }
 
             const objRenkoSignals = objConfig.renkoEnabled
                 ? updateRenkoState(objState, objSnapshot, objConfig)

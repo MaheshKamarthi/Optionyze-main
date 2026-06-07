@@ -8,7 +8,10 @@ import {
     type RollingOptionsStrangleLiveImportedPositionRecord,
     type RollingOptionsStrangleLivePositionMetadata
 } from "../../storage/rolling-options-strangle-live-position-store";
-import { loadRollingOptionsStrangleLiveProfile } from "../../storage/rolling-options-strangle-live-profile-store";
+import {
+    loadRollingOptionsStrangleLiveProfile,
+    saveRollingOptionsStrangleLiveProfile
+} from "../../storage/rolling-options-strangle-live-profile-store";
 import {
     listRollingOptionsStrangleLiveRuntime,
     loadRollingOptionsStrangleLiveRuntime,
@@ -557,6 +560,178 @@ export class RollingOptionsStrangleLiveService {
             reDelta: Number(pConfig.redReDelta ?? pConfig.reDelta ?? 0.53),
             tpMove: clamp01(Number(pConfig.redTakeProfitPct ?? 15) / 100),
             slMove: clamp01(Number(pConfig.redStopLossPct ?? 85) / 100)
+        };
+    }
+
+    private getPayoffSlCheckpoints(pUiState: Record<string, unknown>): Array<{ legKey: string; price: number; }> {
+        const vAllLegsKey = "__all_legs__";
+        const arrStructuredRaw = Array.isArray((pUiState as any)?.payoffSlCheckpoints)
+            ? (pUiState as any).payoffSlCheckpoints
+            : [];
+        const arrStructured = arrStructuredRaw
+            .map((pRow: unknown) => {
+                const objRow = pRow && typeof pRow === "object"
+                    ? pRow as { legKey?: unknown; price?: unknown; }
+                    : null;
+                const vPrice = Number(objRow?.price);
+                if (!Number.isFinite(vPrice)) {
+                    return null;
+                }
+                return {
+                    legKey: String(objRow?.legKey || vAllLegsKey).trim() || vAllLegsKey,
+                    price: vPrice
+                };
+            })
+            .filter((pRow: { legKey: string; price: number; } | null): pRow is { legKey: string; price: number; } => Boolean(pRow));
+        if (arrStructured.length > 0) {
+            return arrStructured
+                .filter((pRow: { legKey: string; price: number; }, pIndex: number, pRows: Array<{ legKey: string; price: number; }>) => {
+                    return pRows.findIndex((pCandidate: { legKey: string; price: number; }) => {
+                        return pCandidate.legKey === pRow.legKey && Math.abs(pCandidate.price - pRow.price) < 0.01;
+                    }) === pIndex;
+                })
+                .sort((pLeft: { legKey: string; price: number; }, pRight: { legKey: string; price: number; }) => {
+                    if (pLeft.legKey === pRight.legKey) {
+                        return pLeft.price - pRight.price;
+                    }
+                    return pLeft.legKey.localeCompare(pRight.legKey);
+                });
+        }
+
+        const arrRaw = Array.isArray((pUiState as any)?.payoffSlCheckpointPrices)
+            ? (pUiState as any).payoffSlCheckpointPrices
+            : (Number.isFinite(Number((pUiState as any)?.payoffSlCheckpointPrice))
+                ? [Number((pUiState as any).payoffSlCheckpointPrice)]
+                : []);
+
+        return arrRaw
+            .map((pValue: unknown) => Number(pValue))
+            .filter((pValue: number) => Number.isFinite(pValue))
+            .filter((pValue: number, pIndex: number, pValues: number[]) => {
+                return pValues.findIndex((pCandidate) => Math.abs(pCandidate - pValue) < 0.01) === pIndex;
+            })
+            .sort((pLeft: number, pRight: number) => pLeft - pRight)
+            .map((pPrice: number) => ({
+                legKey: vAllLegsKey,
+                price: pPrice
+            }));
+    }
+
+    private getCrossedPayoffSlCheckpoints(
+        pPreviousSpotPrice: number,
+        pCurrentSpotPrice: number,
+        pCheckpoints: Array<{ legKey: string; price: number; }>
+    ): Array<{ legKey: string; price: number; }> {
+        if (!Number.isFinite(pPreviousSpotPrice) || !Number.isFinite(pCurrentSpotPrice)) {
+            return [];
+        }
+
+        if (Math.abs(pPreviousSpotPrice - pCurrentSpotPrice) < 0.000001) {
+            return [];
+        }
+
+        const vMinPrice = Math.min(pPreviousSpotPrice, pCurrentSpotPrice);
+        const vMaxPrice = Math.max(pPreviousSpotPrice, pCurrentSpotPrice);
+        return pCheckpoints.filter((pCheckpoint) => {
+            return pCheckpoint.price >= vMinPrice && pCheckpoint.price <= vMaxPrice;
+        });
+    }
+
+    private async handlePayoffSlCheckpointTrigger(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pOpenPositions: RollingOptionsStrangleLiveImportedPositionRecord[],
+        pPreviousSpotPrice: number,
+        pCurrentSpotPrice: number
+    ): Promise<{ triggered: boolean; signal: string; message: string; }> {
+        const arrOpenPositions = Array.isArray(pOpenPositions) ? pOpenPositions.filter(Boolean) : [];
+        if (arrOpenPositions.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        const vAllLegsKey = "__all_legs__";
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = ((pConfig as RollingOptionsPtDeConfig & { __uiState?: Record<string, unknown>; }).__uiState
+            || await this.loadUiState(pUserId)) as Record<string, unknown>;
+        const arrCheckpoints = this.getPayoffSlCheckpoints(objUiState);
+        const arrTriggeredCheckpoints = this.getCrossedPayoffSlCheckpoints(
+            pPreviousSpotPrice,
+            pCurrentSpotPrice,
+            arrCheckpoints
+        );
+        if (arrTriggeredCheckpoints.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        const arrRemainingCheckpoints = arrCheckpoints.filter((pCheckpoint) => {
+            return !arrTriggeredCheckpoints.some((pTriggeredCheckpoint) => {
+                return pTriggeredCheckpoint.legKey === pCheckpoint.legKey && Math.abs(pTriggeredCheckpoint.price - pCheckpoint.price) < 0.01;
+            });
+        });
+        const arrTargetPositions = arrTriggeredCheckpoints.some((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)
+            ? arrOpenPositions
+            : arrOpenPositions.filter((pPosition) => {
+                const vImportId = String((pPosition as any)?.importId || "").trim();
+                return arrTriggeredCheckpoints.some((pCheckpoint) => pCheckpoint.legKey === vImportId);
+            });
+        const arrTargetImportIds = arrTargetPositions
+            .map((pPosition) => String((pPosition as any)?.importId || "").trim())
+            .filter(Boolean);
+
+        const objNextUiState = {
+            ...(objProfile?.uiState || {}),
+            ...objUiState,
+            payoffSlCheckpointPrices: arrRemainingCheckpoints
+                .filter((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)
+                .map((pCheckpoint) => pCheckpoint.price),
+            payoffSlCheckpoints: arrRemainingCheckpoints
+        } as Record<string, unknown>;
+        await saveRollingOptionsStrangleLiveProfile({
+            userId: pUserId,
+            selectedApiProfileId: String(objProfile?.selectedApiProfileId || ""),
+            uiState: objNextUiState,
+            connectionStatus: objProfile?.connectionStatus as any,
+            updatedAt: objProfile?.updatedAt || ""
+        });
+        (pConfig as RollingOptionsPtDeConfig & { __uiState?: Record<string, unknown>; }).__uiState = objNextUiState;
+
+        if (arrTargetPositions.length <= 0) {
+            return { triggered: false, signal: "", message: "" };
+        }
+
+        for (const objPosition of arrTargetPositions) {
+            await this.closeImportedPositionOnDelta(pUserId, objPosition);
+        }
+        const arrRemainingOpenPositions = arrOpenPositions.filter((pPosition) => {
+            const vImportId = String((pPosition as any)?.importId || "").trim();
+            return !arrTargetImportIds.includes(vImportId);
+        });
+        await this.persistImportedPositions(pUserId, arrRemainingOpenPositions);
+
+        const vCheckpointLabel = arrTriggeredCheckpoints
+            .map((pCheckpoint) => `${pCheckpoint.legKey === vAllLegsKey ? "All legs" : pCheckpoint.legKey} @ ${pCheckpoint.price.toFixed(2)}`)
+            .join(", ");
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "warning",
+            title: "Payoff Exit Point Triggered",
+            message: `Closed ${arrTargetPositions.length} live position(s) after spot crossed payoff exit point(s).`,
+            payload: {
+                symbol: pConfig.symbol,
+                qty: arrTargetPositions.length,
+                reason: "payoff_graph_exit_point_triggered",
+                previousSpotPrice: pPreviousSpotPrice,
+                currentSpotPrice: pCurrentSpotPrice,
+                checkpoints: arrTriggeredCheckpoints,
+                remainingCheckpoints: arrRemainingCheckpoints,
+                targetImportIds: arrTargetImportIds
+            }
+        });
+        return {
+            triggered: true,
+            signal: "PAYOFF_EXIT_POINT_TRIGGERED",
+            message: `Live cycle completed with payoff exit point close at ${vCheckpointLabel}.`
         };
     }
 
@@ -1638,6 +1813,7 @@ export class RollingOptionsStrangleLiveService {
             const objUiState = ((objConfig as RollingOptionsPtDeConfig & { __uiState?: Record<string, unknown>; }).__uiState || {}) as Record<string, unknown>;
             const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
             const bMismatchDetected = Boolean(objState.positionMismatchDetected);
+            const vPreviousSpotPrice = Number(objState.market.lastSpotPrice ?? NaN);
             this.refreshTickerScope(pUserId, [
                 objConfig.contractName,
                 ...arrCurrentPositions
@@ -1649,6 +1825,33 @@ export class RollingOptionsStrangleLiveService {
             objState.market.lastSpotPrice = objSnapshot.spotPrice;
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
+            const objPayoffSlTrigger = await this.handlePayoffSlCheckpointTrigger(
+                pUserId,
+                objConfig,
+                arrCurrentPositions,
+                vPreviousSpotPrice,
+                objSnapshot.spotPrice
+            );
+            if (objPayoffSlTrigger.triggered) {
+                objState.cycleCount += 1;
+                objState.consecutiveFailures = 0;
+                objState.lastError = "";
+                objState.lastCycleAt = objSnapshot.ts;
+                this.lastErrorLogByUserId.delete(pUserId);
+                await this.syncRuntime(pUserId, objConfig, objState, {
+                    status: objState.running ? "running" : "paused",
+                    autoTraderEnabled: objState.running,
+                    selectedApiProfileId: String(objProfile?.selectedApiProfileId || ""),
+                    lastSpotPrice: objSnapshot.spotPrice,
+                    lastFuturesPrice: objSnapshot.futuresPrice,
+                    lastCycleAt: objSnapshot.ts,
+                    lastSignal: objPayoffSlTrigger.signal
+                });
+                return {
+                    status: "success",
+                    message: objPayoffSlTrigger.message
+                };
+            }
             const vMismatchSignal = bMismatchDetected ? "POSITION_MISMATCH" : "";
             let vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
             if (String(objState.renko.lastColor || "").trim().toUpperCase() !== "G" && String(objState.renko.lastColor || "").trim().toUpperCase() !== "R") {

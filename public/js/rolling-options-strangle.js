@@ -99,6 +99,8 @@
     };
 
     const apiBase = String(document.body?.dataset?.rollingApiBase || "/api/rollingoptions-pt-de");
+    const shared = window.OptionyzeRollingStrangleShared || {};
+    const PAYOFF_SL_ALL_LEGS_KEY = String(shared.PAYOFF_SL_ALL_LEGS_KEY || "__all_legs__");
 
     let gIsApplyingState = false;
     let gSaveTimer = null;
@@ -109,48 +111,31 @@
     let gHasLoadedProfile = false;
     let gTargetOpenPnlTriggered = false;
     let gLatestEvents = [];
+    let gPayoffSlCheckpoints = [];
+    let gPayoffSlSelectedLegKey = PAYOFF_SL_ALL_LEGS_KEY;
+    let gPayoffProjectionDays = 0;
     const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-events";
     const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-green-skipped-events";
 
     function readBooleanPreference(storageKey) {
-        try {
-            return window.localStorage.getItem(storageKey) === "1";
-        }
-        catch (_objError) {
-            return false;
-        }
+        return typeof shared.readBooleanPreference === "function"
+            ? shared.readBooleanPreference(storageKey)
+            : false;
     }
 
     function writeBooleanPreference(storageKey, value) {
-        try {
-            window.localStorage.setItem(storageKey, value ? "1" : "0");
+        if (typeof shared.writeBooleanPreference === "function") {
+            shared.writeBooleanPreference(storageKey, value);
         }
-        catch (_objError) {
-        }
-    }
-
-    function isRenkoChangeEvent(row) {
-        const eventType = String(row?.eventType || "").trim().toLowerCase();
-        const title = String(row?.title || "").trim().toLowerCase();
-        return eventType === "renko_change_detected" || title === "renko change detected";
-    }
-
-    function isRenkoSkippedEvent(row) {
-        const title = String(row?.title || "").trim().toLowerCase();
-        return title === "renko green skipped" || title === "renko red skipped";
     }
 
     function getVisibleEvents(rows) {
-        const arrRows = Array.isArray(rows) ? rows : [];
-        return arrRows.filter(function (row) {
-            if (ids.hideRenkoEvents?.checked && isRenkoChangeEvent(row)) {
-                return false;
-            }
-            if (ids.hideRenkoGreenSkippedEvents?.checked && isRenkoSkippedEvent(row)) {
-                return false;
-            }
-            return true;
-        });
+        return typeof shared.getVisibleEvents === "function"
+            ? shared.getVisibleEvents(rows, {
+                hideRenkoEvents: ids.hideRenkoEvents?.checked,
+                hideRenkoSkippedEvents: ids.hideRenkoGreenSkippedEvents?.checked
+            })
+            : (Array.isArray(rows) ? rows : []);
     }
     let gLastTargetOpenPnl = null;
     let gIsClosedPositionsVisible = false;
@@ -160,62 +145,59 @@
     const gClosedPositionsRefreshMs = 60000;
     const gEventsRefreshMs = 60000;
 
+    function normalizePayoffSlCheckpointPrices(values, legacyValue) {
+        return typeof shared.normalizePayoffSlCheckpointPrices === "function"
+            ? shared.normalizePayoffSlCheckpointPrices(values, legacyValue)
+            : [];
+    }
+
+    function normalizePayoffSlCheckpoints(values, legacyValue) {
+        return typeof shared.normalizePayoffSlCheckpoints === "function"
+            ? shared.normalizePayoffSlCheckpoints(values, legacyValue)
+            : normalizePayoffSlCheckpointPrices(
+                Array.isArray(legacyValue) ? legacyValue : undefined,
+                Array.isArray(legacyValue) ? undefined : legacyValue
+            ).map(function (price) {
+                return {
+                    legKey: PAYOFF_SL_ALL_LEGS_KEY,
+                    price
+                };
+            });
+    }
+
+    function normalizePayoffSlSelectedLegKey(value) {
+        return typeof shared.normalizePayoffSlSelectedLegKey === "function"
+            ? shared.normalizePayoffSlSelectedLegKey(value)
+            : PAYOFF_SL_ALL_LEGS_KEY;
+    }
+
+    function normalizePayoffProjectionDays(value) {
+        return typeof shared.normalizePayoffProjectionDays === "function"
+            ? shared.normalizePayoffProjectionDays(value)
+            : 0;
+    }
+
     function getSelectedConfig() {
         const selectedSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
         return symbolConfig[selectedSymbol] || symbolConfig.BTC;
     }
 
     function formatDateInputValue(dateValue) {
-        if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
-            return "";
-        }
-
-        const year = String(dateValue.getFullYear());
-        const month = String(dateValue.getMonth() + 1).padStart(2, "0");
-        const day = String(dateValue.getDate()).padStart(2, "0");
-        return `${year}-${month}-${day}`;
-    }
-
-    function getLastFridayOfMonth(yearValue, monthIndex) {
-        const dateValue = new Date(yearValue, monthIndex + 1, 0);
-        while (dateValue.getDay() !== 5) {
-            dateValue.setDate(dateValue.getDate() - 1);
-        }
-        return dateValue;
+        return typeof shared.formatDateInputValue === "function"
+            ? shared.formatDateInputValue(dateValue)
+            : "";
     }
 
     function resolveExpiryDateByMode(expiryMode) {
-        const modeValue = String(expiryMode || "").trim();
-        const currentDate = new Date();
-        const currentDayOfWeek = currentDate.getDay();
+        return typeof shared.resolveExpiryDateByMode === "function"
+            ? shared.resolveExpiryDateByMode(expiryMode)
+            : new Date();
+    }
 
-        if (modeValue === "1") {
-            currentDate.setDate(currentDate.getDate() + 1);
-            return currentDate;
-        }
-        if (modeValue === "2") {
-            currentDate.setDate(currentDate.getDate() + 2);
-            return currentDate;
-        }
-        if (modeValue === "4") {
-            const daysToThisFriday = (5 - currentDayOfWeek + 7) % 7;
-            const daysToWeeklyFriday = currentDayOfWeek >= 2 ? (daysToThisFriday + 7) : daysToThisFriday;
-            currentDate.setDate(currentDate.getDate() + daysToWeeklyFriday);
-            return currentDate;
-        }
-        if (modeValue === "5") {
-            const daysToThisFriday = (5 - currentDayOfWeek + 7) % 7;
-            const daysToBiWeeklyFriday = currentDayOfWeek >= 2 ? (daysToThisFriday + 14) : (daysToThisFriday + 7);
-            currentDate.setDate(currentDate.getDate() + daysToBiWeeklyFriday);
-            return currentDate;
-        }
-        if (modeValue === "6") {
-            const lastFridayOfMonth = getLastFridayOfMonth(currentDate.getFullYear(), currentDate.getMonth());
-            const lastFridayOfNextMonth = getLastFridayOfMonth(currentDate.getFullYear(), currentDate.getMonth() + 1);
-            return currentDate.getDate() > 15 ? lastFridayOfNextMonth : lastFridayOfMonth;
-        }
-
-        return currentDate;
+    function formatDisplayDateTime(dateValue) {
+        return typeof shared.formatDateTime === "function"
+            ? shared.formatDateTime(dateValue)
+            : "-";
     }
 
     function applySymbolDefaults() {
@@ -460,22 +442,6 @@
         }
     }
 
-    function formatDisplayDateTime(dateValue) {
-        const parsedDate = dateValue ? new Date(dateValue) : null;
-        if (!(parsedDate instanceof Date) || Number.isNaN(parsedDate.getTime())) {
-            return "-";
-        }
-
-        return parsedDate.toLocaleString("en-IN", {
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false
-        });
-    }
-
     function formatNumericValue(value, fractionDigits) {
         if (value === null || value === undefined || value === "") {
             return "-";
@@ -610,6 +576,14 @@
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
             targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
+            payoffSlCheckpointPrices: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints)
+                .filter(function (checkpoint) {
+                    return checkpoint.legKey === PAYOFF_SL_ALL_LEGS_KEY;
+                })
+                .map(function (checkpoint) { return checkpoint.price; }),
+            payoffSlCheckpoints: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints),
+            payoffSlSelectedLegKey: normalizePayoffSlSelectedLegKey(gPayoffSlSelectedLegKey),
+            payoffProjectionDays: normalizePayoffProjectionDays(gPayoffProjectionDays),
             closeAllLegsOnAnyClose: Boolean(ids.closeAllLegsOnAnyClose?.checked),
             skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             telegramAlertsEnabled: Boolean(ids.telegramAlertsEnabled?.checked),
@@ -642,6 +616,9 @@
 
     function applyUiState(uiState) {
         gIsApplyingState = true;
+        gPayoffSlCheckpoints = normalizePayoffSlCheckpoints(uiState?.payoffSlCheckpoints, uiState?.payoffSlCheckpointPrices ?? uiState?.payoffSlCheckpointPrice);
+        gPayoffSlSelectedLegKey = normalizePayoffSlSelectedLegKey(uiState?.payoffSlSelectedLegKey);
+        gPayoffProjectionDays = normalizePayoffProjectionDays(uiState?.payoffProjectionDays);
 
         setFieldValue("symbol", uiState.symbol);
         setFieldValue("manualFutQty", uiState.manualFutQty);
@@ -759,10 +736,29 @@
         }
 
         window.OptionyzePayoffGraph.render(ids.payoffGraph, rows, {
+            variant: "delta",
             title: "Open Position Payoff",
-            subtitle: "Expiry payoff across the current open option and future legs.",
-            currentPriceLabel: "Current spot",
+            subtitle: "Delta-style projected payoff view with time decay across the current open option and future legs.",
+            currentPriceLabel: "Spot",
             referencePrice: Number(gLatestRuntimeState?.lastSpotPrice ?? gLatestRuntimeState?.lastFuturesPrice ?? NaN),
+            slCheckpoints: gPayoffSlCheckpoints,
+            selectedSlLegKey: gPayoffSlSelectedLegKey,
+            projectionDays: gPayoffProjectionDays,
+            onSlCheckpointChange: function (checkpoints) {
+                gPayoffSlCheckpoints = normalizePayoffSlCheckpoints(checkpoints);
+                queueProfileSave();
+                renderPayoffGraph(gLatestOpenPositions);
+            },
+            onSlSelectedLegChange: function (legKey) {
+                gPayoffSlSelectedLegKey = normalizePayoffSlSelectedLegKey(legKey);
+                queueProfileSave();
+                renderPayoffGraph(gLatestOpenPositions);
+            },
+            onProjectionDaysChange: function (days) {
+                gPayoffProjectionDays = normalizePayoffProjectionDays(days);
+                queueProfileSave();
+                renderPayoffGraph(gLatestOpenPositions);
+            },
             emptyMessage: "Payoff graph appears when open legs are available."
         });
     }

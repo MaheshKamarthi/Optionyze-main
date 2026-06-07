@@ -710,6 +710,7 @@
     width:100%;
     overflow-x:auto;
     position:relative;
+    cursor:crosshair;
 }
 
 .rolling-demo-payoff-chart svg {
@@ -736,12 +737,29 @@
     stroke-width:1.5;
 }
 
-.rolling-demo-payoff-line {
+.rolling-demo-payoff-line-backdrop {
     fill:none;
-    stroke:#4ade80;
-    stroke-width:3;
+    stroke:rgba(15,23,42,.92);
+    stroke-width:7;
     stroke-linejoin:round;
     stroke-linecap:round;
+}
+
+.rolling-demo-payoff-line {
+    fill:none;
+    stroke:#7cfc9a;
+    stroke-width:4.2;
+    stroke-linejoin:round;
+    stroke-linecap:round;
+    filter:drop-shadow(0 0 8px rgba(74,222,128,.35));
+}
+
+.rolling-demo-payoff-leg-line {
+    fill:none;
+    stroke-width:2.2;
+    stroke-linejoin:round;
+    stroke-linecap:round;
+    opacity:.92;
 }
 
 .rolling-demo-payoff-area-profit {
@@ -762,6 +780,23 @@
     fill:#fde68a;
     font-size:11px;
     text-anchor:middle;
+}
+
+.rolling-demo-payoff-sl {
+    stroke:rgba(248,113,113,.88);
+    stroke-width:1.5;
+    stroke-dasharray:7 4;
+}
+
+.rolling-demo-payoff-sl-label {
+    fill:#fecaca;
+    font-size:11px;
+    font-weight:700;
+    text-anchor:middle;
+}
+
+.rolling-demo-payoff-sl-dot {
+    stroke-width:2;
 }
 
 .rolling-demo-payoff-strike {
@@ -827,7 +862,387 @@
     color:#fca5a5;
 }
 
+.rolling-strangle-demo-payoff {
+    margin-top:16px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-panel-delta {
+    display:grid;
+    gap:16px;
+    padding:16px;
+    border-radius:16px;
+    border:1px solid rgba(255,255,255,.08);
+    background:
+        radial-gradient(circle at top right, rgba(59,130,246,.12), transparent 28%),
+        linear-gradient(180deg, rgba(15,23,42,.94), rgba(2,6,23,.96));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-topbar {
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-badges {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-badge {
+    display:inline-flex;
+    align-items:center;
+    padding:7px 12px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.04);
+    color:var(--app-text);
+    font-size:.78rem;
+    font-weight:700;
+    letter-spacing:.01em;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-badge.success {
+    background:rgba(25,135,84,.14);
+    border-color:rgba(25,135,84,.28);
+    color:#8be2b4;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-badge.neutral {
+    color:var(--app-muted);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-grid {
+    display:grid;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+    gap:12px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-card,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sidecard {
+    min-width:0;
+    padding:14px 16px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.03);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-label,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sidecard-title {
+    color:var(--app-muted);
+    font-size:.78rem;
+    font-weight:600;
+    letter-spacing:.01em;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-value {
+    margin-top:8px;
+    font-size:1.1rem;
+    font-weight:700;
+    color:var(--app-text);
+    word-break:break-word;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-value.positive {
+    color:#8be2b4;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-summary-value.negative,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-hover-pnl-value.negative {
+    color:#ffb5b5;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-workspace {
+    display:grid;
+    grid-template-columns:minmax(0, 1.9fr) minmax(260px, .9fr);
+    gap:14px;
+    align-items:start;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-shell {
+    display:grid;
+    gap:12px;
+    min-width:0;
+    padding:12px;
+    border-radius:16px;
+    border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.025);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart {
+    min-height:320px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer {
+    display:grid;
+    grid-template-columns:minmax(180px, .85fr) minmax(0, 1.15fr);
+    gap:12px 16px;
+    align-items:center;
+    padding:12px 14px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sidecard-title {
+    margin-bottom:0;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-hover-panel {
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px 14px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-hover-row {
+    font-size:.82rem;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-controls,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sl-help {
+    grid-column:1 / -1;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-controls,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sl-help {
+    margin-top:0;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-actions {
+    justify-content:flex-start;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-projection-preset {
+    flex:0 0 110px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-sl-help {
+    font-size:.78rem;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sidepanel {
+    display:grid;
+    gap:12px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-hover-panel {
+    display:grid;
+    gap:10px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-item,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-hover-row {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    font-size:.88rem;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-hover-row span {
+    color:var(--app-muted);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-hover-row strong {
+    color:var(--app-text);
+    font-weight:700;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-item span:last-child {
+    color:var(--app-text);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch {
+    width:20px;
+    height:10px;
+    border-radius:999px;
+    flex:0 0 auto;
+    margin-right:auto;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.curve {
+    background:linear-gradient(90deg, rgba(109,40,217,.9), rgba(59,130,246,.9));
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.spot {
+    background:rgba(245,158,11,.95);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.breakeven {
+    background:rgba(34,197,94,.95);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.sl {
+    background:rgba(248,113,113,.95);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.strike {
+    background:rgba(148,163,184,.95);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-legend-swatch.leg {
+    box-shadow:0 0 0 1px rgba(255,255,255,.08) inset;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-loss,
+.rolling-strangle-demo-payoff .rolling-demo-payoff-strike-summary {
+    color:var(--app-muted);
+    font-size:.84rem;
+    line-height:1.5;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-help {
+    margin-top:10px;
+    color:var(--app-muted);
+    font-size:.82rem;
+    line-height:1.45;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-list {
+    display:grid;
+    gap:8px;
+    margin-top:12px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-leg-selector {
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:12px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-leg-selector-btn {
+    padding:8px 10px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:999px;
+    background:rgba(255,255,255,.04);
+    color:var(--app-muted);
+    font-size:.8rem;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-leg-selector-btn.active {
+    border-color:rgba(96,165,250,.4);
+    background:rgba(96,165,250,.16);
+    box-shadow:0 0 0 1px var(--payoff-leg-color, #60a5fa) inset;
+    color:#f8fafc;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-leg-selector-btn:disabled {
+    opacity:.55;
+    cursor:not-allowed;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-controls {
+    margin-top:12px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-range {
+    width:100%;
+    accent-color:#60a5fa;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-actions {
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-preset {
+    flex:1 1 0;
+    padding:8px 10px;
+    border:1px solid rgba(96,165,250,.18);
+    border-radius:10px;
+    background:rgba(37,99,235,.10);
+    color:#bfdbfe;
+    font-size:.8rem;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-preset.active {
+    border-color:rgba(96,165,250,.42);
+    background:rgba(37,99,235,.22);
+    color:#eff6ff;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-projection-preset:disabled {
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-item {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:9px 10px;
+    border:1px solid rgba(248,113,113,.16);
+    border-radius:10px;
+    background:rgba(127,29,29,.10);
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-item-text {
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-item-text strong {
+    color:#fecaca;
+    font-size:.84rem;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-item-text span {
+    color:var(--app-muted);
+    font-size:.78rem;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-item-text span.negative {
+    color:#fca5a5;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-remove {
+    width:28px;
+    height:28px;
+    border:1px solid rgba(248,113,113,.28);
+    border-radius:999px;
+    background:rgba(127,29,29,.16);
+    color:#fecaca;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-clear {
+    margin-top:12px;
+    width:100%;
+    padding:9px 12px;
+    border:1px solid rgba(248,113,113,.32);
+    border-radius:10px;
+    background:rgba(127,29,29,.18);
+    color:#fecaca;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.rolling-strangle-demo-payoff .rolling-demo-payoff-sl-clear:disabled {
+    opacity:.45;
+    cursor:not-allowed;
+}
+
 @media (max-width: 1180px) {
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer {
+        grid-template-columns:1fr;
+    }
+
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-chart-footer .rolling-demo-payoff-hover-panel {
+        grid-template-columns:1fr;
+    }
+
     .rolling-demo-grid.futures,
     .rolling-demo-grid.options,
     .rolling-demo-grid.metrics,
@@ -839,6 +1254,14 @@
 
     .rolling-demo-log-grid,
     .rolling-demo-event-prefs {
+        grid-template-columns:1fr;
+    }
+
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-summary-grid {
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-workspace {
         grid-template-columns:1fr;
     }
 
@@ -872,5 +1295,13 @@
     .rolling-demo-card-head {
         flex-direction:column;
         align-items:flex-start;
+    }
+
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-summary-grid {
+        grid-template-columns:1fr;
+    }
+
+    .rolling-strangle-demo-payoff .rolling-demo-payoff-topbar {
+        flex-direction:column;
     }
 }
