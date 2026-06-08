@@ -31,6 +31,41 @@ const gEventsFile = path.resolve(process.cwd(), "data", "rolling-options-pt-de",
 const gDefaultStrategyCode = "rolling-options-pt-de";
 const gLastLoggedAtByKey = new Map<string, number>();
 
+function normalizeUpperText(pValue: unknown): string {
+    return String(pValue || "").trim().toUpperCase();
+}
+
+function normalizeLowerText(pValue: unknown): string {
+    return String(pValue || "").trim().toLowerCase();
+}
+
+export function shouldSuppressRollingOptionsActivityEvent(
+    pEvent: Pick<RollingOptionsPtDeEventRecord, "eventType" | "title" | "message" | "payload">
+): boolean {
+    const vEventType = normalizeLowerText(pEvent.eventType);
+    const vTitle = normalizeUpperText(pEvent.title);
+    const vMessage = normalizeUpperText(pEvent.message);
+    const vReason = normalizeLowerText(pEvent.payload?.reason);
+
+    if (vEventType === "renko_change_detected") {
+        return true;
+    }
+    if (vTitle.includes("RENKO") && vTitle.includes("SKIPPED")) {
+        return true;
+    }
+    if (vReason.includes("renko_") && vReason.includes("skipped")) {
+        return true;
+    }
+    if (vTitle === "MANUAL RENKO SIGNAL") {
+        return true;
+    }
+    if (vMessage.startsWith("MANUAL RENKO SIGNAL CHANGED")
+        || vMessage.startsWith("MANUAL RENKO SIGNAL SET")) {
+        return true;
+    }
+    return false;
+}
+
 function readNumberEnv(pKey: string, pFallback: number): number {
     const vRaw = String(process.env[pKey] ?? "").trim();
     const vNum = Number(vRaw);
@@ -159,6 +194,41 @@ async function loadAllEventsJson(): Promise<RollingOptionsPtDeEventRecord[]> {
     return readJsonFile<RollingOptionsPtDeEventRecord[]>(gEventsFile, []);
 }
 
+async function purgeHiddenPostgresEventsByStrategy(pUserId: string, pStrategyCode: string): Promise<void> {
+    const objPool = getPostgresPool();
+    await objPool.query(`
+        DELETE FROM optionyze_rolling_options_pt_de_events
+        WHERE user_id = $1
+          AND strategy_code = $2
+          AND (
+              event_type = 'renko_change_detected'
+              OR (title ILIKE '%renko%' AND title ILIKE '%skipped%')
+              OR COALESCE(payload_json ->> 'reason', '') ILIKE '%renko%skipped%'
+              OR title = 'Manual Renko Signal'
+              OR message ILIKE 'Manual Renko signal changed%'
+              OR message ILIKE 'Manual Renko signal set%'
+          )
+    `, [pUserId, pStrategyCode]);
+}
+
+async function purgeHiddenJsonEventsByStrategy(
+    pUserId: string,
+    pStrategyCode: string,
+    pRows?: RollingOptionsPtDeEventRecord[]
+): Promise<RollingOptionsPtDeEventRecord[]> {
+    const objRows = pRows || await loadAllEventsJson();
+    const objFilteredRows = objRows.filter((objRow) => {
+        if (objRow.userId !== pUserId || objRow.strategyCode !== pStrategyCode) {
+            return true;
+        }
+        return !shouldSuppressRollingOptionsActivityEvent(objRow);
+    });
+    if (objFilteredRows.length !== objRows.length) {
+        await writeJsonFileAtomic(gEventsFile, objFilteredRows);
+    }
+    return objFilteredRows;
+}
+
 function mapRowToEvent(pRow: RollingOptionsPtDeEventRow): RollingOptionsPtDeEventRecord {
     return {
         eventId: String(pRow.event_id),
@@ -181,6 +251,7 @@ export async function listRollingOptionsEventsByStrategy(
     const vLimit = Math.max(1, Math.min(500, Math.floor(Number(pLimit || 100))));
     const vStrategyCode = String(pStrategyCode || gDefaultStrategyCode).trim() || gDefaultStrategyCode;
     if (isPostgresConfigured()) {
+        await purgeHiddenPostgresEventsByStrategy(pUserId, vStrategyCode);
         const objPool = getPostgresPool();
         const objResult = await objPool.query<RollingOptionsPtDeEventRow>(`
             SELECT
@@ -200,12 +271,15 @@ export async function listRollingOptionsEventsByStrategy(
             LIMIT $3
         `, [pUserId, vStrategyCode, vLimit]);
 
-        return objResult.rows.map(mapRowToEvent);
+        return objResult.rows
+            .map(mapRowToEvent)
+            .filter((objRow) => !shouldSuppressRollingOptionsActivityEvent(objRow));
     }
 
-    const objRows = await loadAllEventsJson();
+    const objRows = await purgeHiddenJsonEventsByStrategy(pUserId, vStrategyCode);
     return objRows
         .filter((objRow) => objRow.userId === pUserId && objRow.strategyCode === vStrategyCode)
+        .filter((objRow) => !shouldSuppressRollingOptionsActivityEvent(objRow))
         .sort((objA, objB) => String(objB.createdAt).localeCompare(String(objA.createdAt)))
         .slice(0, vLimit);
 }
@@ -278,6 +352,16 @@ export async function saveRollingOptionsEvent(
         ...pEvent
     };
 
+    if (shouldSuppressRollingOptionsActivityEvent(objEvent)) {
+        if (isPostgresConfigured()) {
+            await purgeHiddenPostgresEventsByStrategy(objEvent.userId, objEvent.strategyCode);
+        }
+        else {
+            await purgeHiddenJsonEventsByStrategy(objEvent.userId, objEvent.strategyCode);
+        }
+        return objEvent;
+    }
+
     if (await isDuplicateWithinWindow(objEvent)) {
         return objEvent;
     }
@@ -312,7 +396,7 @@ export async function saveRollingOptionsEvent(
         return objEvent;
     }
 
-    const objRows = await loadAllEventsJson();
+    const objRows = await purgeHiddenJsonEventsByStrategy(objEvent.userId, objEvent.strategyCode);
     objRows.push(objEvent);
     const objFinalRows = pruneJsonEvents(objRows, objEvent.userId, objEvent.strategyCode);
     await writeJsonFileAtomic(gEventsFile, objFinalRows);

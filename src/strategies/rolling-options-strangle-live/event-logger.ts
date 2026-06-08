@@ -2,6 +2,7 @@ import { getAccountById } from "../../storage/accounts-store";
 import { loadRollingOptionsStrangleLiveProfile } from "../../storage/rolling-options-strangle-live-profile-store";
 import {
     saveRollingOptionsEvent,
+    shouldSuppressRollingOptionsActivityEvent,
     type RollingOptionsPtDeEventRecord
 } from "../../storage/rolling-options-pt-de-event-store";
 import { gRollingOptionsTelegramEventTypes } from "../rolling-options-pt-de/event-logger";
@@ -90,6 +91,15 @@ async function sendTelegramForEvent(
 export async function logRollingOptionsStrangleLiveEvent(
     pEvent: Omit<RollingOptionsPtDeEventRecord, "eventId" | "createdAt" | "strategyCode">
 ): Promise<RollingOptionsPtDeEventRecord> {
+    if (shouldSuppressRollingOptionsActivityEvent(pEvent)) {
+        return {
+            eventId: "",
+            createdAt: new Date().toISOString(),
+            ...pEvent,
+            strategyCode: gStrategyCode
+        };
+    }
+
     const objEvent = await saveRollingOptionsEvent({
         ...pEvent,
         strategyCode: gStrategyCode

@@ -1,6 +1,10 @@
 import { getAccountById } from "../../storage/accounts-store";
 import { loadRollingOptionsPtDeProfile } from "../../storage/rolling-options-pt-de-profile-store";
-import { saveRollingOptionsPtDeEvent, type RollingOptionsPtDeEventRecord } from "../../storage/rolling-options-pt-de-event-store";
+import {
+    saveRollingOptionsPtDeEvent,
+    shouldSuppressRollingOptionsActivityEvent,
+    type RollingOptionsPtDeEventRecord
+} from "../../storage/rolling-options-pt-de-event-store";
 
 export const gRollingOptionsTelegramEventTypes = [
     "engine_started",
@@ -103,6 +107,15 @@ async function sendTelegramForEvent(pUserId: string, pEvent: Omit<RollingOptions
 export async function logRollingOptionsPtDeEvent(
     pEvent: Omit<RollingOptionsPtDeEventRecord, "eventId" | "createdAt" | "strategyCode">
 ): Promise<RollingOptionsPtDeEventRecord> {
+    if (shouldSuppressRollingOptionsActivityEvent(pEvent)) {
+        return {
+            eventId: "",
+            createdAt: new Date().toISOString(),
+            ...pEvent,
+            strategyCode: "rolling-options-pt-de"
+        };
+    }
+
     const objEvent = await saveRollingOptionsPtDeEvent({
         ...pEvent,
         strategyCode: "rolling-options-pt-de"
