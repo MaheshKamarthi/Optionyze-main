@@ -1140,7 +1140,7 @@
                                         return `
                                             <line class="rolling-demo-payoff-sl" x1="${row.x.toFixed(2)}" y1="${paddingTop}" x2="${row.x.toFixed(2)}" y2="${(height - paddingBottom)}"></line>
                                             <circle class="rolling-demo-payoff-sl-dot" cx="${row.x.toFixed(2)}" cy="${row.y.toFixed(2)}" r="4" style="fill:${escapeHtml(row.color)};stroke:${escapeHtml(row.color)};"></circle>
-                                            <text class="rolling-demo-payoff-sl-label" x="${row.x.toFixed(2)}" y="${vLabelY}">${escapeHtml(`${row.legLabel} SL ${row.priceText}`)}</text>
+                                            <text class="rolling-demo-payoff-sl-label" x="${row.x.toFixed(2)}" y="${vLabelY}">${escapeHtml(`${row.legLabel} Exit ${row.priceText}`)}</text>
                                         `;
                                     }).join("")}
                                     ${referenceLineX === null ? "" : `<line class="rolling-demo-payoff-current" x1="${referenceLineX.toFixed(2)}" y1="${paddingTop}" x2="${referenceLineX.toFixed(2)}" y2="${(height - paddingBottom)}"></line>`}

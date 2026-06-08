@@ -427,7 +427,10 @@ export class RollingOptionsStrangleService {
         const vCheckpointLabel = arrTriggeredCheckpoints
             .map((pCheckpoint) => `${pCheckpoint.legKey === vAllLegsKey ? "All legs" : pCheckpoint.legKey} @ ${pCheckpoint.price.toFixed(2)}`)
             .join(", ");
-        await this.closePositions(arrTargetPositions, pConfig, `Payoff graph exit point triggered @ ${vCheckpointLabel}`);
+        const objClosedPositions = await this.closePositions(arrTargetPositions, pConfig, `Payoff graph exit point triggered @ ${vCheckpointLabel}`);
+        if (!arrTriggeredCheckpoints.some((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)) {
+            await this.reEnterClosedOptionPositions(pUserId, objClosedPositions, "Payoff graph exit point");
+        }
         await logRollingOptionsPtDeEvent({
             userId: pUserId,
             eventType: "manual_action",
@@ -1064,6 +1067,76 @@ export class RollingOptionsStrangleService {
         return objClosed;
     }
 
+    public async reEnterClosedOptionPositions(
+        pUserId: string,
+        pClosedPositions: RollingOptionsPtDePositionRecord[],
+        pReason: string
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
+            .filter((objPosition) => objPosition?.instrumentType === "OPTION");
+        if (arrClosedOptions.length <= 0) {
+            return [];
+        }
+
+        const objUiState = await this.loadUiState(pUserId);
+        const objConfig1 = this.buildRuleSetConfig(objUiState, 1);
+        const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
+        const bFuturesEnabled = Boolean((objConfig1 as any).futuresEnabled ?? true);
+        const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
+        const objOpenedPositions: RollingOptionsPtDePositionRecord[] = [];
+
+        for (const objClosedOption of arrClosedOptions) {
+            const vRuleSet: 1 | 2 = Math.floor(Number((objClosedOption.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
+            const objConfig = vRuleSet === 2 ? objConfig2 : objConfig1;
+            const vStoredRuleColor = String(objClosedOption.metadata?.ruleColor || "").trim().toUpperCase();
+            const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled
+                ? (vCurrentRenkoColor === "G" ? "G" : "R")
+                : (vStoredRuleColor === "G" ? "G" : "R");
+            const vOptionSide: "CE" | "PE" = String(objClosedOption.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const objRemainingPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
+                return objRow.status === "OPEN"
+                    && objRow.instrumentType === "OPTION"
+                    && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vRuleSet
+                    && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
+            });
+            if (bSameLegAlreadyOpen) {
+                continue;
+            }
+
+            const vFutureQty = objRemainingPositions
+                .filter((objRow) => objRow.status === "OPEN" && objRow.instrumentType === "FUTURE")
+                .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
+            const vBaseQty = bFuturesEnabled
+                ? Math.max(0, vFutureQty || Number(objClosedOption.qty || 0))
+                : Math.max(0, Number(objClosedOption.qty || 0));
+            const vReEntryQty = this.getConfiguredOptionQty(
+                objUiState,
+                objConfig,
+                vRuleSet,
+                vActiveRuleColor,
+                vBaseQty
+            );
+            if (!(vReEntryQty > 0)) {
+                continue;
+            }
+
+            const objOpened = await this.openOptionPositions(
+                pUserId,
+                objConfig,
+                vReEntryQty,
+                `${pReason} replacement option`,
+                vActiveRuleColor,
+                true,
+                vRuleSet,
+                [vOptionSide]
+            );
+            objOpenedPositions.push(...objOpened);
+        }
+
+        return objOpenedPositions;
+    }
+
     private getRenkoOptionQty(pFutureQty: number, pQtyPct: number): number {
         const vBaseQty = Math.max(0, Number(pFutureQty || 0));
         const vPercent = Math.max(0, Number(pQtyPct || 0));
@@ -1497,19 +1570,10 @@ export class RollingOptionsStrangleService {
         pReason: "sl" | "tp"
     ): Promise<void> {
         const objUiState = await this.loadUiState(pUserId);
+        const vTriggeredRuleSet = Math.floor(Number((pPosition.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
         const objConfig1 = this.buildRuleSetConfig(objUiState, 1);
         const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
-        const bAction1Enabled = String(objUiState.action1 || "sell").trim().toLowerCase() !== "none";
-        const bAction2Enabled = String(objUiState.action2 || "none").trim().toLowerCase() !== "none";
-        const bFuturesEnabled = Boolean((objConfig1 as any).futuresEnabled ?? true);
-        const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
-        const vStoredRuleColor = String(pPosition.metadata?.ruleColor || "").trim().toUpperCase();
-        const vTriggeredRuleSet = Math.floor(Number((pPosition.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
         const objTriggeredConfig = vTriggeredRuleSet === 2 ? objConfig2 : objConfig1;
-        const bTriggeredActionEnabled = vTriggeredRuleSet === 2 ? bAction2Enabled : bAction1Enabled;
-        const vActiveRuleColor = objConfig1.renkoEnabled
-            ? (vCurrentRenkoColor === "G" ? "G" : "R")
-            : (vStoredRuleColor === "G" ? "G" : "R");
         const vCloseReason = pReason === "sl" ? "SL triggered" : "TP triggered";
 
         const objClosedPositions = await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
@@ -1524,49 +1588,7 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        if (!bTriggeredActionEnabled || !objTriggeredConfig.reEnter) {
-            return;
-        }
-
-        const objRemainingPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
-        const vOptionSide = String(pPosition.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
-        const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
-            return objRow.status === "OPEN"
-                && objRow.instrumentType === "OPTION"
-                && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vTriggeredRuleSet
-                && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
-        });
-        if (bSameLegAlreadyOpen) {
-            return;
-        }
-
-        const vFutureQty = objRemainingPositions
-            .filter((objRow) => objRow.status === "OPEN" && objRow.instrumentType === "FUTURE")
-            .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
-        const vBaseQty = bFuturesEnabled
-            ? Math.max(0, vFutureQty || Number(pPosition.qty || 0))
-            : Math.max(0, Number(pPosition.qty || 0));
-        const vReEntryQty = this.getConfiguredOptionQty(
-            objUiState,
-            objTriggeredConfig,
-            vTriggeredRuleSet,
-            vActiveRuleColor,
-            vBaseQty
-        );
-        if (!(vReEntryQty > 0)) {
-            return;
-        }
-
-        await this.openOptionPositions(
-            pUserId,
-            objTriggeredConfig,
-            vReEntryQty,
-            pReason === "sl" ? "SL replacement option" : "TP replacement option",
-            vActiveRuleColor,
-            true,
-            vTriggeredRuleSet,
-            [vOptionSide]
-        );
+        await this.reEnterClosedOptionPositions(pUserId, objClosedPositions, pReason === "sl" ? "SL" : "TP");
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {
@@ -1578,7 +1600,7 @@ export class RollingOptionsStrangleService {
         objState.isBusy = true;
         try {
             const objConfig = await this.loadConfig(pUserId);
-            const objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            let objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
             const vPreviousSpotPrice = Number(objState.market.lastSpotPrice ?? NaN);
             ensureLiveTickerSymbols([
                 objConfig.contractName,
@@ -1614,6 +1636,20 @@ export class RollingOptionsStrangleService {
                 return { status: "success", message: objPayoffSlTrigger.message };
             }
 
+            const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+            const bTrailGreenTp1Enabled = Boolean((objUiState as any).trailGreenTp1Enabled ?? true);
+            const bTrailRedTp1Enabled = Boolean((objUiState as any).trailRedTp1Enabled ?? true);
+            const bTrailGreenTp2Enabled = Boolean((objUiState as any).trailGreenTp2Enabled ?? true);
+            const bTrailRedTp2Enabled = Boolean((objUiState as any).trailRedTp2Enabled ?? true);
+            const isRenkoColorTrailTpEnabled = (pRuleColor: string, pRuleSet: 1 | 2): boolean => {
+                const vRuleColor = String(pRuleColor || "").trim().toUpperCase();
+                if (pRuleSet === 2) {
+                    return vRuleColor === "G" ? bTrailGreenTp2Enabled : (vRuleColor === "R" ? bTrailRedTp2Enabled : false);
+                }
+                return vRuleColor === "G" ? bTrailGreenTp1Enabled : (vRuleColor === "R" ? bTrailRedTp1Enabled : false);
+            };
+
+            const vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const objRenkoSignals = objConfig.renkoEnabled
                 ? updateRenkoState(objState, objSnapshot, objConfig)
                 : [];
@@ -1633,6 +1669,32 @@ export class RollingOptionsStrangleService {
                         bricks: objRenkoSignals.length
                     }
                 });
+
+                if ((vPreviousRenkoColor === "R" || vPreviousRenkoColor === "G")
+                    && vPreviousRenkoColor !== vLast) {
+                    const arrOpenOptionPositions = objCurrentOpenPositions.filter((objRow) => {
+                        const objMeta = (objRow.metadata || {}) as Record<string, unknown>;
+                        const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
+                        const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
+                        return objRow.status === "OPEN"
+                            && objRow.instrumentType === "OPTION"
+                            && vRuleColor === vPreviousRenkoColor
+                            && isRenkoColorTrailTpEnabled(vRuleColor, vRuleSet);
+                    });
+                    if (arrOpenOptionPositions.length > 0) {
+                        const objClosedPositions = await this.closePositions(
+                            arrOpenOptionPositions,
+                            objConfig,
+                            `Renko color changed from ${vPreviousRenkoColor} to ${vLast}`
+                        );
+                        await this.reEnterClosedOptionPositions(
+                            pUserId,
+                            objClosedPositions,
+                            `Renko color changed from ${vPreviousRenkoColor} to ${vLast}`
+                        );
+                        objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+                    }
+                }
             }
 
             for (const vRenkoSignal of objRenkoSignals) {
@@ -1653,15 +1715,10 @@ export class RollingOptionsStrangleService {
             const objOpenOptions = objCurrentOpenPositions
                 .filter((objRow) => objRow.instrumentType === "OPTION");
 
-            const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
             const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
-            const bTrailGreenTp1Enabled = Boolean((objUiState as any).trailGreenTp1Enabled ?? true);
             const bTrailGreenSl1Enabled = Boolean((objUiState as any).trailGreenSl1Enabled ?? true);
-            const bTrailRedTp1Enabled = Boolean((objUiState as any).trailRedTp1Enabled ?? true);
             const bTrailRedSl1Enabled = Boolean((objUiState as any).trailRedSl1Enabled ?? true);
-            const bTrailGreenTp2Enabled = Boolean((objUiState as any).trailGreenTp2Enabled ?? true);
             const bTrailGreenSl2Enabled = Boolean((objUiState as any).trailGreenSl2Enabled ?? true);
-            const bTrailRedTp2Enabled = Boolean((objUiState as any).trailRedTp2Enabled ?? true);
             const bTrailRedSl2Enabled = Boolean((objUiState as any).trailRedSl2Enabled ?? true);
 
             for (const objPosition of objOpenFutures) {

@@ -1643,13 +1643,35 @@ export async function closeRollingOptionsStrangleLiveImportedOpenPosition(
             order: objOrderPayload
         });
         const objPayload = readResponsePayload(objResponse);
+        const arrTrackedBeforeClose = await listRollingOptionsStrangleLiveImportedPositions(vUserId);
+        const objClosedTrackedPosition = arrTrackedBeforeClose.find((objRow) => {
+            return vImportId
+                ? String(objRow.importId || "").trim() === vImportId
+                : String(objRow.contractName || "").trim() === vContractName && String(objRow.side || "").trim().toUpperCase() === vSide;
+        }) || {
+            userId: vUserId,
+            importId: vImportId || crypto.randomUUID(),
+            contractName: vContractName,
+            side: vSide,
+            qty: vQty,
+            entryPrice: 0,
+            markPrice: 0,
+            entryDelta: null,
+            currentDelta: null,
+            charges: 0,
+            pnl: 0,
+            margin: 0,
+            liquidationPrice: 0,
+            openedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        } satisfies RollingOptionsStrangleLiveImportedPositionRecord;
 
         if (vImportId) {
             await deleteRollingOptionsStrangleLiveImportedPosition(vUserId, vImportId);
         }
         const vIsOptionContract = vContractName.toUpperCase().startsWith("C-") || vContractName.toUpperCase().startsWith("P-");
         if (vIsOptionContract) {
-            pService.blockOptionEntryFromManualClose(vUserId);
+            await pService.reEnterClosedOptionPositions(vUserId, [objClosedTrackedPosition], "Manual row close");
         }
         await logRollingOptionsStrangleLiveEvent({
             userId: vUserId,

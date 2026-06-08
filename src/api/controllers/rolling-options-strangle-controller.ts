@@ -731,7 +731,11 @@ export async function deleteRollingOptionsStrangleOpenPositionController(req: Re
     });
 }
 
-export async function closeRollingOptionsStrangleOpenPositionController(req: Request, res: Response): Promise<void> {
+export async function closeRollingOptionsStrangleOpenPositionController(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vPositionId = String(req.body?.positionId || "").trim();
 
@@ -747,11 +751,16 @@ export async function closeRollingOptionsStrangleOpenPositionController(req: Req
     }
 
     const objUiState = await getMergedUiState(vUserId);
+    let bClosedAllLegs = false;
     if (
         Boolean((objUiState as any).closeAllLegsOnAnyClose)
         && shouldCloseAllLegsOnNegativeClosedOption([objClosedPosition])
     ) {
         await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+        bClosedAllLegs = true;
+    }
+    if (!bClosedAllLegs) {
+        await pService.reEnterClosedOptionPositions(vUserId, [objClosedPosition], "Manual row close");
     }
 
     await logRollingOptionsPtDeEvent({
@@ -1312,6 +1321,9 @@ export async function exitRollingOptionsStrangleManualPositions(
         && shouldCloseAllLegsOnNegativeClosedOption(objClosedPositions)
     ) {
         await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+    }
+    else if (!bKillSwitch && vInstrumentType !== "ALL") {
+        await pService.reEnterClosedOptionPositions(vUserId, objClosedPositions, `Manual exit ${vInstrumentType.toLowerCase()}`);
     }
     const objRuntimeOverrides: Partial<RollingOptionsPtDeRuntimeRecord> = {
         status: "stopped",

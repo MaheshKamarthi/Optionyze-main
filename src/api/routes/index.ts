@@ -352,7 +352,7 @@ export function createApiRouter(
         await deleteRollingOptionsStrangleOpenPositionController(req, res);
     });
     objRouter.post("/rollingoptions-strangle/open-positions/close", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
-        await closeRollingOptionsStrangleOpenPositionController(req, res);
+        await closeRollingOptionsStrangleOpenPositionController(req, res, pRollingOptionsStrangleService);
     });
     objRouter.get("/rollingoptions-strangle/closed-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await getRollingOptionsStrangleClosedPositions(req, res);
