@@ -30,6 +30,7 @@
         closedFromDate: document.getElementById("txtClsFromDate"),
         closedToDate: document.getElementById("txtClsToDate"),
         renkoFeedMeta: document.querySelector(".rolling-demo-feed-meta"),
+        ruleSettingsMessages: document.getElementById("rollingDemoRuleSettingsMessages"),
         renkoFeedBadge: document.querySelector(".rolling-demo-switch")?.nextElementSibling,
         oneLotValue: document.getElementById("rollingDemoOneLotValue"),
         totalMarginValue: document.getElementById("rollingDemoTotalMarginValue"),
@@ -394,6 +395,41 @@
         if (tone) {
             ids.pageStatus.classList.add(tone);
         }
+    }
+
+    function appendRuleSettingsMessage(message) {
+        if (!ids.ruleSettingsMessages) {
+            return;
+        }
+        const vMessage = String(message || "").trim();
+        if (!vMessage) {
+            return;
+        }
+        const objEmpty = ids.ruleSettingsMessages.querySelector(".rolling-demo-rule-message-empty");
+        if (objEmpty) {
+            objEmpty.remove();
+        }
+        const objItem = document.createElement("div");
+        objItem.className = "rolling-demo-rule-message-item";
+        const objTime = document.createElement("div");
+        objTime.className = "rolling-demo-rule-message-time";
+        objTime.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const objText = document.createElement("div");
+        objText.className = "rolling-demo-rule-message-text";
+        objText.textContent = vMessage;
+        objItem.append(objTime, objText);
+        const objTitle = ids.ruleSettingsMessages.querySelector(".rolling-demo-rule-message-title");
+        if (objTitle?.nextSibling) {
+            ids.ruleSettingsMessages.insertBefore(objItem, objTitle.nextSibling);
+        }
+        else {
+            ids.ruleSettingsMessages.appendChild(objItem);
+        }
+        ids.ruleSettingsMessages.querySelectorAll(".rolling-demo-rule-message-item").forEach(function (objRow, vIndex) {
+            if (vIndex >= 4) {
+                objRow.remove();
+            }
+        });
     }
 
     function sumNumeric(rows, key) {
@@ -878,8 +914,14 @@
         setStatus("", "");
         try {
             await flushProfileSave();
-            await postJson(url, payload);
+            const objResult = await postJson(url, payload);
             await loadServerPanels();
+            if (objResult?.message) {
+                setStatus(objResult.message, "success");
+                if (String(url || "").includes("/rules/update")) {
+                    appendRuleSettingsMessage(objResult.message);
+                }
+            }
         }
         catch (objError) {
             console.error(objError);

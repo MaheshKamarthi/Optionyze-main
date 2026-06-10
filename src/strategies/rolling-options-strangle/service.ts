@@ -15,6 +15,7 @@ import {
     saveRollingOptionsPtDeRuntime,
     type RollingOptionsPtDeRuntimeRecord
 } from "../../storage/rolling-options-strangle-runtime-store";
+import { runWithPostgresAdvisoryLock } from "../../storage/postgres";
 import {
     buildConfigFromUiState,
     estimatePositionCharges,
@@ -768,6 +769,8 @@ export class RollingOptionsStrangleService {
             entryDelta: number;
             takeProfitDelta: number;
             stopLossDelta: number;
+            configuredTakeProfitPct: number;
+            configuredStopLossPct: number;
             productSymbol: string;
             productDelta: number;
             productGamma: number;
@@ -795,6 +798,8 @@ export class RollingOptionsStrangleService {
             const vBaseDelta = Math.abs(Number(vEntryDelta || 0));
             let vTakeProfitDelta = Number(objRuleValues.takeProfitDelta || 0);
             let vStopLossDelta = Number(objRuleValues.stopLossDelta || 0);
+            let vConfiguredTakeProfitPct = Number((vTakeProfitDelta * 100).toFixed(4));
+            let vConfiguredStopLossPct = Number((vStopLossDelta * 100).toFixed(4));
 
             if (pColorCode === "G" || pColorCode === "R") {
                 const getPctValue = (pValue: unknown, pFallback: number): number => {
@@ -812,6 +817,8 @@ export class RollingOptionsStrangleService {
                         ? getPctValue((pConfig as any).ruleSetGreenSlPct, 85)
                         : getPctValue((pConfig as any).ruleSetRedSlPct, 85))
                     : getPctValue((pColorCode === "G" ? pConfig.greenStopLossPct : pConfig.redStopLossPct), 85);
+                vConfiguredTakeProfitPct = vTpPct;
+                vConfiguredStopLossPct = vSlPct;
 
                 const vTpMove = clamp01(vTpPct / 100);
                 const vSlMove = clamp01(vSlPct / 100);
@@ -856,6 +863,8 @@ export class RollingOptionsStrangleService {
                 entryDelta: vEntryDelta,
                 takeProfitDelta: vTakeProfitDelta,
                 stopLossDelta: vStopLossDelta,
+                configuredTakeProfitPct: vConfiguredTakeProfitPct,
+                configuredStopLossPct: vConfiguredStopLossPct,
                 productSymbol: objLiveContract?.contractSymbol || "",
                 productDelta: objLiveContract?.delta || vTargetDelta,
                 productGamma: objLiveContract?.gamma || 0,
@@ -908,6 +917,8 @@ export class RollingOptionsStrangleService {
                     deltaStopLoss: objLeg.stopLossDelta,
                     takeProfitDelta: objLeg.takeProfitDelta,
                     stopLossDelta: objLeg.stopLossDelta,
+                    configuredTakeProfitPct: objLeg.configuredTakeProfitPct,
+                    configuredStopLossPct: objLeg.configuredStopLossPct,
                     reEntryDelta: objRuleValues.reDelta,
                     reEnter: pConfig.reEnter,
                     ruleColor: objRuleValues.colorCode,
@@ -1307,9 +1318,28 @@ export class RollingOptionsStrangleService {
         const arrOpenOptions = objPositionsAfterFuture.filter((objRow) => objRow.instrumentType === "OPTION" && objRow.status === "OPEN");
         const bHasRuleSet1 = arrOpenOptions.some((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) !== 2);
         const bHasRuleSet2 = arrOpenOptions.some((objRow) => Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === 2);
+        const bSkipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
 
         if (((bAction1Enabled && !bHasRuleSet1) || (bAction2Enabled && !bHasRuleSet2))
             && (bFuturesEnabled ? objNextSummary.futureQty > 0 : true)) {
+            if (bSkipRenkoEntryNoOpenOptions && arrOpenOptions.length <= 0) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "info",
+                    title: "Strategy Option Entry Skipped",
+                    message: "Skipped strategy initial option entry because Skip entry (0 open opts) is enabled and no option leg is running.",
+                    payload: {
+                        symbol: objConfig.symbol,
+                        reason: "strategy_option_skipped_no_open_option_leg_switch",
+                        skipRenkoEntryNoOpenOptions: true
+                    }
+                });
+                return {
+                    status: "success",
+                    message: "Skipped strategy initial option entry because Skip entry (0 open opts) is enabled."
+                };
+            }
             const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
 
@@ -1661,6 +1691,14 @@ export class RollingOptionsStrangleService {
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {
+        return runWithPostgresAdvisoryLock(
+            `rolling-options-strangle:cycle:${pUserId}`,
+            () => this.runCycleWithProcessLock(pUserId),
+            () => ({ status: "warning", message: "Cycle already in progress on another server instance." })
+        );
+    }
+
+    private async runCycleWithProcessLock(pUserId: string): Promise<{ status: string; message: string; }> {
         const objState = this.getOrCreateState(pUserId);
         if (objState.isBusy) {
             return { status: "warning", message: "Cycle already in progress." };

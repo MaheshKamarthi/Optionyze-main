@@ -1786,6 +1786,10 @@ export async function updateRollingOptionsStrangleLiveRuleSettings(req: Request,
     const objUiState = getMergedLiveUiState(objProfile);
     const arrPositions = await listRollingOptionsStrangleLiveImportedPositions(vUserId);
     let vUpdated = 0;
+    let vLastTakeProfitDelta = 0;
+    let vLastStopLossDelta = 0;
+    let vLastReEntryDelta = 0;
+    let vUpdatedQty = 0;
     const arrUpdated = arrPositions.map((objRow) => {
         const vContractName = String(objRow.contractName || "").trim();
         const bIsOption = vContractName.toUpperCase().startsWith("C-") || vContractName.toUpperCase().startsWith("P-");
@@ -1804,7 +1808,12 @@ export async function updateRollingOptionsStrangleLiveRuleSettings(req: Request,
         const vEntryDelta = Math.abs(Number(objRow.entryDelta ?? objRow.currentDelta ?? 0.53));
         const vSide = String(objRow.side || "").trim().toUpperCase();
         const objNewMeta = getLiveRuleMetadataForColor(objUiState, vColor, "manual_rule_update", vEntryDelta, vSide, vRuleSet);
+        const objNewMetaValues = objNewMeta as Record<string, unknown>;
+        vLastTakeProfitDelta = Number(objNewMetaValues.takeProfitDelta ?? objNewMetaValues.deltaTakeProfit ?? 0);
+        vLastStopLossDelta = Number(objNewMetaValues.stopLossDelta ?? objNewMetaValues.deltaStopLoss ?? 0);
+        vLastReEntryDelta = Number(objNewMetaValues.reEntryDelta ?? 0);
         vUpdated += 1;
+        vUpdatedQty += Math.max(0, Number(objRow.qty || 0));
         return {
             ...objRow,
             metadata: {
@@ -1815,9 +1824,14 @@ export async function updateRollingOptionsStrangleLiveRuleSettings(req: Request,
     });
 
     await replaceRollingOptionsStrangleLiveImportedPositions(vUserId, arrUpdated);
+    const vActionLabel = `Action ${vRuleSet}`;
+    const vColorLabel = vColor === "G" ? "Green" : "Red";
+    const vMessage = vUpdated > 0
+        ? `${vActionLabel} ${vColorLabel} live rule settings applied to ${vUpdated} open option position${vUpdated === 1 ? "" : "s"}. Total qty ${vUpdatedQty}. TP/SL target deltas were recalculated from each leg entry delta; Re-entry delta is ${vLastReEntryDelta}. Trailing TP/SL memory was reset to the new settings. Last recalculated TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
+        : `${vActionLabel} ${vColorLabel} live rule settings saved, but no matching open option positions were found to reset.`;
     res.json({
         status: "success",
-        message: `Updated ${vUpdated} ${vColor === "G" ? "Green" : "Red"} rule ${vRuleSet} open option position${vUpdated === 1 ? "" : "s"}.`,
+        message: vMessage,
         data: {
             updated: vUpdated,
             trackedOpenPositions: arrUpdated

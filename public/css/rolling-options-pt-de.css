@@ -3,37 +3,6 @@
     margin:0 auto;
 }
 
-.rolling-live-status {
-    display: none;
-    width: 100%;
-    margin-bottom: 14px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--app-muted);
-    box-sizing: border-box;
-}
-
-.rolling-live-status.show {
-    display: block;
-}
-
-.rolling-live-status.success {
-    border-color: rgba(134, 239, 172, 0.22);
-    color: var(--app-good);
-}
-
-.rolling-live-status.warning {
-    border-color: rgba(242, 182, 90, 0.24);
-    color: var(--app-warn);
-}
-
-.rolling-live-status.danger {
-    border-color: rgba(248, 113, 113, 0.24);
-    color: #ffb5b5;
-}
-
 .rolling-demo-hero {
     display:grid;
     grid-template-columns:1.3fr .7fr;
@@ -386,6 +355,50 @@
 
 .rolling-demo-feed-meta {
     margin-bottom:12px;
+}
+
+.rolling-demo-rule-messages {
+    display:grid;
+    gap:8px;
+    margin:0 0 12px;
+    padding:12px 14px;
+    border-radius:14px;
+    border:1px solid rgba(125,211,252,.20);
+    background:rgba(14,165,233,.07);
+}
+
+.rolling-demo-rule-message-title {
+    color:#bfe9ff;
+    font-size:.78rem;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+}
+
+.rolling-demo-rule-message-empty {
+    color:var(--app-muted);
+    font-size:.86rem;
+    line-height:1.45;
+}
+
+.rolling-demo-rule-message-item {
+    display:grid;
+    gap:4px;
+    padding:9px 10px;
+    border-radius:10px;
+    border:1px solid rgba(134,239,172,.18);
+    background:rgba(15,23,42,.34);
+}
+
+.rolling-demo-rule-message-time {
+    color:var(--app-muted);
+    font-size:.74rem;
+}
+
+.rolling-demo-rule-message-text {
+    color:var(--app-text);
+    font-size:.86rem;
+    line-height:1.45;
 }
 
 .rolling-demo-signal {

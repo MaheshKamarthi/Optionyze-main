@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 
 let gPool: Pool | null = null;
+const gAdvisoryLockNamespace = 43110;
 
 function shouldRecyclePoolForError(pError: unknown): boolean {
     const vMessage = pError instanceof Error
@@ -77,6 +78,40 @@ export async function runPostgresQueryWithReconnect<TResult>(
 
         await resetPostgresPool();
         return await pRunner(getPostgresPool());
+    }
+}
+
+export async function runWithPostgresAdvisoryLock<TResult>(
+    pLockKey: string,
+    pRunner: () => Promise<TResult>,
+    pWhenLocked: () => Promise<TResult> | TResult
+): Promise<TResult> {
+    if (!isPostgresConfigured()) {
+        return pRunner();
+    }
+
+    const objClient = await getPostgresPool().connect();
+    let bAcquired = false;
+    try {
+        const objResult = await objClient.query<{ acquired: boolean }>(
+            "SELECT pg_try_advisory_lock($1, hashtext($2)) AS acquired",
+            [gAdvisoryLockNamespace, pLockKey]
+        );
+        bAcquired = Boolean(objResult.rows[0]?.acquired);
+        if (!bAcquired) {
+            return pWhenLocked();
+        }
+
+        return await pRunner();
+    }
+    finally {
+        if (bAcquired) {
+            await objClient.query(
+                "SELECT pg_advisory_unlock($1, hashtext($2))",
+                [gAdvisoryLockNamespace, pLockKey]
+            );
+        }
+        objClient.release();
     }
 }
 

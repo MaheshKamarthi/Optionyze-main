@@ -18,6 +18,7 @@ import {
     saveRollingOptionsStrangleLiveRuntime,
     type RollingOptionsStrangleLiveRuntimeRecord
 } from "../../storage/rolling-options-strangle-live-runtime-store";
+import { runWithPostgresAdvisoryLock } from "../../storage/postgres";
 import { calculateDeltaStylePnl } from "../../lib/delta-style-pnl";
 import { buildConfigFromUiState, updateRenkoState } from "../rolling-options-pt-de/engine";
 import {
@@ -1832,6 +1833,14 @@ export class RollingOptionsStrangleLiveService {
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {
+        return runWithPostgresAdvisoryLock(
+            `rolling-options-strangle-live:cycle:${pUserId}`,
+            () => this.runCycleWithProcessLock(pUserId),
+            () => ({ status: "warning", message: "Live cycle already in progress on another server instance." })
+        );
+    }
+
+    private async runCycleWithProcessLock(pUserId: string): Promise<{ status: string; message: string; }> {
         const objState = this.getOrCreateState(pUserId);
         if (objState.isBusy) {
             return { status: "warning", message: "Live cycle already in progress." };

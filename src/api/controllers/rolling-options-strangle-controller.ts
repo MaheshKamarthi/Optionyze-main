@@ -1253,30 +1253,57 @@ export async function executeRollingOptionsStrangleManualOption(
     )));
     const vGreenTpDelta = Number((vGreenTpPct / 100).toFixed(4));
     const vGreenSlDelta = Number((vGreenSlPct / 100).toFixed(4));
+    const vRedTpPctLegacy = Number((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1);
+    const vRedSlPctLegacy = Number((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1);
+    const vRedTpPct = Math.max(0, Math.min(100, normalizeNumber(
+        objUiState.redTpPct,
+        Number.isFinite(vRedTpPctLegacy) ? (vRedTpPctLegacy <= 2 ? vRedTpPctLegacy * 100 : vRedTpPctLegacy) : 15
+    )));
+    const vRedSlPct = Math.max(0, Math.min(100, normalizeNumber(
+        objUiState.redSlPct,
+        Number.isFinite(vRedSlPctLegacy) ? (vRedSlPctLegacy <= 2 ? vRedSlPctLegacy * 100 : vRedSlPctLegacy) : 85
+    )));
+    const vRedTpDelta = Number((vRedTpPct / 100).toFixed(4));
+    const vRedSlDelta = Number((vRedSlPct / 100).toFixed(4));
     const vGreenTpPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenTpPct2, 15)));
     const vGreenSlPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenSlPct2, 85)));
     const vGreenTpDelta2 = Number((vGreenTpPct2 / 100).toFixed(4));
     const vGreenSlDelta2 = Number((vGreenSlPct2 / 100).toFixed(4));
+    const vRedTpPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).redTpPct2, 15)));
+    const vRedSlPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).redSlPct2, 85)));
+    const vRedTpDelta2 = Number((vRedTpPct2 / 100).toFixed(4));
+    const vRedSlDelta2 = Number((vRedSlPct2 / 100).toFixed(4));
 
     for (const objLegPlan of objLegPlans) {
         const vLegGreenTpDelta = objLegPlan.ruleSet === 2 ? vGreenTpDelta2 : vGreenTpDelta;
         const vLegGreenSlDelta = objLegPlan.ruleSet === 2 ? vGreenSlDelta2 : vGreenSlDelta;
+        const vLegRedTpDelta = objLegPlan.ruleSet === 2 ? vRedTpDelta2 : vRedTpDelta;
+        const vLegRedSlDelta = objLegPlan.ruleSet === 2 ? vRedSlDelta2 : vRedSlDelta;
         const vLegGreenReDelta = objLegPlan.ruleSet === 2
             ? normalizeNumber((objUiState as any).greenReDelta2, 0.53)
             : normalizeNumber(objUiState.greenReDelta, 0.53);
+        const vLegRedReDelta = objLegPlan.ruleSet === 2
+            ? normalizeNumber((objUiState as any).redReDelta2, 0.53)
+            : normalizeNumber(objUiState.reDelta1, 0.53);
 
         for (const objPlanned of objLegPlan.planned) {
             const vOptionSide = objPlanned.side;
             const objQuote = objPlanned.quote;
+            const vRuleColor: "G" | "R" = vOptionSide === "PE" ? "R" : "G";
+            const vLegTpDelta = vRuleColor === "R" ? vLegRedTpDelta : vLegGreenTpDelta;
+            const vLegSlDelta = vRuleColor === "R" ? vLegRedSlDelta : vLegGreenSlDelta;
+            const vLegReDelta = vRuleColor === "R" ? vLegRedReDelta : vLegGreenReDelta;
+            const vLegTpPct = Number((vLegTpDelta * 100).toFixed(4));
+            const vLegSlPct = Number((vLegSlDelta * 100).toFixed(4));
             const vBaseDelta = Math.abs(Number(objQuote.entryDelta || 0.53));
-            const vTpMove = Math.min(1, Math.max(0, vLegGreenTpDelta));
-            const vSlMove = Math.min(1, Math.max(0, vLegGreenSlDelta));
+            const vTpMove = Math.min(1, Math.max(0, vLegTpDelta));
+            const vSlMove = Math.min(1, Math.max(0, vLegSlDelta));
             const vTakeProfitDelta = objLegPlan.action === "BUY"
                 ? Math.min(1, Math.max(0, vBaseDelta + vTpMove))
                 : Math.min(1, Math.max(0, vBaseDelta - vTpMove));
             const vStopLossDelta = objLegPlan.action === "BUY"
                 ? Math.min(1, Math.max(0, vBaseDelta - vSlMove))
-                : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vLegGreenSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
+                : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vLegSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
             const objPosition: RollingOptionsPtDePositionRecord = {
                 ...createPositionBase(vUserId),
                 status: "OPEN",
@@ -1307,9 +1334,11 @@ export async function executeRollingOptionsStrangleManualOption(
                     deltaStopLoss: vStopLossDelta,
                     takeProfitDelta: vTakeProfitDelta,
                     stopLossDelta: vStopLossDelta,
-                    reEntryDelta: vLegGreenReDelta,
+                    configuredTakeProfitPct: vLegTpPct,
+                    configuredStopLossPct: vLegSlPct,
+                    reEntryDelta: vLegReDelta,
                     reEnter: objLegPlan.reEnter,
-                    ruleColor: "G",
+                    ruleColor: vRuleColor,
                     ...objQuote.metadata
                 }
             };
@@ -1375,39 +1404,70 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
     const vRuleSet = String(req.body?.ruleSet || "").trim();
     const vRuleSetNumber = vRuleSet === "2" ? 2 : 1;
     const objUiState = await getMergedUiState(vUserId);
-    const objConfig = buildConfigFromUiState(objUiState);
 
     const clampPct = (pValue: unknown, pFallback: number): number => {
         const vNum = normalizeNumber(pValue, pFallback);
         return Math.max(0, Math.min(100, vNum));
     };
+    const normalizeLegacyPct = (pValue: unknown, pFallback: number): number => {
+        const vNum = normalizeNumber(pValue, pFallback);
+        return vNum <= 2 ? vNum * 100 : vNum;
+    };
+    const vGreenTpPct1 = clampPct(objUiState.greenTpPct, normalizeLegacyPct(objUiState.greenTpDelta, 15));
+    const vGreenSlPct1 = clampPct(objUiState.greenSlPct, normalizeLegacyPct(objUiState.greenSlDelta, 85));
+    const vRedTpPct1 = clampPct(objUiState.redTpPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1, 15));
+    const vRedSlPct1 = clampPct(objUiState.redSlPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1, 85));
+    const vGreenReDelta1 = normalizeNumber(objUiState.greenReDelta, normalizeNumber(objUiState.reDelta1, 0.53));
+    const vRedReDelta1 = normalizeNumber((objUiState as Record<string, unknown>).redReDelta, normalizeNumber(objUiState.reRedDelta ?? objUiState.reDelta1, 0.53));
 
     const vTakeProfitPct = vColor === "G"
-        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenTpPct2, 15) : Number(objConfig.greenTakeProfitPct ?? 15))
-        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redTpPct2, 15) : Number(objConfig.redTakeProfitPct ?? 15));
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenTpPct2, 15) : vGreenTpPct1)
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redTpPct2, 15) : vRedTpPct1);
     const vStopLossPct = vColor === "G"
-        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenSlPct2, 85) : Number(objConfig.greenStopLossPct ?? 85))
-        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redSlPct2, 85) : Number(objConfig.redStopLossPct ?? 85));
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenSlPct2, 85) : vGreenSlPct1)
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redSlPct2, 85) : vRedSlPct1);
     const vTakeProfitDelta = Number((Math.min(100, Math.max(0, vTakeProfitPct)) / 100).toFixed(4));
     const vStopLossDelta = Number((Math.min(100, Math.max(0, vStopLossPct)) / 100).toFixed(4));
     const vReEntryDelta = vColor === "G"
-        ? (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).greenReDelta2, 0.53) : Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53))
-        : (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).redReDelta2, 0.53) : Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53));
+        ? (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).greenReDelta2, 0.53) : vGreenReDelta1)
+        : (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).redReDelta2, 0.53) : vRedReDelta1);
 
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
+    let vLastPositionTakeProfitDelta = 0;
+    let vLastPositionStopLossDelta = 0;
+    let vUpdatedQty = 0;
+    let vUpdatedLots = 0;
+    const objLotSizes = new Set<string>();
+    let vOpenOptionCount = 0;
+    let vRuleSetMatchCount = 0;
+    let vLegacyMissingColorMatchCount = 0;
+    let vLegacyManualSideColorMatchCount = 0;
 
     for (const objPosition of objOpenPositions) {
         if (objPosition.instrumentType !== "OPTION" || objPosition.status !== "OPEN") {
             continue;
         }
-        const vRuleColor = String(objPosition.metadata?.ruleColor || "").trim().toUpperCase();
-        if (vRuleColor !== vColor) {
-            continue;
-        }
+        vOpenOptionCount += 1;
         const vPositionRuleSet = Math.max(1, Math.min(2, Math.floor(Number((objPosition.metadata as any)?.ruleSet ?? 1))));
         if (vPositionRuleSet !== vRuleSetNumber) {
             continue;
+        }
+        vRuleSetMatchCount += 1;
+        const vRuleColor = String(objPosition.metadata?.ruleColor || "").trim().toUpperCase();
+        const bLegacyMissingGreenColorMatch = !vRuleColor && vColor === "G" && vRuleSetNumber === 1;
+        const vPositionSideColor = String(objPosition.optionSide || "").trim().toUpperCase() === "PE" ? "R" : "G";
+        const bLegacyManualSideColorMatch = String(objPosition.openedReason || "").trim().toUpperCase().startsWith("MANUAL")
+            && vPositionSideColor === vColor
+            && vRuleColor !== vColor;
+        if (vRuleColor !== vColor && !bLegacyMissingGreenColorMatch && !bLegacyManualSideColorMatch) {
+            continue;
+        }
+        if (bLegacyMissingGreenColorMatch) {
+            vLegacyMissingColorMatchCount += 1;
+        }
+        if (bLegacyManualSideColorMatch) {
+            vLegacyManualSideColorMatchCount += 1;
         }
 
         const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
@@ -1420,6 +1480,8 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
         const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
         const vAbsoluteStopLoss = Math.min(1, Math.max(0, vStopLossDelta));
         const vPositionStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vAbsoluteStopLoss : Math.min(1, Math.max(0, vRawStopLoss));
+        vLastPositionTakeProfitDelta = vPositionTakeProfitDelta;
+        vLastPositionStopLossDelta = vPositionStopLossDelta;
 
         await saveRollingOptionsPtDePosition({
             ...objPosition,
@@ -1431,32 +1493,45 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
                 deltaStopLoss: vPositionStopLossDelta,
                 takeProfitDelta: vPositionTakeProfitDelta,
                 stopLossDelta: vPositionStopLossDelta,
-                reEntryDelta: vReEntryDelta
+                configuredTakeProfitPct: vTakeProfitPct,
+                configuredStopLossPct: vStopLossPct,
+                reEntryDelta: vReEntryDelta,
+                trailBestDelta: vEntryDelta,
+                trailTpPeakDelta: vEntryDelta
             },
             updatedAt: ""
         });
         vUpdated += 1;
+        vUpdatedQty += Math.max(0, Number(objPosition.qty || 0));
+        vUpdatedLots += Math.max(0, Number(objPosition.qty || 0)) * Math.max(0, Number(objPosition.lotSize || 0));
+        objLotSizes.add(String(objPosition.lotSize || 0));
     }
-
-    await logRollingOptionsPtDeEvent({
-        userId: vUserId,
-        eventType: "manual_action",
-        severity: "info",
-        title: `Rule Settings Updated (${vColor === "G" ? "Green" : "Red"} ${vRuleSetNumber})`,
-        message: `Updated ${vUpdated} open option position(s) with the latest rule settings.`,
-        payload: {
-            qty: vUpdated,
-            reason: vColor === "G" ? "update_green_rules" : "update_red_rules",
-            ruleColor: vColor,
-            ruleSet: vRuleSetNumber,
-            stopLossDelta: vStopLossDelta,
-            takeProfitDelta: vTakeProfitDelta,
-            reEntryDelta: vReEntryDelta
-        }
-    });
+    const vActionLabel = `Action ${vRuleSetNumber}`;
+    const vColorLabel = vColor === "G" ? "Green" : "Red";
+    const vLotSizeLabel = Array.from(objLotSizes).filter(Boolean).join(", ") || "0";
+    const vSizeMessage = `Total qty ${vUpdatedQty}, lot size ${vLotSizeLabel}, total lots ${Number(vUpdatedLots.toFixed(8))}.`;
+    const vConfiguredQty = Math.max(0, Math.floor(normalizeNumber(
+        vColor === "G"
+            ? (vRuleSetNumber === 2 ? (objUiState as any).greenOptQty2 : objUiState.greenOptQty)
+            : (vRuleSetNumber === 2 ? (objUiState as any).redOptQty2 : objUiState.redOptQty),
+        0
+    )));
+    const vConfiguredLotSize = getLotSizeForSymbol(String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC");
+    const vConfiguredLots = Number((vConfiguredQty * vConfiguredLotSize).toFixed(8));
+    const vSavedSettingsMessage = `Saved settings: configured qty ${vConfiguredQty}, lot size ${vConfiguredLotSize}, total lots ${vConfiguredLots}, TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%, Re-entry delta ${vReEntryDelta}.`;
+    const vLegacyMessage = vLegacyMissingColorMatchCount > 0
+        ? ` ${vLegacyMissingColorMatchCount} legacy Action 1 position${vLegacyMissingColorMatchCount === 1 ? "" : "s"} had no rule color saved, so they were treated as Green and repaired.`
+        : "";
+    const vLegacySideMessage = vLegacyManualSideColorMatchCount > 0
+        ? ` ${vLegacyManualSideColorMatchCount} legacy manual ${vColorLabel} position${vLegacyManualSideColorMatchCount === 1 ? "" : "s"} had the wrong rule color saved for the option side, so they were repaired.`
+        : "";
+    const vMessage = vUpdated > 0
+        ? `${vActionLabel} ${vColorLabel} rule settings applied to ${vUpdated} open option position${vUpdated === 1 ? "" : "s"}. ${vSizeMessage} TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated from each leg entry delta; Re-entry delta is ${vReEntryDelta}. Trailing TP/SL memory was reset to the new settings. Last recalculated TP delta: ${vLastPositionTakeProfitDelta.toFixed(4)}, SL delta: ${vLastPositionStopLossDelta.toFixed(4)}.${vLegacyMessage}${vLegacySideMessage}`
+        : `${vActionLabel} ${vColorLabel} rule settings saved and verified before trade. ${vSavedSettingsMessage} No existing open legs were reset because checked ${vOpenOptionCount} open option position${vOpenOptionCount === 1 ? "" : "s"}; ${vRuleSetMatchCount} matched ${vActionLabel}, and no matching ${vActionLabel} ${vColorLabel} open legs were active.`;
 
     res.json({
         status: "success",
+        message: vMessage,
         data: {
             updatedCount: vUpdated
         }

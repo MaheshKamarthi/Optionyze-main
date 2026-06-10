@@ -12,8 +12,6 @@
     <div class="app-layout rolling-demo-layout">
         <%- include('partials/app-header', { currentAccount }) %>
 
-        <div class="rolling-live-status" id="rollingDemoPageStatus"></div>
-
         <section class="rolling-demo-hero">
             <div class="app-panel rolling-demo-card">
                 <h1 class="rolling-demo-title">Rolling Options - Demo</h1>
@@ -398,6 +396,10 @@
                     </div>
                 </div>
                 <p class="app-copy rolling-demo-feed-meta">Symbol: BTCUSD | Renko state is driven from the server cycle using the selected price source and point size.</p>
+                <div class="rolling-demo-rule-messages" id="rollingDemoRuleSettingsMessages" aria-live="polite">
+                    <div class="rolling-demo-rule-message-title">Rule settings confirmations</div>
+                    <div class="rolling-demo-rule-message-empty">Rule updates will appear here without being saved to the activity log.</div>
+                </div>
                 <div class="rolling-demo-feed">
                     <div class="rolling-demo-feed-item">Enable the feed to let the server evaluate Renko transitions from public Delta market data.</div>
                     <div class="rolling-demo-feed-item">Spot Price, Mark Price, Best Bid, and Best Ask now flow through the Renko engine according to the selected source.</div>

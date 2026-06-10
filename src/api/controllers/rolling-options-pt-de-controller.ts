@@ -1019,6 +1019,11 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
 
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
+    let vLastPositionTakeProfitDelta = 0;
+    let vLastPositionStopLossDelta = 0;
+    let vUpdatedQty = 0;
+    let vUpdatedLots = 0;
+    const objLotSizes = new Set<string>();
 
     for (const objPosition of objOpenPositions) {
         if (objPosition.instrumentType !== "OPTION" || objPosition.status !== "OPEN") {
@@ -1045,6 +1050,8 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
             ? Math.min(1, Math.max(0, Number(objConfig.greenStopLossPct ?? 85) / 100))
             : Math.min(1, Math.max(0, Number(objConfig.redStopLossPct ?? 85) / 100));
         const vPositionStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vAbsoluteStopLoss : Math.min(1, Math.max(0, vRawStopLoss));
+        vLastPositionTakeProfitDelta = vPositionTakeProfitDelta;
+        vLastPositionStopLossDelta = vPositionStopLossDelta;
 
         await saveRollingOptionsPtDePosition({
             ...objPosition,
@@ -1055,31 +1062,27 @@ export async function updateRollingOptionsPtDeRuleSettings(req: Request, res: Re
                 deltaStopLoss: vPositionStopLossDelta,
                 takeProfitDelta: vPositionTakeProfitDelta,
                 stopLossDelta: vPositionStopLossDelta,
-                reEntryDelta: vReEntryDelta
+                reEntryDelta: vReEntryDelta,
+                trailBestDelta: vEntryDelta,
+                trailTpPeakDelta: vEntryDelta
             },
             updatedAt: ""
         });
         vUpdated += 1;
+        vUpdatedQty += Math.max(0, Number(objPosition.qty || 0));
+        vUpdatedLots += Math.max(0, Number(objPosition.qty || 0)) * Math.max(0, Number(objPosition.lotSize || 0));
+        objLotSizes.add(String(objPosition.lotSize || 0));
     }
-
-    await logRollingOptionsPtDeEvent({
-        userId: vUserId,
-        eventType: "manual_action",
-        severity: "info",
-        title: `Rule Settings Updated (${vColor === "G" ? "Green" : "Red"})`,
-        message: `Updated ${vUpdated} open option position(s) with the latest rule settings.`,
-        payload: {
-            qty: vUpdated,
-            reason: vColor === "G" ? "update_green_rules" : "update_red_rules",
-            ruleColor: vColor,
-            stopLossDelta: vStopLossDelta,
-            takeProfitDelta: vTakeProfitDelta,
-            reEntryDelta: vReEntryDelta
-        }
-    });
+    const vColorLabel = vColor === "G" ? "Green" : "Red";
+    const vLotSizeLabel = Array.from(objLotSizes).filter(Boolean).join(", ") || "0";
+    const vSizeMessage = `Total qty ${vUpdatedQty}, lot size ${vLotSizeLabel}, total lots ${Number(vUpdatedLots.toFixed(8))}.`;
+    const vMessage = vUpdated > 0
+        ? `${vColorLabel} rule settings applied to ${vUpdated} open option position${vUpdated === 1 ? "" : "s"}. ${vSizeMessage} TP/SL target deltas were recalculated from each leg entry delta; Re-entry delta is ${vReEntryDelta}. Trailing TP/SL memory was reset to the new settings. Last recalculated TP delta: ${vLastPositionTakeProfitDelta.toFixed(4)}, SL delta: ${vLastPositionStopLossDelta.toFixed(4)}.`
+        : `${vColorLabel} rule settings saved, but no matching open option positions were found to reset. New settings: TP delta ${vTakeProfitDelta}, SL delta ${vStopLossDelta}, Re-entry delta ${vReEntryDelta}.`;
 
     res.json({
         status: "success",
+        message: vMessage,
         data: {
             updatedCount: vUpdated
         }
