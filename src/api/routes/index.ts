@@ -60,6 +60,7 @@ import {
     saveRollingOptionsStrangleProfileController,
     setRollingOptionsStrangleManualRenkoSignal,
     toggleRollingOptionsStrangleAutoTrader,
+    updateRollingOptionsStrangleOpenPositionLinkController,
     updateRollingOptionsStrangleRuleSettings
 } from "../controllers/rolling-options-strangle-controller";
 import {
@@ -353,6 +354,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle/open-positions/close", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await closeRollingOptionsStrangleOpenPositionController(req, res, pRollingOptionsStrangleService);
+    });
+    objRouter.post("/rollingoptions-strangle/open-positions/link", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleOpenPositionLinkController(req, res);
     });
     objRouter.get("/rollingoptions-strangle/closed-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await getRollingOptionsStrangleClosedPositions(req, res);

@@ -423,7 +423,7 @@
 
 .rolling-demo-table {
     width:100%;
-    min-width:1200px;
+    min-width:1320px;
     border-collapse:collapse;
     font-size:.84rem;
 }
@@ -479,6 +479,67 @@
 
 .rolling-demo-ltp-down {
     animation:rollingDemoLtpDown .9s ease-out;
+}
+
+.rolling-demo-link-cell {
+    display:grid;
+    gap:6px;
+    min-width:150px;
+}
+
+.rolling-demo-link-pins {
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+
+.rolling-demo-link-pin,
+.rolling-demo-link-clear {
+    min-height:28px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.04);
+    color:var(--app-muted);
+    cursor:pointer;
+    font:inherit;
+    font-size:.72rem;
+    font-weight:800;
+    line-height:1;
+}
+
+.rolling-demo-link-pin {
+    min-width:42px;
+    padding:0 10px;
+}
+
+.rolling-demo-link-pin.out {
+    color:#bfdbfe;
+}
+
+.rolling-demo-link-pin.in {
+    color:#a7f3d0;
+}
+
+.rolling-demo-link-pin.active {
+    border-color:rgba(96,165,250,.46);
+    background:rgba(37,99,235,.20);
+    color:#eff6ff;
+}
+
+.rolling-demo-link-clear {
+    width:28px;
+    padding:0;
+    color:#fecaca;
+    border-color:rgba(248,113,113,.24);
+    background:rgba(127,29,29,.14);
+}
+
+.rolling-demo-link-status {
+    max-width:180px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    color:var(--app-muted);
+    font-size:.74rem;
 }
 
 @keyframes rollingDemoLtpUp {

@@ -474,6 +474,77 @@ function createPositionBase(pUserId: string): Pick<
     };
 }
 
+function getLinkedLeaderPositionId(pPosition: RollingOptionsPtDePositionRecord): string {
+    return String((pPosition.metadata as any)?.linkedLeaderPositionId || "").trim();
+}
+
+function getLinkedPositionLabel(pPosition: RollingOptionsPtDePositionRecord): string {
+    const vAction = String(pPosition.action || "").trim().toUpperCase();
+    const vSide = String(pPosition.optionSide || "").trim().toUpperCase();
+    const vContract = String(pPosition.contractName || pPosition.symbol || "").trim();
+    return [vAction, vSide, vContract].filter(Boolean).join(" ") || pPosition.positionId;
+}
+
+function collectLinkedFollowerPositions(
+    pOpenPositions: RollingOptionsPtDePositionRecord[],
+    pLeaderPositions: RollingOptionsPtDePositionRecord[]
+): RollingOptionsPtDePositionRecord[] {
+    const objById = new Map<string, RollingOptionsPtDePositionRecord>();
+    const arrQueue = [...pLeaderPositions];
+
+    for (const objPosition of pLeaderPositions) {
+        if (objPosition?.positionId) {
+            objById.set(objPosition.positionId, objPosition);
+        }
+    }
+
+    while (arrQueue.length > 0) {
+        const objLeader = arrQueue.shift();
+        const vLeaderId = String(objLeader?.positionId || "").trim();
+        if (!vLeaderId) {
+            continue;
+        }
+
+        for (const objPosition of pOpenPositions) {
+            const vPositionId = String(objPosition.positionId || "").trim();
+            if (!vPositionId || objById.has(vPositionId)) {
+                continue;
+            }
+            if (getLinkedLeaderPositionId(objPosition) !== vLeaderId) {
+                continue;
+            }
+            objById.set(vPositionId, objPosition);
+            arrQueue.push(objPosition);
+        }
+    }
+
+    return Array.from(objById.values());
+}
+
+function wouldCreateLinkedPositionCycle(
+    pOpenPositions: RollingOptionsPtDePositionRecord[],
+    pFollowerId: string,
+    pLeaderId: string
+): boolean {
+    const objById = new Map(pOpenPositions.map((objPosition) => [String(objPosition.positionId || "").trim(), objPosition]));
+    const objVisited = new Set<string>();
+    let vCurrentId = pLeaderId;
+
+    while (vCurrentId) {
+        if (vCurrentId === pFollowerId) {
+            return true;
+        }
+        if (objVisited.has(vCurrentId)) {
+            return true;
+        }
+        objVisited.add(vCurrentId);
+        const objCurrent = objById.get(vCurrentId);
+        vCurrentId = objCurrent ? getLinkedLeaderPositionId(objCurrent) : "";
+    }
+
+    return false;
+}
+
 async function updateRuntimeFromUiState(
     pUserId: string,
     pOverrides: Partial<RollingOptionsPtDeRuntimeRecord> = {}
@@ -506,7 +577,7 @@ async function closeOpenPositionsByInstrument(
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
     const objUiState = await getMergedUiState(pUserId);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
-    const objTargetPositions = objOpenPositions.filter((objPosition) => {
+    const objDirectTargetPositions = objOpenPositions.filter((objPosition) => {
         if (!(pInstrumentType === "ALL" || objPosition.instrumentType === pInstrumentType)) {
             return false;
         }
@@ -519,6 +590,8 @@ async function closeOpenPositionsByInstrument(
         const vRuleSet = Math.max(1, Math.min(2, Math.floor(Number((objPosition.metadata as any)?.ruleSet ?? 1))));
         return vRuleSet === pRuleSet;
     });
+    const objTargetPositions = collectLinkedFollowerPositions(objOpenPositions, objDirectTargetPositions);
+    const objDirectPositionIds = new Set(objDirectTargetPositions.map((objPosition) => objPosition.positionId));
 
     const objClosedPositions: RollingOptionsPtDePositionRecord[] = [];
 
@@ -533,6 +606,7 @@ async function closeOpenPositionsByInstrument(
             objPosition.instrumentType === "OPTION" ? objSnapshot.spotPrice : undefined
         );
         const vPnl = getPositionPnl(objPosition, vExitPrice);
+        const bLinkedFollowerClose = !objDirectPositionIds.has(objPosition.positionId);
         const objClosed = await saveRollingOptionsPtDePosition({
             ...objPosition,
             status: "CLOSED",
@@ -541,8 +615,12 @@ async function closeOpenPositionsByInstrument(
             exitDelta: objQuote.exitDelta,
             charges: Number((Number(objPosition.charges || 0) + vExitCharges).toFixed(4)),
             pnl: vPnl,
-            closedReason: pReason,
+            closedReason: bLinkedFollowerClose ? `${pReason} linked follower` : pReason,
             closedAt: new Date().toISOString(),
+            metadata: {
+                ...(objPosition.metadata || {}),
+                linkedClosedByLink: bLinkedFollowerClose
+            },
             updatedAt: ""
         });
         objClosedPositions.push(objClosed);
@@ -555,48 +633,59 @@ async function closeOpenPositionsByInstrument(
     return objClosedPositions;
 }
 
-async function closeOpenPositionById(
+async function closeOpenPositionsById(
     pUserId: string,
     pPositionId: string,
     pReason: string
-): Promise<RollingOptionsPtDePositionRecord | null> {
+): Promise<RollingOptionsPtDePositionRecord[]> {
     const vPositionId = String(pPositionId || "").trim();
     if (!vPositionId) {
-        return null;
+        return [];
     }
 
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
     const objPosition = objOpenPositions.find((objRow) => objRow.positionId === vPositionId) || null;
     if (!objPosition) {
-        return null;
+        return [];
     }
 
+    const objTargetPositions = collectLinkedFollowerPositions(objOpenPositions, [objPosition]);
+    const objDirectPositionIds = new Set([vPositionId]);
     const objUiState = await getMergedUiState(pUserId);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
-    const objQuote = await getLiveOrFallbackExitPrice(objPosition, objUiState);
-    const vExitPrice = objQuote.exitPrice;
-    const vExitCharges = estimatePositionCharges(
-        objPosition.instrumentType,
-        objPosition.qty,
-        objPosition.lotSize,
-        vExitPrice,
-        objPosition.instrumentType === "OPTION" ? objSnapshot.spotPrice : undefined
-    );
-    const objClosedPosition = await saveRollingOptionsPtDePosition({
-        ...objPosition,
-        status: "CLOSED",
-        exitPrice: vExitPrice,
-        markPrice: vExitPrice,
-        exitDelta: objQuote.exitDelta,
-        charges: Number((Number(objPosition.charges || 0) + vExitCharges).toFixed(4)),
-        pnl: getPositionPnl(objPosition, vExitPrice),
-        closedReason: pReason,
-        closedAt: new Date().toISOString(),
-        updatedAt: ""
-    });
+    const objClosedPositions: RollingOptionsPtDePositionRecord[] = [];
 
-    await applyClosedOptionPnlToProfile(pUserId, [objClosedPosition]);
-    return objClosedPosition;
+    for (const objTargetPosition of objTargetPositions) {
+        const objQuote = await getLiveOrFallbackExitPrice(objTargetPosition, objUiState);
+        const vExitPrice = objQuote.exitPrice;
+        const vExitCharges = estimatePositionCharges(
+            objTargetPosition.instrumentType,
+            objTargetPosition.qty,
+            objTargetPosition.lotSize,
+            vExitPrice,
+            objTargetPosition.instrumentType === "OPTION" ? objSnapshot.spotPrice : undefined
+        );
+        const bLinkedFollowerClose = !objDirectPositionIds.has(objTargetPosition.positionId);
+        objClosedPositions.push(await saveRollingOptionsPtDePosition({
+            ...objTargetPosition,
+            status: "CLOSED",
+            exitPrice: vExitPrice,
+            markPrice: vExitPrice,
+            exitDelta: objQuote.exitDelta,
+            charges: Number((Number(objTargetPosition.charges || 0) + vExitCharges).toFixed(4)),
+            pnl: getPositionPnl(objTargetPosition, vExitPrice),
+            closedReason: bLinkedFollowerClose ? `${pReason} linked follower` : pReason,
+            closedAt: new Date().toISOString(),
+            metadata: {
+                ...(objTargetPosition.metadata || {}),
+                linkedClosedByLink: bLinkedFollowerClose
+            },
+            updatedAt: ""
+        }));
+    }
+
+    await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
+    return objClosedPositions;
 }
 
 function shouldCloseAllLegsOnNegativeClosedOption(
@@ -710,6 +799,21 @@ export async function deleteRollingOptionsStrangleOpenPositionController(req: Re
         return;
     }
 
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    for (const objPosition of objOpenPositions) {
+        if (getLinkedLeaderPositionId(objPosition) !== vPositionId) {
+            continue;
+        }
+        await saveRollingOptionsPtDePosition({
+            ...objPosition,
+            metadata: {
+                ...(objPosition.metadata || {}),
+                linkedLeaderPositionId: ""
+            },
+            updatedAt: ""
+        });
+    }
+
     await logRollingOptionsPtDeEvent({
         userId: vUserId,
         eventType: "manual_action",
@@ -744,23 +848,24 @@ export async function closeRollingOptionsStrangleOpenPositionController(
         return;
     }
 
-    const objClosedPosition = await closeOpenPositionById(vUserId, vPositionId, "Manual row close");
-    if (!objClosedPosition) {
+    const objClosedPositions = await closeOpenPositionsById(vUserId, vPositionId, "Manual row close");
+    if (objClosedPositions.length <= 0) {
         res.status(404).json({ status: "error", message: "Open position not found." });
         return;
     }
+    const objClosedPosition = objClosedPositions[0];
 
     const objUiState = await getMergedUiState(vUserId);
     let bClosedAllLegs = false;
     if (
         Boolean((objUiState as any).closeAllLegsOnAnyClose)
-        && shouldCloseAllLegsOnNegativeClosedOption([objClosedPosition])
+        && shouldCloseAllLegsOnNegativeClosedOption(objClosedPositions)
     ) {
         await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
         bClosedAllLegs = true;
     }
     if (!bClosedAllLegs) {
-        await pService.reEnterClosedOptionPositions(vUserId, [objClosedPosition], "Manual row close");
+        await pService.reEnterClosedOptionPositions(vUserId, objClosedPositions, "Manual row close");
     }
 
     await logRollingOptionsPtDeEvent({
@@ -768,12 +873,12 @@ export async function closeRollingOptionsStrangleOpenPositionController(
         eventType: "manual_action",
         severity: "info",
         title: "Open Position Closed",
-        message: "Open paper position was manually closed.",
+        message: `Closed ${objClosedPositions.length} open paper position(s).`,
         payload: {
             positionId: vPositionId,
             contractName: objClosedPosition.contractName,
             symbol: objClosedPosition.symbol,
-            qty: objClosedPosition.qty,
+            qty: objClosedPositions.length,
             reason: "manual_open_position_close"
         }
     });
@@ -781,7 +886,74 @@ export async function closeRollingOptionsStrangleOpenPositionController(
     res.json({
         status: "success",
         data: {
-            position: objClosedPosition
+            position: objClosedPosition,
+            positions: objClosedPositions
+        }
+    });
+}
+
+export async function updateRollingOptionsStrangleOpenPositionLinkController(req: Request, res: Response): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vFollowerId = String(req.body?.followerPositionId || "").trim();
+    const vLeaderId = String(req.body?.leaderPositionId || "").trim();
+
+    if (!vFollowerId) {
+        res.status(400).json({ status: "error", message: "Follower position id is required." });
+        return;
+    }
+    if (vFollowerId === vLeaderId) {
+        res.status(400).json({ status: "error", message: "A leg cannot follow itself." });
+        return;
+    }
+
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    const objFollower = objOpenPositions.find((objPosition) => objPosition.positionId === vFollowerId) || null;
+    if (!objFollower) {
+        res.status(404).json({ status: "error", message: "Follower open position not found." });
+        return;
+    }
+
+    let objLeader: RollingOptionsPtDePositionRecord | null = null;
+    if (vLeaderId) {
+        objLeader = objOpenPositions.find((objPosition) => objPosition.positionId === vLeaderId) || null;
+        if (!objLeader) {
+            res.status(404).json({ status: "error", message: "Leader open position not found." });
+            return;
+        }
+        if (wouldCreateLinkedPositionCycle(objOpenPositions, vFollowerId, vLeaderId)) {
+            res.status(400).json({ status: "error", message: "This link would create a circular follow chain." });
+            return;
+        }
+    }
+
+    const objSaved = await saveRollingOptionsPtDePosition({
+        ...objFollower,
+        metadata: {
+            ...(objFollower.metadata || {}),
+            linkedLeaderPositionId: vLeaderId
+        },
+        updatedAt: ""
+    });
+
+    await logRollingOptionsPtDeEvent({
+        userId: vUserId,
+        eventType: "manual_action",
+        severity: "info",
+        title: vLeaderId ? "Position Link Created" : "Position Link Removed",
+        message: vLeaderId
+            ? `${getLinkedPositionLabel(objSaved)} now follows ${getLinkedPositionLabel(objLeader as RollingOptionsPtDePositionRecord)}.`
+            : `${getLinkedPositionLabel(objSaved)} no longer follows another leg.`,
+        payload: {
+            followerPositionId: vFollowerId,
+            leaderPositionId: vLeaderId,
+            reason: vLeaderId ? "open_position_link_create" : "open_position_link_remove"
+        }
+    });
+
+    res.json({
+        status: "success",
+        data: {
+            position: objSaved
         }
     });
 }

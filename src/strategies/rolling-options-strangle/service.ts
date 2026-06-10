@@ -743,7 +743,8 @@ export class RollingOptionsStrangleService {
         pColorCode: "R" | "G",
         pUseReEntryDelta = false,
         pRuleSet: 1 | 2 = 1,
-        pOptionSidesOverride?: Array<"CE" | "PE">
+        pOptionSidesOverride?: Array<"CE" | "PE">,
+        pMetadataOverrides: Record<string, unknown> = {}
     ): Promise<RollingOptionsPtDePositionRecord[]> {
         const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), pConfig);
         const vOptionSides: Array<"CE" | "PE"> = Array.isArray(pOptionSidesOverride) && pOptionSidesOverride.length > 0
@@ -921,7 +922,9 @@ export class RollingOptionsStrangleService {
                     requestedExpiryDate: pConfig.expiryDate,
                     resolvedExpiryDate: objLeg.expiryDate,
                     usedNextDayExpiryFallback: objLeg.usedNextDayExpiryFallback,
-                    source: objSnapshot.priceSource === "public" ? "server-strategy-live" : "server-strategy-simulated"
+                    source: objSnapshot.priceSource === "public" ? "server-strategy-live" : "server-strategy-simulated",
+                    ...pMetadataOverrides,
+                    linkedClosedByLink: false
                 },
                 createdAt: objSnapshot.ts,
                 updatedAt: objSnapshot.ts
@@ -1004,15 +1007,72 @@ export class RollingOptionsStrangleService {
         return false;
     }
 
+    private getLinkedLeaderPositionId(pPosition: RollingOptionsPtDePositionRecord): string {
+        return String((pPosition.metadata as any)?.linkedLeaderPositionId || "").trim();
+    }
+
+    private async expandLinkedFollowerPositions(
+        pPositions: RollingOptionsPtDePositionRecord[]
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const arrPositions = (Array.isArray(pPositions) ? pPositions : [])
+            .filter((objPosition) => objPosition?.status === "OPEN");
+        if (arrPositions.length <= 0) {
+            return [];
+        }
+
+        const vUserId = String(arrPositions[0]?.userId || "").trim();
+        if (!vUserId) {
+            return arrPositions;
+        }
+
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+        const objById = new Map<string, RollingOptionsPtDePositionRecord>();
+        const arrQueue = [...arrPositions];
+
+        for (const objPosition of arrPositions) {
+            const vPositionId = String(objPosition.positionId || "").trim();
+            if (vPositionId) {
+                objById.set(vPositionId, objPosition);
+            }
+        }
+
+        while (arrQueue.length > 0) {
+            const objLeader = arrQueue.shift();
+            const vLeaderId = String(objLeader?.positionId || "").trim();
+            if (!vLeaderId) {
+                continue;
+            }
+
+            for (const objPosition of arrOpenPositions) {
+                const vPositionId = String(objPosition.positionId || "").trim();
+                if (!vPositionId || objById.has(vPositionId)) {
+                    continue;
+                }
+                if (this.getLinkedLeaderPositionId(objPosition) !== vLeaderId) {
+                    continue;
+                }
+                objById.set(vPositionId, objPosition);
+                arrQueue.push(objPosition);
+            }
+        }
+
+        return Array.from(objById.values());
+    }
+
     private async closePositions(
         pPositions: RollingOptionsPtDePositionRecord[],
         pConfig: RollingOptionsPtDeConfig,
         pReason: string
     ): Promise<RollingOptionsPtDePositionRecord[]> {
-        const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pPositions[0]?.userId || "demo-paper"), pConfig);
+        const arrPositions = await this.expandLinkedFollowerPositions(pPositions);
+        const objDirectPositionIds = new Set((Array.isArray(pPositions) ? pPositions : [])
+            .map((objPosition) => String(objPosition?.positionId || "").trim())
+            .filter(Boolean));
+        const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(arrPositions[0]?.userId || "demo-paper"), pConfig);
         const objClosed: RollingOptionsPtDePositionRecord[] = [];
 
-        for (const objPosition of pPositions) {
+        for (const objPosition of arrPositions) {
+            const bLinkedFollowerClose = !objDirectPositionIds.has(String(objPosition.positionId || "").trim());
             const vProductSymbol = String(objPosition.metadata?.productSymbol || "").trim();
             const objLiveTicker = objPosition.instrumentType === "OPTION" && vProductSymbol
                 ? await getLiveOptionTicker(vProductSymbol)
@@ -1038,8 +1098,12 @@ export class RollingOptionsStrangleService {
                 exitDelta: vCurrentDelta,
                 charges: Number((Number(objPosition.charges || 0) + vExitCharges).toFixed(4)),
                 pnl: getPositionPnl(objPosition, vExitPrice),
-                closedReason: pReason,
+                closedReason: bLinkedFollowerClose ? `${pReason} linked follower` : pReason,
                 closedAt: objSnapshot.ts,
+                metadata: {
+                    ...(objPosition.metadata || {}),
+                    linkedClosedByLink: bLinkedFollowerClose
+                },
                 updatedAt: ""
             }));
         }
@@ -1073,7 +1137,8 @@ export class RollingOptionsStrangleService {
         pReason: string
     ): Promise<RollingOptionsPtDePositionRecord[]> {
         const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
-            .filter((objPosition) => objPosition?.instrumentType === "OPTION");
+            .filter((objPosition) => objPosition?.instrumentType === "OPTION")
+            .filter((objPosition) => !Boolean((objPosition.metadata as any)?.linkedClosedByLink));
         if (arrClosedOptions.length <= 0) {
             return [];
         }
@@ -1094,6 +1159,9 @@ export class RollingOptionsStrangleService {
                 : (vStoredRuleColor === "G" ? "G" : "R");
             const vOptionSide: "CE" | "PE" = String(objClosedOption.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
             const objRemainingPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const vLinkedLeaderPositionId = this.getLinkedLeaderPositionId(objClosedOption);
+            const bLinkedLeaderStillOpen = Boolean(vLinkedLeaderPositionId)
+                && objRemainingPositions.some((objRow) => objRow.status === "OPEN" && objRow.positionId === vLinkedLeaderPositionId);
             const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
                 return objRow.status === "OPEN"
                     && objRow.instrumentType === "OPTION"
@@ -1129,7 +1197,8 @@ export class RollingOptionsStrangleService {
                 vActiveRuleColor,
                 true,
                 vRuleSet,
-                [vOptionSide]
+                [vOptionSide],
+                bLinkedLeaderStillOpen ? { linkedLeaderPositionId: vLinkedLeaderPositionId } : {}
             );
             objOpenedPositions.push(...objOpened);
         }
