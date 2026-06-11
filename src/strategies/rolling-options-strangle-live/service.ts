@@ -1494,6 +1494,7 @@ export class RollingOptionsStrangleLiveService {
         }
 
         if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && Number(pPosition.pnl || 0) < 0) {
+            const arrClosedPositions = [pPosition, ...arrRemaining];
             for (const objRemainingPosition of arrRemaining) {
                 await this.closeImportedPositionOnDelta(pUserId, objRemainingPosition);
             }
@@ -1510,6 +1511,7 @@ export class RollingOptionsStrangleLiveService {
                     reason: "close_all_legs_on_negative_option"
                 }
             });
+            await this.reEnterClosedOptionPositions(pUserId, arrClosedPositions, `${pReason === "sl" ? "SL" : "TP"} close all`);
             return;
         }
 

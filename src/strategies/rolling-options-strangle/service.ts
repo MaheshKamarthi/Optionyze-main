@@ -1681,9 +1681,12 @@ export class RollingOptionsStrangleService {
         });
         if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && bShouldCloseAllLegs) {
             const objRemaining = await listRollingOptionsPtDeOpenPositions(pUserId);
+            let objAllClosedPositions = objClosedPositions;
             if (objRemaining.length > 0) {
-                await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");
+                const objCloseAllPositions = await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");
+                objAllClosedPositions = [...objClosedPositions, ...objCloseAllPositions];
             }
+            await this.reEnterClosedOptionPositions(pUserId, objAllClosedPositions, `${pReason === "sl" ? "SL" : "TP"} close all`);
             return;
         }
 

@@ -856,17 +856,15 @@ export async function closeRollingOptionsStrangleOpenPositionController(
     const objClosedPosition = objClosedPositions[0];
 
     const objUiState = await getMergedUiState(vUserId);
-    let bClosedAllLegs = false;
+    let objReEntryClosedPositions = objClosedPositions;
     if (
         Boolean((objUiState as any).closeAllLegsOnAnyClose)
         && shouldCloseAllLegsOnNegativeClosedOption(objClosedPositions)
     ) {
-        await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
-        bClosedAllLegs = true;
+        const objCloseAllPositions = await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+        objReEntryClosedPositions = [...objClosedPositions, ...objCloseAllPositions];
     }
-    if (!bClosedAllLegs) {
-        await pService.reEnterClosedOptionPositions(vUserId, objClosedPositions, "Manual row close");
-    }
+    await pService.reEnterClosedOptionPositions(vUserId, objReEntryClosedPositions, "Manual row close");
 
     await logRollingOptionsPtDeEvent({
         userId: vUserId,
@@ -1567,7 +1565,14 @@ export async function exitRollingOptionsStrangleManualPositions(
         && Boolean((objUiState as any).closeAllLegsOnAnyClose)
         && shouldCloseAllLegsOnNegativeClosedOption(objClosedPositions)
     ) {
-        await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+        const objCloseAllPositions = await closeOpenPositionsByInstrument(vUserId, "ALL", "Close all legs switch");
+        if (!bKillSwitch) {
+            await pService.reEnterClosedOptionPositions(
+                vUserId,
+                [...objClosedPositions, ...objCloseAllPositions],
+                `Manual exit ${vInstrumentType.toLowerCase()} close all`
+            );
+        }
     }
     else if (!bKillSwitch && vInstrumentType !== "ALL") {
         await pService.reEnterClosedOptionPositions(vUserId, objClosedPositions, `Manual exit ${vInstrumentType.toLowerCase()}`);
