@@ -72,6 +72,14 @@ export function resolveExpiryDateByMode(
         return formatDateInputValue(objCurrentDate.getDate() > 15 ? objLastFridayOfNextMonth : objLastFridayOfMonth);
     }
 
+    if (vMode === "7") {
+        const objLastFridayOfNextMonth = getLastFridayOfMonth(objCurrentDate.getFullYear(), objCurrentDate.getMonth() + 1);
+        const objLastFridayOfThirdMonth = getLastFridayOfMonth(objCurrentDate.getFullYear(), objCurrentDate.getMonth() + 2);
+        const vMsPerDay = 24 * 60 * 60 * 1000;
+        const vDaysToCandidate = Math.floor((objLastFridayOfNextMonth.getTime() - objCurrentDate.getTime()) / vMsPerDay);
+        return formatDateInputValue(vDaysToCandidate <= 30 ? objLastFridayOfThirdMonth : objLastFridayOfNextMonth);
+    }
+
     return formatDateInputValue(objCurrentDate);
 }
 

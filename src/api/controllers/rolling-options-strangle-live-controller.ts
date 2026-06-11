@@ -598,6 +598,20 @@ function resolveLiveExpiryDateByMode(pExpiryMode: string): string {
         const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
         return formatIsoDate(objDate.getDate() > 15 ? objNextLastFriday : objLastFriday);
     }
+    if (vMode === "7") {
+        const getLastFridayOfMonth = (pYear: number, pMonthIndex: number): Date => {
+            const objLastDay = new Date(pYear, pMonthIndex + 1, 0);
+            while (objLastDay.getDay() !== 5) {
+                objLastDay.setDate(objLastDay.getDate() - 1);
+            }
+            return objLastDay;
+        };
+        const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
+        const objThirdMonthLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 2);
+        const vMsPerDay = 24 * 60 * 60 * 1000;
+        const vDaysToCandidate = Math.floor((objNextLastFriday.getTime() - objDate.getTime()) / vMsPerDay);
+        return formatIsoDate(vDaysToCandidate <= 30 ? objThirdMonthLastFriday : objNextLastFriday);
+    }
 
     return formatIsoDate(objDate);
 }
@@ -1303,7 +1317,7 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
         req.body?.expiryMode
         || (vRuleSet === 2 ? objUiState.expiryMode2 : objUiState.expiryMode1)
         || "1"
-    ).trim() as "1" | "2" | "4" | "5" | "6";
+    ).trim() as "1" | "2" | "4" | "5" | "6" | "7";
     const vExpiryDate = String(
         req.body?.expiryDate
         || (vRuleSet === 2 ? objUiState.expiryDate2 : objUiState.expiryDate1)
@@ -1440,7 +1454,7 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
             futureOrderType: "market_order" as const,
             action: vAction === "buy" ? "buy" as const : "sell" as const,
             legSide: vLegSide === "both" ? "both" as const : (vLegSide === "pe" ? "pe" as const : "ce" as const),
-            expiryMode: ["1", "2", "4", "5", "6"].includes(vExpiryMode) ? vExpiryMode : "1",
+            expiryMode: ["1", "2", "4", "5", "6", "7"].includes(vExpiryMode) ? vExpiryMode : "1",
             expiryDate: vExpiryDate,
             optionQty: vQty,
             redOptionQtyPct: 100,

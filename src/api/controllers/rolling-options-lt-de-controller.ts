@@ -598,6 +598,20 @@ function resolveLiveExpiryDateByMode(pExpiryMode: string): string {
         const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
         return formatIsoDate(objDate.getDate() > 15 ? objNextLastFriday : objLastFriday);
     }
+    if (vMode === "7") {
+        const getLastFridayOfMonth = (pYear: number, pMonthIndex: number): Date => {
+            const objLastDay = new Date(pYear, pMonthIndex + 1, 0);
+            while (objLastDay.getDay() !== 5) {
+                objLastDay.setDate(objLastDay.getDate() - 1);
+            }
+            return objLastDay;
+        };
+        const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
+        const objThirdMonthLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 2);
+        const vMsPerDay = 24 * 60 * 60 * 1000;
+        const vDaysToCandidate = Math.floor((objNextLastFriday.getTime() - objDate.getTime()) / vMsPerDay);
+        return formatIsoDate(vDaysToCandidate <= 30 ? objThirdMonthLastFriday : objNextLastFriday);
+    }
 
     return formatIsoDate(objDate);
 }
@@ -1200,7 +1214,7 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
     const vAction = String(req.body?.action || "").trim().toLowerCase();
     const vSymbol = String(req.body?.symbol || "BTC").trim().toUpperCase();
     const vLegSide = String(req.body?.legSide || "ce").trim().toLowerCase();
-    const vExpiryMode = String(req.body?.expiryMode || "1").trim() as "1" | "2" | "4" | "5" | "6";
+    const vExpiryMode = String(req.body?.expiryMode || "1").trim() as "1" | "2" | "4" | "5" | "6" | "7";
     const vExpiryDate = String(req.body?.expiryDate || "").trim();
     const vQty = Math.max(1, Math.floor(Number(req.body?.qty || 1)));
     const vTargetDelta = Math.max(0, Number(req.body?.targetDelta || 0.53));
@@ -1225,7 +1239,7 @@ export async function executeRollingOptionsLtDeManualOption(req: Request, res: R
         futureOrderType: "market_order" as const,
         action: vAction === "buy" ? "buy" as const : "sell" as const,
         legSide: vLegSide === "both" ? "both" as const : (vLegSide === "pe" ? "pe" as const : "ce" as const),
-        expiryMode: ["1", "2", "4", "5", "6"].includes(vExpiryMode) ? vExpiryMode : "1",
+        expiryMode: ["1", "2", "4", "5", "6", "7"].includes(vExpiryMode) ? vExpiryMode : "1",
         expiryDate: vExpiryDate,
         optionQty: vQty,
         redOptionQtyPct: 100,

@@ -176,6 +176,13 @@
             const lastFridayOfNextMonth = getLastFridayOfMonth(currentDate.getFullYear(), currentDate.getMonth() + 1);
             return currentDate.getDate() > 15 ? lastFridayOfNextMonth : lastFridayOfMonth;
         }
+        if (modeValue === "7") {
+            const lastFridayOfNextMonth = getLastFridayOfMonth(currentDate.getFullYear(), currentDate.getMonth() + 1);
+            const lastFridayOfThirdMonth = getLastFridayOfMonth(currentDate.getFullYear(), currentDate.getMonth() + 2);
+            const msPerDay = 24 * 60 * 60 * 1000;
+            const daysToCandidate = Math.floor((lastFridayOfNextMonth.getTime() - currentDate.getTime()) / msPerDay);
+            return daysToCandidate <= 30 ? lastFridayOfThirdMonth : lastFridayOfNextMonth;
+        }
 
         return currentDate;
     }
