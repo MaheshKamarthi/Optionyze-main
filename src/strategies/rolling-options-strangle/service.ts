@@ -104,6 +104,8 @@ export class RollingOptionsStrangleService {
             negativePnlAction3: "buy",
             negativePnlHedgeQty: 10,
             negativePnlMaxLegs: 1,
+            negativePnlTpPct: 15,
+            negativePnlSlPct: 85,
             negativePnlHedgeExpiryMode: "1",
             negativePnlHedgeDelta: 0.53,
             negativePnlRecoveryTarget: 0,
@@ -1252,7 +1254,34 @@ export class RollingOptionsStrangleService {
             objOpenedPositions.push(...objOpened);
         }
 
+        await this.closeOrphanReplacementOptionPositions(pUserId, objConfig1);
         return objOpenedPositions;
+    }
+
+    private isReplacementOptionPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
+        if (pPosition.status !== "OPEN" || pPosition.instrumentType !== "OPTION") {
+            return false;
+        }
+        const objMeta = (pPosition.metadata || {}) as Record<string, unknown>;
+        const vReason = `${pPosition.openedReason || ""} ${String(objMeta.openedReason || "")} ${String(objMeta.reason || "")}`.toLowerCase();
+        return vReason.includes("replacement") || vReason.includes("re-entry") || vReason.includes("reentry");
+    }
+
+    private async closeOrphanReplacementOptionPositions(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const arrReplacementOptions = arrOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
+        if (arrReplacementOptions.length <= 0 || arrOpenPositions.some((objPosition) => !this.isReplacementOptionPosition(objPosition))) {
+            return [];
+        }
+
+        return this.closePositions(
+            arrReplacementOptions,
+            pConfig,
+            "Replacement option closed because all other legs are closed"
+        );
     }
 
     private getRenkoOptionQty(pFutureQty: number, pQtyPct: number): number {
@@ -1734,41 +1763,6 @@ export class RollingOptionsStrangleService {
         await this.reEnterClosedOptionPositions(pUserId, objClosedPositions, pReason === "sl" ? "SL" : "TP");
     }
 
-    private getNegativePnlAdjustmentQty(
-        pSourcePosition: RollingOptionsPtDePositionRecord,
-        pMaxQty: number
-    ): number {
-        const vLossAmount = Math.abs(Number(pSourcePosition.pnl || 0));
-        const vEntryPrice = Math.max(0, Number(pSourcePosition.entryPrice || 0));
-        const vMarkPrice = Math.max(0, Number(pSourcePosition.markPrice || 0));
-        const vLotSize = Math.max(0, Number(pSourcePosition.lotSize || 0));
-        const vCappedMaxQty = Math.max(1, Math.floor(Number(pMaxQty || 1)));
-        if (!(vLossAmount > 0) || !(vEntryPrice > 0) || !(vMarkPrice > 0) || !(vLotSize > 0)) {
-            return 1;
-        }
-
-        const vAction = String(pSourcePosition.action || "").trim().toUpperCase();
-        const objMeta = (pSourcePosition.metadata || {}) as Record<string, unknown>;
-        const vRawSlPct = Number(objMeta.configuredStopLossPct ?? objMeta.stopLossPct ?? objMeta.deltaStopLoss ?? objMeta.stopLossDelta);
-        const vSlPct = Number.isFinite(vRawSlPct) && vRawSlPct > 0
-            ? (vRawSlPct <= 2 ? vRawSlPct * 100 : vRawSlPct)
-            : 85;
-        const vSlMove = vEntryPrice * (vSlPct / 100);
-        const vSlPrice = vAction === "SELL"
-            ? vEntryPrice + vSlMove
-            : Math.max(0, vEntryPrice - vSlMove);
-        const vExpectedHedgeMove = vAction === "SELL"
-            ? Math.max(0, vSlPrice - vMarkPrice)
-            : Math.max(0, vMarkPrice - vSlPrice);
-        const vFallbackMove = Math.max(vMarkPrice * 0.05, vEntryPrice * 0.02, 0.01);
-        const vEstimatedProfitPerLot = Math.max(vExpectedHedgeMove, vFallbackMove) * vLotSize;
-        if (!(vEstimatedProfitPerLot > 0)) {
-            return 1;
-        }
-
-        return Math.max(1, Math.min(vCappedMaxQty, Math.ceil(vLossAmount / vEstimatedProfitPerLot)));
-    }
-
     private getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
         const vDirectSide = String(pPosition.optionSide || (pPosition.metadata as any)?.optionSide || "").trim().toUpperCase();
         if (vDirectSide === "CE" || vDirectSide === "PE") {
@@ -1875,8 +1869,8 @@ export class RollingOptionsStrangleService {
             }
         }
 
-        const vMaxHedgeQty = Math.max(0, Math.floor(Number((pUiState as any).negativePnlHedgeQty || 10)));
-        if (!(vMaxHedgeQty > 0)) {
+        const vManualHedgeQty = Math.max(0, Math.floor(Number((pUiState as any).negativePnlHedgeQty || 10)));
+        if (!(vManualHedgeQty > 0)) {
             return;
         }
         const vMaxLegs = Math.max(1, Math.floor(Number((pUiState as any).negativePnlMaxLegs || 1)));
@@ -1937,7 +1931,11 @@ export class RollingOptionsStrangleService {
                 ? String(objSource.expiryDate || objRuleConfig.expiryDate || "")
                 : resolveExpiryDateByMode(vHedgeExpiryMode);
             const vTargetDelta = Math.max(0, Number((pUiState as any).negativePnlHedgeDelta || 0.53));
-            const vQty = this.getNegativePnlAdjustmentQty(objSource, vMaxHedgeQty);
+            const vTakeProfitPct = Math.min(100, Math.max(0, Number((pUiState as any).negativePnlTpPct || 15)));
+            const vStopLossPct = Math.min(100, Math.max(0, Number((pUiState as any).negativePnlSlPct || 85)));
+            const vTakeProfitMove = Math.min(1, Math.max(0, vTakeProfitPct / 100));
+            const vStopLossMove = Math.min(1, Math.max(0, vStopLossPct / 100));
+            const vQty = vManualHedgeQty;
             const objAdjustmentConfig: RollingOptionsPtDeConfig = {
                 ...objRuleConfig,
                 action: vAction3,
@@ -1946,7 +1944,17 @@ export class RollingOptionsStrangleService {
                 expiryDate: vHedgeExpiryDate,
                 optionQty: vQty,
                 newDelta: vTargetDelta,
-                reDelta: vTargetDelta
+                reDelta: vTargetDelta,
+                deltaTakeProfit: vTakeProfitMove,
+                deltaStopLoss: vStopLossMove,
+                redDeltaTakeProfit: vTakeProfitMove,
+                redDeltaStopLoss: vStopLossMove,
+                redTakeProfitPct: vTakeProfitPct,
+                redStopLossPct: vStopLossPct,
+                greenDeltaTakeProfit: vTakeProfitMove,
+                greenDeltaStopLoss: vStopLossMove,
+                greenTakeProfitPct: vTakeProfitPct,
+                greenStopLossPct: vStopLossPct
             };
             const objOpened = await this.openOptionPositions(
                 pUserId,
@@ -1966,7 +1974,10 @@ export class RollingOptionsStrangleService {
                     sourceLossAmount: Math.abs(vSourcePnl),
                     adjustmentGroupId: `negative-pnl:${vSourcePositionId}`,
                     hedgeTargetDelta: vTargetDelta,
-                    maxHedgeQty: vMaxHedgeQty,
+                    manualHedgeQty: vManualHedgeQty,
+                    maxHedgeQty: vManualHedgeQty,
+                    configuredTakeProfitPct: vTakeProfitPct,
+                    configuredStopLossPct: vStopLossPct,
                     reason: "negative_pnl_auto_adjustment"
                 }
             );

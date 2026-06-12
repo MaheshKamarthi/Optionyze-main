@@ -668,6 +668,8 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
         negativePnlMaxLegs: 1,
+        negativePnlTpPct: 15,
+        negativePnlSlPct: 85,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
@@ -845,6 +847,29 @@ function getLiveRuleMetadataForColor(
         openedReason: pReason,
         trailBestDelta: vEntryDelta,
         trailTpPeakDelta: vEntryDelta
+    };
+}
+
+function getLiveOptionDeltaTargetsFromPct(
+    pEntryDelta: number,
+    pSide: string,
+    pTakeProfitPct: number,
+    pStopLossPct: number
+): { takeProfitDelta: number; stopLossDelta: number; } {
+    const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
+    const vSide = String(pSide || "").trim().toUpperCase();
+    const vIsBuy = vSide === "BUY";
+    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
+    const vStopLossMove = clamp01(pStopLossPct / 100);
+    const vTakeProfitDelta = vIsBuy
+        ? clamp01(vEntryDelta + vTakeProfitMove)
+        : clamp01(vEntryDelta - vTakeProfitMove);
+    const vRawStopLoss = vIsBuy ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
+    const vStopLossDelta = !vIsBuy && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    return {
+        takeProfitDelta: vTakeProfitDelta,
+        stopLossDelta: vStopLossDelta
     };
 }
 
@@ -1619,6 +1644,23 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
         if (vOperation === "open") {
             arrTrackedPositions = await appendTrackedLivePositions(vUserId, arrContracts.map((objContract) => {
                 const vEntryPrice = getOptionEntryPriceForAction(objContract, vAction);
+                const vEntryDelta = Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53;
+                const vNegativePnlTpPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlTpPct, 15)));
+                const vNegativePnlSlPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlSlPct, 85)));
+                const objNegativePnlDeltaTargets = getLiveOptionDeltaTargetsFromPct(vEntryDelta, vAction.toUpperCase(), vNegativePnlTpPct, vNegativePnlSlPct);
+                const objNegativePnlMetadata = vReason === "negative_pnl_auto_adjustment"
+                    ? {
+                        deltaTakeProfit: objNegativePnlDeltaTargets.takeProfitDelta,
+                        deltaStopLoss: objNegativePnlDeltaTargets.stopLossDelta,
+                        takeProfitDelta: objNegativePnlDeltaTargets.takeProfitDelta,
+                        stopLossDelta: objNegativePnlDeltaTargets.stopLossDelta,
+                        configuredTakeProfitPct: vNegativePnlTpPct,
+                        configuredStopLossPct: vNegativePnlSlPct,
+                        reEntryDelta: vReEntryDelta,
+                        trailBestDelta: vEntryDelta,
+                        trailTpPeakDelta: vEntryDelta
+                    }
+                    : {};
                 const objRow: RollingOptionsStrangleLiveImportedPositionRecord = {
                     userId: vUserId,
                     importId: crypto.randomUUID(),
@@ -1627,8 +1669,8 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                     qty: vQty,
                     entryPrice: vEntryPrice,
                     markPrice: Number(objContract.markPrice || 0),
-                    entryDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
-                    currentDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
+                    entryDelta: Number.isFinite(Number(objContract.delta)) ? vEntryDelta : null,
+                    currentDelta: Number.isFinite(Number(objContract.delta)) ? vEntryDelta : null,
                     charges: 0,
                     pnl: 0,
                     margin: 0,
@@ -1642,6 +1684,7 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                             vAction.toUpperCase(),
                             vRuleSet
                         ),
+                        ...objNegativePnlMetadata,
                         ruleSet: vRuleSet,
                         reEnter: Boolean(vRuleSet === 2 ? objUiState.reEnter2 : objUiState.reEnter1),
                         reason: vReason || "manual_option_open",
@@ -1879,6 +1922,57 @@ export async function getRollingOptionsStrangleLiveEvents(req: Request, res: Res
     res.json({
         status: "success",
         data: arrEvents
+    });
+}
+
+export async function updateRollingOptionsStrangleLiveNegativePnlSettings(req: Request, res: Response): Promise<void> {
+    const vUserId = getAccountId(req);
+    const objProfile = await loadRollingOptionsStrangleLiveProfile(vUserId);
+    const objUiState = getMergedLiveUiState(objProfile);
+    const vTakeProfitPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlTpPct, 15)));
+    const vStopLossPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlSlPct, 85)));
+    const vReEntryDelta = Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlHedgeDelta, 0.53));
+    const arrPositions = await listRollingOptionsStrangleLiveImportedPositions(vUserId);
+    let vUpdated = 0;
+    let vLastTakeProfitDelta = 0;
+    let vLastStopLossDelta = 0;
+    const arrUpdated = arrPositions.map((objRow) => {
+        if (!Boolean(objRow.metadata?.negativePnlAdjustment)) {
+            return objRow;
+        }
+        const vEntryDelta = Math.abs(Number(objRow.entryDelta ?? objRow.currentDelta ?? vReEntryDelta ?? 0.53));
+        const objDeltaTargets = getLiveOptionDeltaTargetsFromPct(vEntryDelta, objRow.side, vTakeProfitPct, vStopLossPct);
+        vLastTakeProfitDelta = objDeltaTargets.takeProfitDelta;
+        vLastStopLossDelta = objDeltaTargets.stopLossDelta;
+        vUpdated += 1;
+        return {
+            ...objRow,
+            metadata: {
+                ...(objRow.metadata || {}),
+                deltaTakeProfit: objDeltaTargets.takeProfitDelta,
+                deltaStopLoss: objDeltaTargets.stopLossDelta,
+                takeProfitDelta: objDeltaTargets.takeProfitDelta,
+                stopLossDelta: objDeltaTargets.stopLossDelta,
+                configuredTakeProfitPct: vTakeProfitPct,
+                configuredStopLossPct: vStopLossPct,
+                reEntryDelta: vReEntryDelta,
+                trailBestDelta: vEntryDelta,
+                trailTpPeakDelta: vEntryDelta
+            },
+            updatedAt: new Date().toISOString()
+        };
+    });
+
+    await replaceRollingOptionsStrangleLiveImportedPositions(vUserId, arrUpdated);
+    res.json({
+        status: "success",
+        message: vUpdated > 0
+            ? `Negative PnL option leg settings applied to ${vUpdated} tracked live Action 3 leg${vUpdated === 1 ? "" : "s"}. TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
+            : `Negative PnL option leg settings saved. No tracked live Action 3 negative PnL legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
+        data: {
+            updated: vUpdated,
+            trackedOpenPositions: arrUpdated
+        }
     });
 }
 

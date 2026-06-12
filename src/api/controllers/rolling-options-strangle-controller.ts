@@ -100,6 +100,8 @@ function getDefaultUiState(): Record<string, unknown> {
         negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
         negativePnlMaxLegs: 1,
+        negativePnlTpPct: 15,
+        negativePnlSlPct: 85,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
@@ -530,6 +532,27 @@ function getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): 
         return "CE";
     }
     return "";
+}
+
+function getOptionDeltaTargetsFromPct(
+    pEntryDelta: number,
+    pAction: "BUY" | "SELL",
+    pTakeProfitPct: number,
+    pStopLossPct: number
+): { takeProfitDelta: number; stopLossDelta: number; } {
+    const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
+    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
+    const vStopLossMove = clamp01(pStopLossPct / 100);
+    const vTakeProfitDelta = pAction === "BUY"
+        ? clamp01(vEntryDelta + vTakeProfitMove)
+        : clamp01(vEntryDelta - vTakeProfitMove);
+    const vRawStopLoss = pAction === "BUY" ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
+    const vStopLossDelta = pAction === "SELL" && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    return {
+        takeProfitDelta: vTakeProfitDelta,
+        stopLossDelta: vStopLossDelta
+    };
 }
 
 function getLinkedPositionLabel(pPosition: RollingOptionsPtDePositionRecord): string {
@@ -1612,16 +1635,11 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
         const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
         const vEntryPrice = getOptionEntryPriceForAction(objQuote, vAction);
         const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
-        const vConfiguredTpPct = normalizeNumber((objSourcePosition.metadata as any)?.configuredTakeProfitPct, 15);
-        const vConfiguredSlPct = normalizeNumber((objSourcePosition.metadata as any)?.configuredStopLossPct, 85);
-        const vTakeProfitMove = Math.max(0, Math.min(1, vConfiguredTpPct / 100));
-        const vStopLossMove = Math.max(0, Math.min(1, vConfiguredSlPct / 100));
-        const vTakeProfitDelta = vAction === "BUY"
-            ? Math.min(1, Math.max(0, vEntryDelta + vTakeProfitMove))
-            : Math.min(1, Math.max(0, vEntryDelta - vTakeProfitMove));
-        const vStopLossDelta = vAction === "BUY"
-            ? Math.min(1, Math.max(0, vEntryDelta - vStopLossMove))
-            : ((vEntryDelta + vStopLossMove) > 1 ? Math.min(1, Math.max(0, vStopLossMove)) : Math.min(1, Math.max(0, vEntryDelta + vStopLossMove)));
+        const vConfiguredTpPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlTpPct, 15)));
+        const vConfiguredSlPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlSlPct, 85)));
+        const objDeltaTargets = getOptionDeltaTargetsFromPct(vEntryDelta, vAction, vConfiguredTpPct, vConfiguredSlPct);
+        const vTakeProfitDelta = objDeltaTargets.takeProfitDelta;
+        const vStopLossDelta = objDeltaTargets.stopLossDelta;
 
         const objPosition: RollingOptionsPtDePositionRecord = {
             ...createPositionBase(vUserId),
@@ -1712,6 +1730,56 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
         status: "success",
         message: `Opened ${objSavedPositions.length} negative PnL adjustment paper leg(s).`,
         data: { positions: objSavedPositions, runtime: objRuntime }
+    });
+}
+
+export async function updateRollingOptionsStrangleNegativePnlSettings(req: Request, res: Response): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const objUiState = await getMergedUiState(vUserId);
+    const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlTpPct, 15)));
+    const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlSlPct, 85)));
+    const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).negativePnlHedgeDelta, 0.53));
+    const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+    let vUpdated = 0;
+    let vLastTakeProfitDelta = 0;
+    let vLastStopLossDelta = 0;
+
+    for (const objPosition of objOpenPositions) {
+        if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION" || !isNegativePnlAdjustmentPosition(objPosition)) {
+            continue;
+        }
+        const vEntryDelta = Math.abs(Number(objPosition.entryDelta || objPosition.exitDelta || vReEntryDelta || 0.53));
+        const vAction = String(objPosition.action || "").trim().toUpperCase() === "SELL" ? "SELL" : "BUY";
+        const objDeltaTargets = getOptionDeltaTargetsFromPct(vEntryDelta, vAction, vTakeProfitPct, vStopLossPct);
+        vLastTakeProfitDelta = objDeltaTargets.takeProfitDelta;
+        vLastStopLossDelta = objDeltaTargets.stopLossDelta;
+        await saveRollingOptionsPtDePosition({
+            ...objPosition,
+            metadata: {
+                ...(objPosition.metadata || {}),
+                deltaTakeProfit: objDeltaTargets.takeProfitDelta,
+                deltaStopLoss: objDeltaTargets.stopLossDelta,
+                takeProfitDelta: objDeltaTargets.takeProfitDelta,
+                stopLossDelta: objDeltaTargets.stopLossDelta,
+                configuredTakeProfitPct: vTakeProfitPct,
+                configuredStopLossPct: vStopLossPct,
+                reEntryDelta: vReEntryDelta,
+                trailBestDelta: vEntryDelta,
+                trailTpPeakDelta: vEntryDelta
+            },
+            updatedAt: ""
+        });
+        vUpdated += 1;
+    }
+
+    res.json({
+        status: "success",
+        message: vUpdated > 0
+            ? `Negative PnL option leg settings applied to ${vUpdated} open Action 3 leg${vUpdated === 1 ? "" : "s"}. TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
+            : `Negative PnL option leg settings saved. No open Action 3 negative PnL legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
+        data: {
+            updated: vUpdated
+        }
     });
 }
 

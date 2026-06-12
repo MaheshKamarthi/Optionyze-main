@@ -61,6 +61,7 @@ import {
     saveRollingOptionsStrangleProfileController,
     setRollingOptionsStrangleManualRenkoSignal,
     toggleRollingOptionsStrangleAutoTrader,
+    updateRollingOptionsStrangleNegativePnlSettings,
     updateRollingOptionsStrangleOpenPositionLinkController,
     updateRollingOptionsStrangleRuleSettings
 } from "../controllers/rolling-options-strangle-controller";
@@ -114,6 +115,7 @@ import {
     saveRollingOptionsStrangleLiveOpenPositions,
     saveRollingOptionsStrangleLiveProfileController,
     setRollingOptionsStrangleLiveManualRenkoSignal,
+    updateRollingOptionsStrangleLiveNegativePnlSettings,
     updateRollingOptionsStrangleLiveRuleSettings
 } from "../controllers/rolling-options-strangle-live-controller";
 import {
@@ -378,6 +380,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle/manual/negative-pnl-adjustment", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsStrangleNegativePnlAdjustment(req, res);
     });
+    objRouter.post("/rollingoptions-strangle/negative-pnl/settings/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleNegativePnlSettings(req, res);
+    });
     objRouter.post("/rollingoptions-strangle/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleRuleSettings(req, res);
     });
@@ -517,6 +522,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle-live/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleLiveRuleSettings(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle-live/negative-pnl/settings/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleLiveNegativePnlSettings(req, res);
     });
     objRouter.post("/rollingoptions-strangle-live/open-positions/close", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await closeRollingOptionsStrangleLiveImportedOpenPosition(req, res, pRollingOptionsStrangleLiveService);

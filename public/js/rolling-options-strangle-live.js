@@ -77,6 +77,8 @@
         negativePnlMaxLegs: document.getElementById("txtRollingStrangleLiveNegativePnlMaxLegs"),
         negativePnlHedgeExpiryMode: document.getElementById("ddlRollingStrangleLiveNegativePnlHedgeExpiryMode"),
         negativePnlHedgeDelta: document.getElementById("txtRollingStrangleLiveNegativePnlHedgeDelta"),
+        negativePnlTpPct: document.getElementById("txtRollingStrangleLiveNegativePnlTp"),
+        negativePnlSlPct: document.getElementById("txtRollingStrangleLiveNegativePnlSl"),
         negativePnlRecoveryTarget: document.getElementById("txtRollingStrangleLiveNegativePnlRecoveryTarget"),
         updateGreenRulesButton: document.getElementById("btnRollingStrangleLiveUpdateGreenRules"),
         updateGreenRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateGreenRules2"),
@@ -86,6 +88,7 @@
         renkoBoxButton: document.getElementById("btnRollingStrangleLiveRenkoBox"),
         updateRedRulesButton: document.getElementById("btnRollingStrangleLiveUpdateRedRules"),
         updateRedRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateRedRules2"),
+        updateNegativePnlButton: document.getElementById("btnRollingStrangleLiveUpdateNegativePnl"),
         importButton: document.getElementById("btnRollingStrangleLiveImportPositions"),
         refreshOpenPositionsButton: document.getElementById("btnRollingStrangleLiveRefreshOpenPositions"),
         killSwitchButton: document.getElementById("btnRollingStrangleLiveKillSwitch"),
@@ -441,66 +444,20 @@
         return "";
     }
 
-    function normalizePercentValue(value, fallbackValue) {
-        const parsedValue = Number(value);
-        if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-            return fallbackValue;
-        }
-        return parsedValue <= 2 ? parsedValue * 100 : parsedValue;
-    }
-
-    function getConfiguredSlPct(row) {
-        const metadata = row && typeof row === "object" && row.metadata && typeof row.metadata === "object"
-            ? row.metadata
-            : {};
-        return normalizePercentValue(
-            metadata.configuredStopLossPct ?? metadata.stopLossPct ?? metadata.deltaStopLoss ?? metadata.stopLossDelta,
-            85
-        );
-    }
-
-    function calculateAutoNegativePnlHedgeQty(row, maxHedgeQty) {
-        const lossAmount = Math.abs(Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row));
-        const entryPrice = Math.max(0, Number(row?.entryPrice || 0));
-        const markPrice = Math.max(0, Number(row?.markPrice || 0));
-        const lotSize = Math.max(0, getLotSizeForContract(row?.contractName || ""));
-        const cappedMaxQty = Math.max(1, Math.floor(Number(maxHedgeQty || 1)));
-        if (!(lossAmount > 0) || !(entryPrice > 0) || !(markPrice > 0) || !(lotSize > 0)) {
-            return 1;
-        }
-
-        const side = String(row?.side || row?.action || "").trim().toUpperCase();
-        const slPct = getConfiguredSlPct(row);
-        const slMove = entryPrice * (slPct / 100);
-        const slPrice = side === "SELL"
-            ? entryPrice + slMove
-            : Math.max(0, entryPrice - slMove);
-        const expectedHedgeMove = side === "SELL"
-            ? Math.max(0, slPrice - markPrice)
-            : Math.max(0, markPrice - slPrice);
-        const fallbackMove = Math.max(markPrice * 0.05, entryPrice * 0.02, 0.01);
-        const estimatedProfitPerLot = Math.max(expectedHedgeMove, fallbackMove) * lotSize;
-        if (!(estimatedProfitPerLot > 0)) {
-            return 1;
-        }
-
-        return Math.max(1, Math.min(cappedMaxQty, Math.ceil(lossAmount / estimatedProfitPerLot)));
-    }
-
     function getNegativePnlOptionLegPreviews(rows) {
         if (!ids.negativePnlHedgeEnabled?.checked) {
             return [];
         }
 
-        const maxHedgeQty = Math.max(0, Math.floor(parseNumberInput(ids.negativePnlHedgeQty, 10)));
-        if (!(maxHedgeQty > 0)) {
+        const manualHedgeQty = Math.max(0, Math.floor(parseNumberInput(ids.negativePnlHedgeQty, 10)));
+        if (!(manualHedgeQty > 0)) {
             return [];
         }
         const maxLegs = Math.max(1, Math.floor(parseNumberInput(ids.negativePnlMaxLegs, 1)));
         const openAdjustmentCount = (Array.isArray(rows) ? rows : []).filter(function (row) {
             return Boolean(row?.metadata?.negativePnlAdjustment);
         }).length;
-        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount - gNegativePnlAdjustedSourceKeys.size);
+        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount);
         if (!(remainingLegSlots > 0)) {
             return [];
         }
@@ -572,7 +529,7 @@
             const previewContractName = hedgeExpiryDate
                 ? `${contractName || "Hedge Option"} | EXP ${hedgeExpiryDate}`
                 : (contractName || "Hedge Option");
-            const hedgeQty = calculateAutoNegativePnlHedgeQty(row, maxHedgeQty);
+            const hedgeQty = manualHedgeQty;
             return {
                 ...row,
                 importId: `negative-pnl-preview:${importId}`,
@@ -595,8 +552,8 @@
                     ruleSet: Math.max(1, Math.min(2, Math.floor(Number(row?.metadata?.ruleSet ?? 1)))),
                     hedgeExpiryMode,
                     hedgeTargetDelta: hedgeDelta,
-                    autoCalculatedHedgeQty: hedgeQty,
-                    maxHedgeQty,
+                    manualHedgeQty: hedgeQty,
+                    maxHedgeQty: hedgeQty,
                     maxLegs,
                     remainingLegSlots,
                     sourceLossAmount: Math.abs(Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row)),
@@ -640,7 +597,7 @@
         const openAdjustmentCount = (Array.isArray(gDisplayedPositions) ? gDisplayedPositions : []).filter(function (row) {
             return Boolean(row?.metadata?.negativePnlAdjustment);
         }).length;
-        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount - gNegativePnlAdjustedSourceKeys.size);
+        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount);
         const arrRows = (Array.isArray(adjustmentRows) ? adjustmentRows : []).filter(function (row) {
             const sourceKey = String(row?.metadata?.sourceImportId || "").trim();
             return sourceKey && !gNegativePnlAdjustedSourceKeys.has(sourceKey);
@@ -840,6 +797,8 @@
             negativePnlMaxLegs: parseNumberInput(ids.negativePnlMaxLegs, 1),
             negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
             negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
+            negativePnlTpPct: parseNumberInput(ids.negativePnlTpPct, 15),
+            negativePnlSlPct: parseNumberInput(ids.negativePnlSlPct, 85),
             negativePnlRecoveryTarget: parseNumberInput(ids.negativePnlRecoveryTarget, 0),
             addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoValue, 10),
@@ -957,6 +916,8 @@
         setFieldValue(ids.negativePnlMaxLegs, uiState.negativePnlMaxLegs ?? 1);
         setFieldValue(ids.negativePnlHedgeExpiryMode, uiState.negativePnlHedgeExpiryMode ?? "1");
         setFieldValue(ids.negativePnlHedgeDelta, uiState.negativePnlHedgeDelta ?? 0.53);
+        setFieldValue(ids.negativePnlTpPct, uiState.negativePnlTpPct ?? 15);
+        setFieldValue(ids.negativePnlSlPct, uiState.negativePnlSlPct ?? 85);
         setFieldValue(ids.negativePnlRecoveryTarget, uiState.negativePnlRecoveryTarget ?? 0);
         setFieldValue(ids.addOneLotFuture, uiState.addOneLotFuture);
         setFieldValue(ids.renkoValue, uiState.renkoFeedPts);
@@ -1546,7 +1507,7 @@
                     <td>${escapeHtml(formatDateTime(row.openedAt))}</td>
                     <td>${bPreviewLeg ? escapeHtml(`ADJUSTMENT ${row.expiryDate || ""}`.trim()) : "OPEN"}</td>
                     <td>
-                        ${bPreviewLeg ? `<span class="rolling-demo-suggested-leg-note">${ids.negativePnlPlaceOrders?.checked ? "Placing" : "Live adj"} ${escapeHtml(row.metadata?.autoCalculatedHedgeQty || row.qty)}</span>` : `
+                        ${bPreviewLeg ? `<span class="rolling-demo-suggested-leg-note">${ids.negativePnlPlaceOrders?.checked ? "Placing" : "Live adj"} ${escapeHtml(row.metadata?.manualHedgeQty || row.qty)}</span>` : `
                         <button class="rolling-demo-icon-btn primary rolling-strangle-live-close-open-position" type="button" data-import-id="${escapeHtml(vImportId)}" title="Close this open position" aria-label="Close this open position">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="m6 6 12 12" />
@@ -2022,6 +1983,8 @@
     ids.negativePnlMaxLegs?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeExpiryMode?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeDelta?.addEventListener("input", refreshNegativePnlHedgePreview);
+    ids.negativePnlTpPct?.addEventListener("input", refreshNegativePnlHedgePreview);
+    ids.negativePnlSlPct?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlRecoveryTarget?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.addOneLotFuture?.addEventListener("change", queueProfileSave);
     ids.targetOpenPnl?.addEventListener("input", queueProfileSave);
@@ -2319,6 +2282,22 @@
             return loadEvents().catch(function () { return undefined; });
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Red rule 2 settings.", "danger");
+        });
+    });
+    ids.updateNegativePnlButton?.addEventListener("click", function () {
+        void flushProfileSave().then(function () {
+            return postJson("/api/rollingoptions-strangle-live/negative-pnl/settings/update", {});
+        }).then(function (objResult) {
+            const arrTracked = Array.isArray(objResult?.data?.trackedOpenPositions)
+                ? objResult.data.trackedOpenPositions
+                : null;
+            if (arrTracked) {
+                renderOpenPositions(arrTracked);
+            }
+            setStatus(ids.pageStatus, objResult?.message || "Updated negative PnL option leg settings.", "success");
+            return loadEvents().catch(function () { return undefined; });
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update negative PnL option leg settings.", "danger");
         });
     });
     ids.copyWhitelistIpButton?.addEventListener("click", function () {

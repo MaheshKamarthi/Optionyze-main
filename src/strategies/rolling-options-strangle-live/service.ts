@@ -1485,7 +1485,42 @@ export class RollingOptionsStrangleLiveService {
             arrCreatedPositions.push(...arrCreated);
         }
 
+        await this.closeOrphanReplacementOptionPositions(pUserId);
         return arrCreatedPositions;
+    }
+
+    private isReplacementOptionPosition(pPosition: RollingOptionsStrangleLiveImportedPositionRecord): boolean {
+        if (!isOptionContract(pPosition.contractName)) {
+            return false;
+        }
+        const objMeta = pPosition.metadata || {};
+        const vReason = `${objMeta.openedReason || ""} ${objMeta.reason || ""}`.toLowerCase();
+        return vReason.includes("replacement") || vReason.includes("re-entry") || vReason.includes("reentry");
+    }
+
+    private async closeOrphanReplacementOptionPositions(pUserId: string): Promise<RollingOptionsStrangleLiveImportedPositionRecord[]> {
+        const arrOpenPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
+        const arrReplacementOptions = arrOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
+        if (arrReplacementOptions.length <= 0 || arrOpenPositions.some((objPosition) => !this.isReplacementOptionPosition(objPosition))) {
+            return [];
+        }
+
+        for (const objReplacement of arrReplacementOptions) {
+            await this.closeImportedPositionOnDelta(pUserId, objReplacement);
+        }
+        await this.persistImportedPositions(pUserId, []);
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "option_closed",
+            severity: "warning",
+            title: "Replacement Option Closed",
+            message: `Closed ${arrReplacementOptions.length} replacement live option leg${arrReplacementOptions.length === 1 ? "" : "s"} because all other legs are closed.`,
+            payload: {
+                qty: arrReplacementOptions.length,
+                reason: "orphan_replacement_option_closed"
+            }
+        });
+        return arrReplacementOptions;
     }
 
     private async handleOptionTrigger(

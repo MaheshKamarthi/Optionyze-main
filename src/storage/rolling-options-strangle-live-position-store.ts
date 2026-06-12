@@ -26,6 +26,10 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     ruleSet?: 1 | 2;
     takeProfitDelta?: number | null;
     stopLossDelta?: number | null;
+    deltaTakeProfit?: number | null;
+    deltaStopLoss?: number | null;
+    configuredTakeProfitPct?: number | null;
+    configuredStopLossPct?: number | null;
     reEntryDelta?: number | null;
     reEnter?: boolean;
     openedReason?: string;
@@ -80,6 +84,18 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     const vStopLossDelta = objMetadata.stopLossDelta === null || objMetadata.stopLossDelta === undefined
         ? undefined
         : Number(objMetadata.stopLossDelta);
+    const vDeltaTakeProfit = objMetadata.deltaTakeProfit === null || objMetadata.deltaTakeProfit === undefined
+        ? undefined
+        : Number(objMetadata.deltaTakeProfit);
+    const vDeltaStopLoss = objMetadata.deltaStopLoss === null || objMetadata.deltaStopLoss === undefined
+        ? undefined
+        : Number(objMetadata.deltaStopLoss);
+    const vConfiguredTakeProfitPct = objMetadata.configuredTakeProfitPct === null || objMetadata.configuredTakeProfitPct === undefined
+        ? undefined
+        : Number(objMetadata.configuredTakeProfitPct);
+    const vConfiguredStopLossPct = objMetadata.configuredStopLossPct === null || objMetadata.configuredStopLossPct === undefined
+        ? undefined
+        : Number(objMetadata.configuredStopLossPct);
     const vReEntryDelta = objMetadata.reEntryDelta === null || objMetadata.reEntryDelta === undefined
         ? undefined
         : Number(objMetadata.reEntryDelta);
@@ -109,6 +125,18 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     }
     if (Number.isFinite(vStopLossDelta)) {
         objNormalized.stopLossDelta = vStopLossDelta;
+    }
+    if (Number.isFinite(vDeltaTakeProfit)) {
+        objNormalized.deltaTakeProfit = vDeltaTakeProfit;
+    }
+    if (Number.isFinite(vDeltaStopLoss)) {
+        objNormalized.deltaStopLoss = vDeltaStopLoss;
+    }
+    if (Number.isFinite(vConfiguredTakeProfitPct)) {
+        objNormalized.configuredTakeProfitPct = vConfiguredTakeProfitPct;
+    }
+    if (Number.isFinite(vConfiguredStopLossPct)) {
+        objNormalized.configuredStopLossPct = vConfiguredStopLossPct;
     }
     if (Number.isFinite(vReEntryDelta)) {
         objNormalized.reEntryDelta = vReEntryDelta;
