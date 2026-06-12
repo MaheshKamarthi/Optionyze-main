@@ -42,6 +42,11 @@
         trailGreenSl2Enabled: document.getElementById("chkRollingDemoTrailGreenSl2Enabled"),
         trailRedTp2Enabled: document.getElementById("chkRollingDemoTrailRedTp2Enabled"),
         trailRedSl2Enabled: document.getElementById("chkRollingDemoTrailRedSl2Enabled"),
+        negativePnlHedgeEnabled: document.getElementById("chkRollingDemoNegativePnlHedgeEnabled"),
+        negativePnlHedgeQty: document.getElementById("txtRollingDemoNegativePnlHedgeQty"),
+        negativePnlHedgeExpiryMode: document.getElementById("ddlRollingDemoNegativePnlHedgeExpiryMode"),
+        negativePnlHedgeDelta: document.getElementById("txtRollingDemoNegativePnlHedgeDelta"),
+        negativePnlRecoveryTarget: document.getElementById("txtRollingDemoNegativePnlRecoveryTarget"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
@@ -110,6 +115,8 @@
     let gLatestOpenPositions = [];
     let gLatestClosedPositions = [];
     let gHasLoadedProfile = false;
+    let gNegativePnlAdjustmentOrderInFlight = false;
+    const gNegativePnlAdjustedSourceKeys = new Set();
     let gTargetOpenPnlTriggered = false;
     let gLatestEvents = [];
     let gPayoffSlCheckpoints = [];
@@ -201,6 +208,111 @@
         return typeof shared.resolveExpiryDateByMode === "function"
             ? shared.resolveExpiryDateByMode(expiryMode)
             : new Date();
+    }
+
+    function normalizeExpiryDateValue(value) {
+        if (value instanceof Date) {
+            return formatDateInputValue(value);
+        }
+
+        const rawValue = String(value || "").trim();
+        if (!rawValue) {
+            return "";
+        }
+
+        const isoMatch = rawValue.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+        if (isoMatch) {
+            return isoMatch[1];
+        }
+
+        const parsedDate = new Date(rawValue);
+        if (!Number.isNaN(parsedDate.getTime())) {
+            return formatDateInputValue(parsedDate);
+        }
+
+        return "";
+    }
+
+    function resolveExpiryDateValue(expiryMode) {
+        return normalizeExpiryDateValue(resolveExpiryDateByMode(expiryMode));
+    }
+
+    function getSourceExpiryDate(row) {
+        const metadata = row && typeof row === "object" && row.metadata && typeof row.metadata === "object"
+            ? row.metadata
+            : {};
+        const directExpiry = normalizeExpiryDateValue(
+            row?.expiryDate || metadata.resolvedExpiryDate || metadata.requestedExpiryDate || metadata.orderExpiryDate
+        );
+        if (directExpiry) {
+            return directExpiry;
+        }
+
+        return parseExpiryDateFromContractName(row?.contractName || row?.symbol || metadata.sourceContractName || "");
+    }
+
+    function parseExpiryDateFromContractName(contractName) {
+        const value = String(contractName || "").trim().toUpperCase();
+        if (!value) {
+            return "";
+        }
+
+        const isoMatch = value.match(/\b(20\d{2})[-_]?(\d{2})[-_]?(\d{2})\b/);
+        if (isoMatch) {
+            return normalizeExpiryDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+        }
+
+        const monthNames = {
+            JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+            JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12
+        };
+        const namedMonthMatch = value.match(/\b(\d{1,2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2,4})\b/);
+        if (namedMonthMatch) {
+            const year = normalizeExpiryYear(namedMonthMatch[3]);
+            return normalizeExpiryDateParts(year, monthNames[namedMonthMatch[2]], Number(namedMonthMatch[1]));
+        }
+
+        const compactTokens = value.split(/[^A-Z0-9]+/).reverse();
+        for (const token of compactTokens) {
+            const compactMatch = token.match(/^(\d{2})(\d{2})(\d{2})$/);
+            if (compactMatch) {
+                const parsed = normalizeExpiryDateParts(
+                    normalizeExpiryYear(compactMatch[3]),
+                    Number(compactMatch[2]),
+                    Number(compactMatch[1])
+                );
+                if (parsed) {
+                    return parsed;
+                }
+            }
+        }
+
+        return "";
+    }
+
+    function normalizeExpiryYear(value) {
+        const year = Number(value);
+        if (!Number.isFinite(year)) {
+            return 0;
+        }
+        return year < 100 ? 2000 + year : year;
+    }
+
+    function normalizeExpiryDateParts(year, month, day) {
+        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+            return "";
+        }
+
+        const dateValue = new Date(year, month - 1, day);
+        if (
+            dateValue.getFullYear() !== year
+            || dateValue.getMonth() !== month - 1
+            || dateValue.getDate() !== day
+        ) {
+            return "";
+        }
+
+        return formatDateInputValue(dateValue);
     }
 
     function formatDisplayDateTime(dateValue) {
@@ -648,6 +760,11 @@
             trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
             trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
+            negativePnlHedgeEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
+            negativePnlHedgeQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
+            negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
+            negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
+            negativePnlRecoveryTarget: parseNumberInput(ids.negativePnlRecoveryTarget, 0),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -728,6 +845,11 @@
         setFieldValue("trailGreenSl2Enabled", uiState.trailGreenSl2Enabled ?? true);
         setFieldValue("trailRedTp2Enabled", uiState.trailRedTp2Enabled ?? true);
         setFieldValue("trailRedSl2Enabled", uiState.trailRedSl2Enabled ?? true);
+        setFieldValue("negativePnlHedgeEnabled", uiState.negativePnlHedgeEnabled ?? true);
+        setFieldValue("negativePnlHedgeQty", uiState.negativePnlHedgeQty ?? 10);
+        setFieldValue("negativePnlHedgeExpiryMode", uiState.negativePnlHedgeExpiryMode ?? "1");
+        setFieldValue("negativePnlHedgeDelta", uiState.negativePnlHedgeDelta ?? 0.53);
+        setFieldValue("negativePnlRecoveryTarget", uiState.negativePnlRecoveryTarget ?? 0);
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -827,6 +949,200 @@
         });
     }
 
+    function isSuggestedNegativePnlLeg(row) {
+        return Boolean(row?.metadata?.negativePnlOptionLegPreview);
+    }
+
+    function normalizePercentValue(value, fallbackValue) {
+        const parsedValue = Number(value);
+        if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+            return fallbackValue;
+        }
+        return parsedValue <= 2 ? parsedValue * 100 : parsedValue;
+    }
+
+    function getConfiguredSlPct(row) {
+        const metadata = row && typeof row === "object" && row.metadata && typeof row.metadata === "object"
+            ? row.metadata
+            : {};
+        return normalizePercentValue(
+            metadata.configuredStopLossPct ?? metadata.stopLossPct ?? metadata.deltaStopLoss ?? metadata.stopLossDelta,
+            85
+        );
+    }
+
+    function calculateAutoNegativePnlHedgeQty(row, maxHedgeQty) {
+        const lossAmount = Math.abs(Number(row?.pnl || 0));
+        const entryPrice = Math.max(0, Number(row?.entryPrice || 0));
+        const markPrice = Math.max(0, Number(row?.markPrice || 0));
+        const lotSize = Math.max(0, Number(row?.lotSize || 0));
+        const cappedMaxQty = Math.max(1, Math.floor(Number(maxHedgeQty || 1)));
+        if (!(lossAmount > 0) || !(entryPrice > 0) || !(markPrice > 0) || !(lotSize > 0)) {
+            return 1;
+        }
+
+        const action = String(row?.action || row?.side || "").trim().toUpperCase();
+        const slPct = getConfiguredSlPct(row);
+        const slMove = entryPrice * (slPct / 100);
+        const slPrice = action === "SELL"
+            ? entryPrice + slMove
+            : Math.max(0, entryPrice - slMove);
+        const expectedHedgeMove = action === "SELL"
+            ? Math.max(0, slPrice - markPrice)
+            : Math.max(0, markPrice - slPrice);
+        const fallbackMove = Math.max(markPrice * 0.05, entryPrice * 0.02, 0.01);
+        const estimatedProfitPerLot = Math.max(expectedHedgeMove, fallbackMove) * lotSize;
+        if (!(estimatedProfitPerLot > 0)) {
+            return 1;
+        }
+
+        return Math.max(1, Math.min(cappedMaxQty, Math.ceil(lossAmount / estimatedProfitPerLot)));
+    }
+
+    function getNegativePnlOptionLegPreviews(rows) {
+        if (!ids.negativePnlHedgeEnabled?.checked) {
+            return [];
+        }
+
+        const maxHedgeQty = Math.max(0, Math.floor(parseNumberInput(ids.negativePnlHedgeQty, 10)));
+        if (!(maxHedgeQty > 0)) {
+            return [];
+        }
+
+        const hedgeExpiryMode = String(ids.negativePnlHedgeExpiryMode?.value || "1");
+        const hedgeDelta = Math.max(0, parseNumberInput(ids.negativePnlHedgeDelta, 0.53));
+        const resolvedHedgeExpiry = hedgeExpiryMode === "source"
+            ? ""
+            : resolveExpiryDateValue(hedgeExpiryMode);
+
+        const adjustedSourceKeys = new Set((Array.isArray(rows) ? rows : []).map(function (row) {
+            return row?.metadata?.negativePnlAdjustment
+                ? String(row?.metadata?.sourcePositionId || "").trim()
+                : "";
+        }).filter(Boolean));
+
+        return (Array.isArray(rows) ? rows : []).filter(function (row) {
+            const instrumentType = String(row?.instrumentType || "").trim().toUpperCase();
+            const positionId = String(row?.positionId || "").trim();
+            const pnl = Number(row?.pnl);
+            const markPrice = Number(row?.markPrice);
+            return instrumentType === "OPTION"
+                && !Boolean(row?.metadata?.negativePnlAdjustment)
+                && !adjustedSourceKeys.has(positionId)
+                && !gNegativePnlAdjustedSourceKeys.has(positionId)
+                && Number.isFinite(pnl)
+                && pnl < 0
+                && Number.isFinite(markPrice)
+                && markPrice >= 0;
+        }).map(function (row, index) {
+            const action = String(row?.action || row?.side || "").trim().toUpperCase() === "SELL" ? "BUY" : "SELL";
+            const positionId = String(row?.positionId || row?.contractName || row?.symbol || index);
+            const hedgeExpiryDate = hedgeExpiryMode === "source"
+                ? getSourceExpiryDate(row)
+                : resolvedHedgeExpiry;
+            const contractName = String(row.contractName || row.symbol || "").trim();
+            const previewContractName = hedgeExpiryDate
+                ? `${contractName || "Hedge Option"} | EXP ${hedgeExpiryDate}`
+                : (contractName || "Hedge Option");
+            const hedgeQty = calculateAutoNegativePnlHedgeQty(row, maxHedgeQty);
+            return {
+                ...row,
+                positionId: `negative-pnl-preview:${positionId}`,
+                action,
+                side: action,
+                qty: hedgeQty,
+                entryPrice: Number(row.markPrice),
+                entryDelta: hedgeDelta,
+                exitDelta: hedgeDelta,
+                expiryDate: hedgeExpiryDate,
+                charges: 0,
+                pnl: 0,
+                openedAt: "",
+                closedAt: "",
+                status: hedgeExpiryDate ? `ADJUSTMENT ${hedgeExpiryDate}` : "ADJUSTMENT",
+                metadata: {
+                    ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
+                    negativePnlOptionLegPreview: true,
+                    negativePnlOptionLegAdjustment: true,
+                    sourcePositionId: positionId,
+                    hedgeExpiryMode,
+                    hedgeTargetDelta: hedgeDelta,
+                    autoCalculatedHedgeQty: hedgeQty,
+                    maxHedgeQty,
+                    sourceLossAmount: Math.abs(Number(row.pnl || 0)),
+                    displayContractName: previewContractName,
+                    requestedExpiryDate: hedgeExpiryDate,
+                    resolvedExpiryDate: hedgeExpiryDate
+                }
+            };
+        });
+    }
+
+    function withNegativePnlOptionLegPreviews(rows) {
+        const arrRows = Array.isArray(rows) ? rows : [];
+        return arrRows.concat(getNegativePnlOptionLegPreviews(arrRows));
+    }
+
+    function refreshNegativePnlHedgePreview() {
+        queueProfileSave();
+        if (Array.isArray(gLatestOpenPositions) && gLatestOpenPositions.length) {
+            renderOpenPositions(gLatestOpenPositions);
+        }
+    }
+
+    async function placeNegativePnlAdjustmentOrders(adjustmentRows) {
+        if (gNegativePnlAdjustmentOrderInFlight) {
+            return;
+        }
+
+        const rowsToPlace = (Array.isArray(adjustmentRows) ? adjustmentRows : []).filter(function (row) {
+            const sourcePositionId = String(row?.metadata?.sourcePositionId || "").trim();
+            return sourcePositionId && !gNegativePnlAdjustedSourceKeys.has(sourcePositionId);
+        });
+        if (!rowsToPlace.length) {
+            return;
+        }
+
+        gNegativePnlAdjustmentOrderInFlight = true;
+        rowsToPlace.forEach(function (row) {
+            const sourcePositionId = String(row?.metadata?.sourcePositionId || "").trim();
+            if (sourcePositionId) {
+                gNegativePnlAdjustedSourceKeys.add(sourcePositionId);
+            }
+        });
+
+        try {
+            await flushProfileSave();
+            const objResult = await postJson(`${apiBase}/manual/negative-pnl-adjustment`, {
+                adjustments: rowsToPlace.map(function (row) {
+                    return {
+                        sourcePositionId: String(row?.metadata?.sourcePositionId || "").trim(),
+                        action: String(row?.action || row?.side || "BUY").trim().toUpperCase(),
+                        optionSide: String(row?.optionSide || "").trim().toUpperCase(),
+                        expiryMode: String(row?.metadata?.hedgeExpiryMode || ids.negativePnlHedgeExpiryMode?.value || "1"),
+                        expiryDate: String(row?.expiryDate || row?.metadata?.resolvedExpiryDate || row?.metadata?.requestedExpiryDate || ""),
+                        qty: Math.max(1, Math.floor(Number(row?.metadata?.autoCalculatedHedgeQty || row?.qty || 1))),
+                        targetDelta: Math.max(0, Number(row?.metadata?.hedgeTargetDelta || ids.negativePnlHedgeDelta?.value || 0.53))
+                    };
+                })
+            });
+            await loadServerPanels();
+            setStatus(objResult?.message || "Negative PnL adjustment paper leg opened.", "success");
+        }
+        catch (objError) {
+            rowsToPlace.forEach(function (row) {
+                const sourcePositionId = String(row?.metadata?.sourcePositionId || "").trim();
+                if (sourcePositionId) {
+                    gNegativePnlAdjustedSourceKeys.delete(sourcePositionId);
+                }
+            });
+            setStatus(objError instanceof Error ? objError.message : "Unable to open negative PnL adjustment paper leg.", "danger");
+        }
+        finally {
+            gNegativePnlAdjustmentOrderInFlight = false;
+        }
+    }
+
     function getPositionById(positionId, rows = gLatestOpenPositions) {
         const normalizedPositionId = String(positionId || "").trim();
         if (!normalizedPositionId || !Array.isArray(rows)) {
@@ -899,6 +1215,8 @@
         }
 
         gLatestOpenPositions = rows;
+        const displayRows = withNegativePnlOptionLegPreviews(rows);
+        const negativePnlAdjustmentRows = displayRows.filter(isSuggestedNegativePnlLeg);
         if (gSelectedLinkOutPositionId && !getPositionById(gSelectedLinkOutPositionId, rows)) {
             gSelectedLinkOutPositionId = "";
         }
@@ -907,7 +1225,8 @@
         }
         updateOpenPnlMetric(rows, rows.length);
         const nextLtps = new Map();
-        const openRowsHtml = rows.map(function (row) {
+        const openRowsHtml = displayRows.map(function (row) {
+            const isPreviewLeg = isSuggestedNegativePnlLeg(row);
             const tradeType = String(row.action || "-");
             const buyPrice = String(row.action || "").toUpperCase() === "BUY" ? row.entryPrice : null;
             const sellPrice = String(row.action || "").toUpperCase() === "SELL" ? row.entryPrice : null;
@@ -929,16 +1248,16 @@
             const positionId = String(row.positionId || "");
             const ltpBlinkClass = getLtpBlinkClass(positionId, row.markPrice);
             const currentLtp = Number(row.markPrice);
-            if (positionId && Number.isFinite(currentLtp)) {
+            if (!isPreviewLeg && positionId && Number.isFinite(currentLtp)) {
                 nextLtps.set(positionId, currentLtp);
             }
             return `
-                <tr>
+                <tr${isPreviewLeg ? " class=\"rolling-demo-suggested-leg-row\"" : ""}>
                     <td>${escapeHtml(formatNumericValue(row.entryDelta, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(currentDelta, 2))}</td>
                     <td>${escapeHtml(formatDeltaWithConfiguredPct(tpDelta, configuredTpPct, 2))}</td>
                     <td>${escapeHtml(formatDeltaWithConfiguredPct(slDelta, configuredSlPct, 2))}</td>
-                    <td>${escapeHtml(row.contractName || row.symbol || "-")}</td>
+                    <td>${escapeHtml(isPreviewLeg ? (row.metadata?.displayContractName || row.contractName || row.symbol || "-") : (row.contractName || row.symbol || "-"))}</td>
                     <td>${escapeHtml(tradeType || "-")}</td>
                     <td>${escapeHtml(formatNumericValue(row.lotSize, 3))}</td>
                     <td>${escapeHtml(formatNumericValue(row.qty, 0))}</td>
@@ -950,8 +1269,9 @@
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.closedAt))}</td>
                     <td>${escapeHtml(row.status || "-")}</td>
-                    <td>${renderLinkControls(row, rows)}</td>
+                    <td>${isPreviewLeg ? escapeHtml(`Auto adjustment qty ${row.metadata?.autoCalculatedHedgeQty || row.qty}`) : renderLinkControls(row, rows)}</td>
                     <td>
+                        ${isPreviewLeg ? `<span class="rolling-demo-suggested-leg-note">Placing paper adjustment</span>` : `
                         <button class="rolling-demo-icon-btn primary rolling-demo-close-open-position" type="button" data-position-id="${escapeHtml(positionId)}" title="Close this open position" aria-label="Close this open position">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="m6 6 12 12" />
@@ -967,6 +1287,7 @@
                                 <path d="M14 11v6" />
                             </svg>
                         </button>
+                        `}
                     </td>
                 </tr>
             `;
@@ -987,7 +1308,8 @@
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(rows);
         updateOpenPnlMetric(rows, rows.length);
-        renderPayoffGraph(rows);
+        renderPayoffGraph(displayRows);
+        void placeNegativePnlAdjustmentOrders(negativePnlAdjustmentRows);
     }
 
     function renderClosedPositions(rows) {
@@ -1618,6 +1940,13 @@
         if (objField instanceof HTMLInputElement && objField.type !== "checkbox") {
             objField.addEventListener("input", queueProfileSave);
         }
+    });
+
+    [ids.negativePnlHedgeQty, ids.negativePnlHedgeDelta, ids.negativePnlRecoveryTarget].forEach(function (objField) {
+        objField?.addEventListener("input", refreshNegativePnlHedgePreview);
+    });
+    [ids.negativePnlHedgeEnabled, ids.negativePnlHedgeExpiryMode].forEach(function (objField) {
+        objField?.addEventListener("change", refreshNegativePnlHedgePreview);
     });
 
     ids.telegramAlertsEnabled?.addEventListener("change", queueProfileSave);

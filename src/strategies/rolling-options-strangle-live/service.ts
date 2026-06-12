@@ -69,6 +69,10 @@ function isOptionContract(pContractName: string): boolean {
     return vContractName.startsWith("C-") || vContractName.startsWith("P-");
 }
 
+function isNegativePnlAdjustmentPosition(pPosition: RollingOptionsStrangleLiveImportedPositionRecord): boolean {
+    return Boolean(pPosition.metadata?.negativePnlAdjustment);
+}
+
 function getLotSizeForContractName(pContractName: string): number {
     const vContractName = String(pContractName || "").trim().toUpperCase();
     return vContractName.includes("ETH") ? 0.01 : 0.001;
@@ -1493,12 +1497,14 @@ export class RollingOptionsStrangleLiveService {
             return;
         }
 
-        if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && Number(pPosition.pnl || 0) < 0) {
-            const arrClosedPositions = [pPosition, ...arrRemaining];
-            for (const objRemainingPosition of arrRemaining) {
+        if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && !isNegativePnlAdjustmentPosition(pPosition) && Number(pPosition.pnl || 0) < 0) {
+            const arrCloseAllTargets = arrRemaining.filter((objPosition) => !isNegativePnlAdjustmentPosition(objPosition));
+            const arrProtectedPositions = arrRemaining.filter(isNegativePnlAdjustmentPosition);
+            const arrClosedPositions = [pPosition, ...arrCloseAllTargets];
+            for (const objRemainingPosition of arrCloseAllTargets) {
                 await this.closeImportedPositionOnDelta(pUserId, objRemainingPosition);
             }
-            await this.persistImportedPositions(pUserId, []);
+            await this.persistImportedPositions(pUserId, arrProtectedPositions);
             await logRollingOptionsStrangleLiveEvent({
                 userId: pUserId,
                 eventType: "manual_action",
@@ -1507,7 +1513,7 @@ export class RollingOptionsStrangleLiveService {
                 message: "Closed all remaining live legs because Close all on negative options is enabled.",
                 payload: {
                     symbol: objTriggeredConfig.symbol,
-                    qty: arrRemaining.length,
+                    qty: arrCloseAllTargets.length,
                     reason: "close_all_legs_on_negative_option"
                 }
             });

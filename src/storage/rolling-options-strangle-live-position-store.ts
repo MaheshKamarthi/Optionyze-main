@@ -29,6 +29,9 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     reEntryDelta?: number | null;
     reEnter?: boolean;
     openedReason?: string;
+    reason?: string;
+    negativePnlAdjustment?: boolean;
+    sourceImportId?: string;
     trailBestDelta?: number | null;
     trailTpPeakDelta?: number | null;
 }
@@ -98,6 +101,15 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     }
     if (String(objMetadata.openedReason || "").trim()) {
         objNormalized.openedReason = String(objMetadata.openedReason).trim();
+    }
+    if (String(objMetadata.reason || "").trim()) {
+        objNormalized.reason = String(objMetadata.reason).trim();
+    }
+    if (objMetadata.negativePnlAdjustment !== undefined) {
+        objNormalized.negativePnlAdjustment = Boolean(objMetadata.negativePnlAdjustment);
+    }
+    if (String(objMetadata.sourceImportId || "").trim()) {
+        objNormalized.sourceImportId = String(objMetadata.sourceImportId).trim();
     }
     if (Number.isFinite(vTrailBestDelta)) {
         objNormalized.trailBestDelta = vTrailBestDelta;

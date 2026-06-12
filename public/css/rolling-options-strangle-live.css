@@ -60,6 +60,28 @@
     text-align: center;
 }
 
+.rolling-demo-suggested-leg-row td {
+    background: rgba(56, 189, 248, 0.08);
+    color: #d7f5ff;
+}
+
+.rolling-demo-suggested-leg-row td:first-child {
+    border-left: 3px solid #38bdf8;
+}
+
+.rolling-demo-suggested-leg-note {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.12);
+    color: #a7ecff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .rolling-strangle-live-filters {
     grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto auto;
     align-items: end;

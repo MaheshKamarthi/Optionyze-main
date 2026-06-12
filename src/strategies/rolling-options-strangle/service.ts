@@ -99,6 +99,11 @@ export class RollingOptionsStrangleService {
             redReDelta2: 0.53,
             redTpPct2: 15,
             redSlPct2: 85,
+            negativePnlHedgeEnabled: true,
+            negativePnlHedgeQty: 10,
+            negativePnlHedgeExpiryMode: "1",
+            negativePnlHedgeDelta: 0.53,
+            negativePnlRecoveryTarget: 0,
             ...(objProfile?.uiState || {})
         } as Record<string, unknown>;
 
@@ -1677,10 +1682,13 @@ export class RollingOptionsStrangleService {
 
         const objClosedPositions = await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
         const bShouldCloseAllLegs = objClosedPositions.some((objClosedPosition) => {
-            return objClosedPosition.instrumentType === "OPTION" && Number(objClosedPosition.pnl || 0) < 0;
+            return objClosedPosition.instrumentType === "OPTION"
+                && !Boolean((objClosedPosition.metadata as any)?.negativePnlAdjustment)
+                && Number(objClosedPosition.pnl || 0) < 0;
         });
         if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && bShouldCloseAllLegs) {
-            const objRemaining = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const objRemaining = (await listRollingOptionsPtDeOpenPositions(pUserId))
+                .filter((objPosition) => !Boolean((objPosition.metadata as any)?.negativePnlAdjustment));
             let objAllClosedPositions = objClosedPositions;
             if (objRemaining.length > 0) {
                 const objCloseAllPositions = await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");
@@ -1691,6 +1699,189 @@ export class RollingOptionsStrangleService {
         }
 
         await this.reEnterClosedOptionPositions(pUserId, objClosedPositions, pReason === "sl" ? "SL" : "TP");
+    }
+
+    private getNegativePnlAdjustmentQty(
+        pSourcePosition: RollingOptionsPtDePositionRecord,
+        pMaxQty: number
+    ): number {
+        const vLossAmount = Math.abs(Number(pSourcePosition.pnl || 0));
+        const vEntryPrice = Math.max(0, Number(pSourcePosition.entryPrice || 0));
+        const vMarkPrice = Math.max(0, Number(pSourcePosition.markPrice || 0));
+        const vLotSize = Math.max(0, Number(pSourcePosition.lotSize || 0));
+        const vCappedMaxQty = Math.max(1, Math.floor(Number(pMaxQty || 1)));
+        if (!(vLossAmount > 0) || !(vEntryPrice > 0) || !(vMarkPrice > 0) || !(vLotSize > 0)) {
+            return 1;
+        }
+
+        const vAction = String(pSourcePosition.action || "").trim().toUpperCase();
+        const objMeta = (pSourcePosition.metadata || {}) as Record<string, unknown>;
+        const vRawSlPct = Number(objMeta.configuredStopLossPct ?? objMeta.stopLossPct ?? objMeta.deltaStopLoss ?? objMeta.stopLossDelta);
+        const vSlPct = Number.isFinite(vRawSlPct) && vRawSlPct > 0
+            ? (vRawSlPct <= 2 ? vRawSlPct * 100 : vRawSlPct)
+            : 85;
+        const vSlMove = vEntryPrice * (vSlPct / 100);
+        const vSlPrice = vAction === "SELL"
+            ? vEntryPrice + vSlMove
+            : Math.max(0, vEntryPrice - vSlMove);
+        const vExpectedHedgeMove = vAction === "SELL"
+            ? Math.max(0, vSlPrice - vMarkPrice)
+            : Math.max(0, vMarkPrice - vSlPrice);
+        const vFallbackMove = Math.max(vMarkPrice * 0.05, vEntryPrice * 0.02, 0.01);
+        const vEstimatedProfitPerLot = Math.max(vExpectedHedgeMove, vFallbackMove) * vLotSize;
+        if (!(vEstimatedProfitPerLot > 0)) {
+            return 1;
+        }
+
+        return Math.max(1, Math.min(vCappedMaxQty, Math.ceil(vLossAmount / vEstimatedProfitPerLot)));
+    }
+
+    private async manageNegativePnlAdjustments(
+        pUserId: string,
+        pUiState: Record<string, unknown>,
+        pBaseConfig: RollingOptionsPtDeConfig
+    ): Promise<void> {
+        if (!Boolean((pUiState as any).negativePnlHedgeEnabled ?? true)) {
+            return;
+        }
+
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const arrClosedPositions = await listRollingOptionsPtDeClosedPositions(pUserId);
+        const arrOpenOptions = arrOpenPositions.filter((objPosition) => objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION");
+        const objSourceById = new Map(arrOpenOptions
+            .filter((objPosition) => !Boolean((objPosition.metadata as any)?.negativePnlAdjustment))
+            .map((objPosition) => [String(objPosition.positionId || "").trim(), objPosition]));
+        const arrAdjustmentPositions = arrOpenOptions.filter((objPosition) => Boolean((objPosition.metadata as any)?.negativePnlAdjustment));
+        const objAdjustmentsBySource = new Map<string, RollingOptionsPtDePositionRecord[]>();
+        const objClosedAdjustmentPnlBySource = new Map<string, number>();
+
+        for (const objAdjustment of arrAdjustmentPositions) {
+            const vSourcePositionId = String((objAdjustment.metadata as any)?.sourcePositionId || "").trim();
+            if (!vSourcePositionId) {
+                continue;
+            }
+            const arrGroup = objAdjustmentsBySource.get(vSourcePositionId) || [];
+            arrGroup.push(objAdjustment);
+            objAdjustmentsBySource.set(vSourcePositionId, arrGroup);
+        }
+
+        for (const objClosed of arrClosedPositions) {
+            if (!Boolean((objClosed.metadata as any)?.negativePnlAdjustment)) {
+                continue;
+            }
+            const vSourcePositionId = String((objClosed.metadata as any)?.sourcePositionId || "").trim();
+            if (!vSourcePositionId) {
+                continue;
+            }
+            const vPnl = Number(objClosed.pnl || 0);
+            objClosedAdjustmentPnlBySource.set(
+                vSourcePositionId,
+                (objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0) + (Number.isFinite(vPnl) ? vPnl : 0)
+            );
+        }
+
+        for (const [vSourcePositionId, arrAdjustments] of objAdjustmentsBySource.entries()) {
+            const objSource = objSourceById.get(vSourcePositionId);
+            if (!objSource) {
+                await this.closePositions(arrAdjustments, pBaseConfig, "Negative PnL source closed");
+                continue;
+            }
+
+            const vTotalGroupPnl = Number(objSource.pnl || 0) + (objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0) + arrAdjustments.reduce((sum, objAdjustment) => {
+                const vPnl = Number(objAdjustment.pnl || 0);
+                return sum + (Number.isFinite(vPnl) ? vPnl : 0);
+            }, 0);
+            const vRecoveryTarget = Number.isFinite(Number((pUiState as any).negativePnlRecoveryTarget))
+                ? Number((pUiState as any).negativePnlRecoveryTarget)
+                : 0;
+            if (vTotalGroupPnl >= vRecoveryTarget) {
+                await this.closePositions(arrAdjustments, pBaseConfig, "Negative PnL recovery target reached");
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "success",
+                    title: "Negative PnL Adjustment Closed",
+                    message: "Closed adjustment leg(s) because source plus adjustment PnL reached the recovery target.",
+                    payload: {
+                        symbol: pBaseConfig.symbol,
+                        sourcePositionId: vSourcePositionId,
+                        totalGroupPnl: Number(vTotalGroupPnl.toFixed(3)),
+                        recoveryTarget: vRecoveryTarget,
+                        reason: "negative_pnl_recovery_target"
+                    }
+                });
+            }
+        }
+
+        const vMaxHedgeQty = Math.max(0, Math.floor(Number((pUiState as any).negativePnlHedgeQty || 10)));
+        if (!(vMaxHedgeQty > 0)) {
+            return;
+        }
+
+        for (const objSource of objSourceById.values()) {
+            const vSourcePositionId = String(objSource.positionId || "").trim();
+            const vSourcePnl = Number(objSource.pnl || 0);
+            if (!vSourcePositionId || !(Number.isFinite(vSourcePnl) && vSourcePnl < 0)) {
+                continue;
+            }
+            const vClosedAdjustmentPnl = objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0;
+            const vRecoveredGroupPnl = vSourcePnl + vClosedAdjustmentPnl;
+            const vRecoveryTarget = Number.isFinite(Number((pUiState as any).negativePnlRecoveryTarget))
+                ? Number((pUiState as any).negativePnlRecoveryTarget)
+                : 0;
+            if (vRecoveredGroupPnl >= vRecoveryTarget) {
+                continue;
+            }
+            if ((objAdjustmentsBySource.get(vSourcePositionId) || []).length > 0) {
+                continue;
+            }
+
+            const vSourceAction = String(objSource.action || "").trim().toUpperCase();
+            const vAdjustmentAction: "buy" | "sell" = vSourceAction === "SELL" ? "buy" : "sell";
+            const vOptionSide = String(objSource.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const vRuleSet = Math.floor(Number((objSource.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
+            const objRuleConfig = this.buildRuleSetConfig(pUiState, vRuleSet);
+            const vHedgeExpiryModeRaw = String((pUiState as any).negativePnlHedgeExpiryMode || "1").trim();
+            const vHedgeExpiryMode = ["1", "2", "4", "5", "6", "7"].includes(vHedgeExpiryModeRaw)
+                ? vHedgeExpiryModeRaw as RollingOptionsPtDeConfig["expiryMode"]
+                : (String((objSource.metadata as any)?.expiryMode || objRuleConfig.expiryMode || "1") as RollingOptionsPtDeConfig["expiryMode"]);
+            const vTargetDelta = Math.max(0, Number((pUiState as any).negativePnlHedgeDelta || 0.53));
+            const vQty = this.getNegativePnlAdjustmentQty(objSource, vMaxHedgeQty);
+            const objAdjustmentConfig: RollingOptionsPtDeConfig = {
+                ...objRuleConfig,
+                action: vAdjustmentAction,
+                legSide: vOptionSide === "PE" ? "pe" : "ce",
+                expiryMode: vHedgeExpiryMode,
+                expiryDate: vHedgeExpiryModeRaw === "source" ? String(objSource.expiryDate || objRuleConfig.expiryDate || "") : objRuleConfig.expiryDate,
+                optionQty: vQty,
+                newDelta: vTargetDelta,
+                reDelta: vTargetDelta
+            };
+            const objOpened = await this.openOptionPositions(
+                pUserId,
+                objAdjustmentConfig,
+                vQty,
+                "Negative PnL adjustment",
+                vOptionSide === "PE" ? "R" : "G",
+                false,
+                vRuleSet,
+                [vOptionSide],
+                {
+                    negativePnlAdjustment: true,
+                    sourcePositionId: vSourcePositionId,
+                    sourceContractName: objSource.contractName,
+                    sourceLossAmount: Math.abs(vSourcePnl),
+                    adjustmentGroupId: `negative-pnl:${vSourcePositionId}`,
+                    hedgeTargetDelta: vTargetDelta,
+                    maxHedgeQty: vMaxHedgeQty,
+                    reason: "negative_pnl_auto_adjustment"
+                }
+            );
+
+            if (objOpened.length > 0) {
+                objAdjustmentsBySource.set(vSourcePositionId, objOpened);
+            }
+        }
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {
@@ -1953,12 +2144,18 @@ export class RollingOptionsStrangleService {
                     continue;
                 }
 
+                if (Boolean(objNextMeta.negativePnlAdjustment)) {
+                    continue;
+                }
+
                 const objDecision = shouldTriggerOption({ ...objPosition, metadata: objNextMeta }, vCurrentDelta);
                 if (objDecision.shouldAct && objDecision.reason) {
                     await this.handleOptionTrigger(pUserId, objConfig, objPosition, objDecision.reason);
                     break;
                 }
             }
+
+            await this.manageNegativePnlAdjustments(pUserId, objUiState, objConfig);
 
             objState.cycleCount += 1;
             objState.consecutiveFailures = 0;

@@ -48,6 +48,7 @@ import {
     deleteRollingOptionsStrangleOpenPositionController,
     executeRollingOptionsStrangleManualFuture,
     executeRollingOptionsStrangleManualOption,
+    executeRollingOptionsStrangleNegativePnlAdjustment,
     exitRollingOptionsStrangleManualPositions,
     getRollingOptionsStrangleEvents,
     getRollingOptionsStrangleClosedPositions,
@@ -373,6 +374,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle/manual/option", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         (req as any).__rollingOptionsStrangleService = pRollingOptionsStrangleService;
         await executeRollingOptionsStrangleManualOption(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle/manual/negative-pnl-adjustment", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await executeRollingOptionsStrangleNegativePnlAdjustment(req, res);
     });
     objRouter.post("/rollingoptions-strangle/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleRuleSettings(req, res);

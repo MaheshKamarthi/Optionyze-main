@@ -663,6 +663,12 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "mark_price",
         targetOpenPnl: 0,
+        negativePnlHedgeEnabled: true,
+        negativePnlPlaceOrders: false,
+        negativePnlHedgeQty: 10,
+        negativePnlHedgeExpiryMode: "1",
+        negativePnlHedgeDelta: 0.53,
+        negativePnlRecoveryTarget: 0,
         closedFromDate: "",
         closedToDate: "",
         telegramAlertsEnabled: false,
@@ -1339,6 +1345,8 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                 : objUiState.reRedDelta))
         || 0.53
     ));
+    const vReason = String(req.body?.reason || "").trim();
+    const vSourceImportId = String(req.body?.sourceImportId || "").trim();
 
     if (vAction !== "buy" && vAction !== "sell") {
         res.status(400).json({ status: "warning", message: "Select a valid option action before placing a live option order." });
@@ -1473,9 +1481,11 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
         const objRuntime = await loadRollingOptionsStrangleLiveRuntime(vUserId);
         const vRuleColor: "R" | "G" = String(objRuntime?.state?.renkoLastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
         const objRuleConfig = buildLiveRuleConfigFromUiState(objUiState, vRuleSet);
-        const vReEntryDelta = vRuleColor === "G"
-            ? Number(objRuleConfig.greenReDelta ?? objRuleConfig.reDelta ?? 0.53)
-            : Number(objRuleConfig.redReDelta ?? objRuleConfig.reDelta ?? 0.53);
+        const vReEntryDelta = Number.isFinite(vTargetDelta) && vTargetDelta > 0
+            ? vTargetDelta
+            : (vRuleColor === "G"
+                ? Number(objRuleConfig.greenReDelta ?? objRuleConfig.reDelta ?? 0.53)
+                : Number(objRuleConfig.redReDelta ?? objRuleConfig.reDelta ?? 0.53));
 
         for (const vOptionSide of arrOptionSides) {
             const objContract = await findBestLiveOptionContract(
@@ -1560,7 +1570,10 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                             vRuleSet
                         ),
                         ruleSet: vRuleSet,
-                        reEnter: Boolean(vRuleSet === 2 ? objUiState.reEnter2 : objUiState.reEnter1)
+                        reEnter: Boolean(vRuleSet === 2 ? objUiState.reEnter2 : objUiState.reEnter1),
+                        reason: vReason || "manual_option_open",
+                        negativePnlAdjustment: vReason === "negative_pnl_auto_adjustment",
+                        sourceImportId: vSourceImportId
                     },
                     openedAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
