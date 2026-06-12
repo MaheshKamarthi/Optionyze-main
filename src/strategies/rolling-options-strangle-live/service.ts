@@ -1169,6 +1169,23 @@ export class RollingOptionsStrangleLiveService {
         });
     }
 
+    private getOptionEntryPriceForAction(
+        pQuote: { markPrice?: number; bestBid?: number | null; bestAsk?: number | null; },
+        pAction: string
+    ): number {
+        const vAction = String(pAction || "").trim().toLowerCase();
+        const vBid = Number(pQuote.bestBid);
+        const vAsk = Number(pQuote.bestAsk);
+        const vFallback = Number(pQuote.markPrice || 0);
+        if (vAction === "sell" && Number.isFinite(vBid) && vBid > 0) {
+            return vBid;
+        }
+        if (vAction === "buy" && Number.isFinite(vAsk) && vAsk > 0) {
+            return vAsk;
+        }
+        return vFallback;
+    }
+
     private async openOptionEntries(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
@@ -1196,6 +1213,9 @@ export class RollingOptionsStrangleLiveService {
         const arrResolvedEntries: Array<{
             contractSymbol: string;
             markPrice: number;
+            entryPrice: number;
+            bestBid: number | null;
+            bestAsk: number | null;
             delta: number;
             metadata: RollingOptionsStrangleLivePositionMetadata;
         }> = [];
@@ -1220,10 +1240,16 @@ export class RollingOptionsStrangleLiveService {
             arrResolvedEntries.push({
                 contractSymbol: objContract.contractSymbol,
                 markPrice: Number(objContract.markPrice || 0),
+                entryPrice: this.getOptionEntryPriceForAction(objContract, pConfig.action),
+                bestBid: objContract.bestBid,
+                bestAsk: objContract.bestAsk,
                 delta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : 0.53,
                 metadata: {
                     ...this.buildOptionMetadata(pConfig, pColorCode, pReason, vEntryDelta, vPositionSide),
-                    ruleSet: pRuleSet
+                    ruleSet: pRuleSet,
+                    productMarkPrice: Number(objContract.markPrice || 0),
+                    productBestBid: objContract.bestBid,
+                    productBestAsk: objContract.bestAsk
                 }
             });
         }
@@ -1247,7 +1273,7 @@ export class RollingOptionsStrangleLiveService {
                 contractName: objEntry.contractSymbol,
                 side: vPositionSide,
                 qty: pQty,
-                entryPrice: objEntry.markPrice,
+                entryPrice: objEntry.entryPrice,
                 markPrice: objEntry.markPrice,
                 entryDelta: objEntry.delta,
                 currentDelta: objEntry.delta,

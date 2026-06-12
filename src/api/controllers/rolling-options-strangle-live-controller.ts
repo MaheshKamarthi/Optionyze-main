@@ -682,6 +682,23 @@ function normalizeLiveNumber(pValue: unknown, pFallback: number): number {
     return Number.isFinite(vNumber) ? vNumber : pFallback;
 }
 
+function getOptionEntryPriceForAction(
+    pQuote: { markPrice?: number; bestBid?: number | null; bestAsk?: number | null; },
+    pAction: string
+): number {
+    const vAction = String(pAction || "").trim().toLowerCase();
+    const vBid = Number(pQuote.bestBid);
+    const vAsk = Number(pQuote.bestAsk);
+    const vFallback = Number(pQuote.markPrice || 0);
+    if (vAction === "sell" && Number.isFinite(vBid) && vBid > 0) {
+        return vBid;
+    }
+    if (vAction === "buy" && Number.isFinite(vAsk) && vAsk > 0) {
+        return vAsk;
+    }
+    return vFallback;
+}
+
 function sanitizeLiveUiState(pUiState?: Record<string, unknown> | null): Record<string, unknown> {
     const objUiState = pUiState && typeof pUiState === "object" ? pUiState : {};
     const {
@@ -1551,13 +1568,14 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
         let arrTrackedPositions = await listRollingOptionsStrangleLiveImportedPositions(vUserId);
         if (vOperation === "open") {
             arrTrackedPositions = await appendTrackedLivePositions(vUserId, arrContracts.map((objContract) => {
+                const vEntryPrice = getOptionEntryPriceForAction(objContract, vAction);
                 const objRow: RollingOptionsStrangleLiveImportedPositionRecord = {
                     userId: vUserId,
                     importId: crypto.randomUUID(),
                     contractName: String(objContract.contractSymbol || "").trim(),
                     side: vAction.toUpperCase(),
                     qty: vQty,
-                    entryPrice: Number(objContract.markPrice || 0),
+                    entryPrice: vEntryPrice,
                     markPrice: Number(objContract.markPrice || 0),
                     entryDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
                     currentDelta: Number.isFinite(Number(objContract.delta)) ? Math.abs(Number(objContract.delta)) : null,
@@ -1579,6 +1597,9 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                         reason: vReason || "manual_option_open",
                         negativePnlAdjustment: vReason === "negative_pnl_auto_adjustment",
                         ...(vActionSlot === 3 ? { actionSlot: 3, actionLabel: "Action 3" } : {}),
+                        productMarkPrice: Number(objContract.markPrice || 0),
+                        productBestBid: Number.isFinite(Number(objContract.bestBid)) ? Number(objContract.bestBid) : null,
+                        productBestAsk: Number.isFinite(Number(objContract.bestAsk)) ? Number(objContract.bestAsk) : null,
                         sourceImportId: vSourceImportId
                     },
                     openedAt: new Date().toISOString(),

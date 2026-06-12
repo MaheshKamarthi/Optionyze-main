@@ -742,6 +742,23 @@ export class RollingOptionsStrangleService {
         return objPosition;
     }
 
+    private getOptionEntryPriceForAction(
+        pQuote: { markPrice?: number; bestBid?: number | null; bestAsk?: number | null; },
+        pAction: string
+    ): number {
+        const vAction = String(pAction || "").trim().toUpperCase();
+        const vBid = Number(pQuote.bestBid);
+        const vAsk = Number(pQuote.bestAsk);
+        const vFallback = Number(pQuote.markPrice || 0);
+        if (vAction === "SELL" && Number.isFinite(vBid) && vBid > 0) {
+            return vBid;
+        }
+        if (vAction === "BUY" && Number.isFinite(vAsk) && vAsk > 0) {
+            return vAsk;
+        }
+        return vFallback;
+    }
+
     private async openOptionPositions(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
@@ -772,6 +789,9 @@ export class RollingOptionsStrangleService {
             strike: number;
             expiryDate: string;
             markPrice: number;
+            entryPrice: number;
+            bestBid: number | null;
+            bestAsk: number | null;
             entryDelta: number;
             takeProfitDelta: number;
             stopLossDelta: number;
@@ -800,6 +820,9 @@ export class RollingOptionsStrangleService {
                 ensureLiveTickerSymbols([objLiveContract.contractSymbol]);
             }
             const vMark = objLiveContract?.markPrice || Number((objSnapshot.spotPrice * Math.max(0.002, Math.abs(vTargetDelta) * 0.012)).toFixed(2));
+            const vBestBid = objLiveContract?.bestBid ?? Number((vMark * 0.995).toFixed(2));
+            const vBestAsk = objLiveContract?.bestAsk ?? Number((vMark * 1.005).toFixed(2));
+            const vEntryPrice = this.getOptionEntryPriceForAction({ markPrice: vMark, bestBid: vBestBid, bestAsk: vBestAsk }, vAction);
             const vEntryDelta = objLiveContract ? Math.abs(objLiveContract.delta) : vTargetDelta;
             const vBaseDelta = Math.abs(Number(vEntryDelta || 0));
             let vTakeProfitDelta = Number(objRuleValues.takeProfitDelta || 0);
@@ -866,6 +889,9 @@ export class RollingOptionsStrangleService {
                 strike: objLiveContract?.strike || vStrike,
                 expiryDate: objLiveContract?.expiryDate || pConfig.expiryDate,
                 markPrice: vMark,
+                entryPrice: vEntryPrice,
+                bestBid: vBestBid,
+                bestAsk: vBestAsk,
                 entryDelta: vEntryDelta,
                 takeProfitDelta: vTakeProfitDelta,
                 stopLossDelta: vStopLossDelta,
@@ -885,7 +911,7 @@ export class RollingOptionsStrangleService {
         }
 
         const vAdditionalMargin = objPlannedLegs.reduce((sum, objLeg) => {
-            return sum + this.calculatePaperNotional(pQty, pConfig.lotSize, objLeg.markPrice);
+            return sum + this.calculatePaperNotional(pQty, pConfig.lotSize, objLeg.entryPrice);
         }, 0);
         if (!(await this.hasSufficientDemoBalance(pUserId, pConfig, vAdditionalMargin, pReason))) {
             return [];
@@ -907,12 +933,12 @@ export class RollingOptionsStrangleService {
                 expiryDate: objLeg.expiryDate,
                 qty: pQty,
                 lotSize: pConfig.lotSize,
-                entryPrice: objLeg.markPrice,
+                entryPrice: objLeg.entryPrice,
                 exitPrice: null,
                 markPrice: objLeg.markPrice,
                 entryDelta: objLeg.entryDelta,
                 exitDelta: objLeg.entryDelta,
-                charges: estimatePositionCharges("OPTION", pQty, pConfig.lotSize, objLeg.markPrice, objSnapshot.spotPrice),
+                charges: estimatePositionCharges("OPTION", pQty, pConfig.lotSize, objLeg.entryPrice, objSnapshot.spotPrice),
                 pnl: 0,
                 openedReason: pReason,
                 closedReason: "",
@@ -935,6 +961,9 @@ export class RollingOptionsStrangleService {
                     productGamma: objLeg.productGamma,
                     productTheta: objLeg.productTheta,
                     productVega: objLeg.productVega,
+                    productMarkPrice: objLeg.markPrice,
+                    productBestBid: objLeg.bestBid,
+                    productBestAsk: objLeg.bestAsk,
                     expiryMode: pConfig.expiryMode,
                     requestedExpiryDate: pConfig.expiryDate,
                     resolvedExpiryDate: objLeg.expiryDate,

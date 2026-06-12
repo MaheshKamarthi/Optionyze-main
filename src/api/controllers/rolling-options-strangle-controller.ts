@@ -266,6 +266,23 @@ function getSimulatedOptionPrice(pSymbol: string, pDelta: number): number {
     return Number((vSpotPrice * vPremiumFactor).toFixed(2));
 }
 
+function getOptionEntryPriceForAction(
+    pQuote: { entryPrice?: number; bestBid?: number | null; bestAsk?: number | null; },
+    pAction: string
+): number {
+    const vAction = String(pAction || "").trim().toUpperCase();
+    const vBid = Number(pQuote.bestBid);
+    const vAsk = Number(pQuote.bestAsk);
+    const vFallback = Number(pQuote.entryPrice || 0);
+    if (vAction === "SELL" && Number.isFinite(vBid) && vBid > 0) {
+        return vBid;
+    }
+    if (vAction === "BUY" && Number.isFinite(vAsk) && vAsk > 0) {
+        return vAsk;
+    }
+    return vFallback;
+}
+
 async function getLiveOrFallbackMarketSnapshot(pUiState: Record<string, unknown>): Promise<{
     spotPrice: number;
     futuresPrice: number;
@@ -313,6 +330,8 @@ async function getLiveOrFallbackOptionQuote(
     strike: number;
     expiryDate: string;
     entryPrice: number;
+    bestBid: number | null;
+    bestAsk: number | null;
     entryDelta: number;
     metadata: Record<string, unknown>;
 }> {
@@ -331,6 +350,8 @@ async function getLiveOrFallbackOptionQuote(
                 strike: objLiveContract.strike,
                 expiryDate: objLiveContract.expiryDate,
                 entryPrice: objLiveContract.markPrice,
+                bestBid: objLiveContract.bestBid,
+                bestAsk: objLiveContract.bestAsk,
                 entryDelta: Math.abs(objLiveContract.delta),
                 metadata: {
                     entrySpotPrice: objSnapshot.spotPrice,
@@ -339,6 +360,9 @@ async function getLiveOrFallbackOptionQuote(
                     productGamma: objLiveContract.gamma,
                     productTheta: objLiveContract.theta,
                     productVega: objLiveContract.vega,
+                    productMarkPrice: objLiveContract.markPrice,
+                    productBestBid: objLiveContract.bestBid,
+                    productBestAsk: objLiveContract.bestAsk,
                     requestedExpiryDate: objLiveContract.requestedExpiryDate,
                     resolvedExpiryDate: objLiveContract.expiryDate,
                     usedNextDayExpiryFallback: Boolean(objLiveContract.usedNextDayFallback),
@@ -350,11 +374,14 @@ async function getLiveOrFallbackOptionQuote(
     catch (_objError) {
     }
 
+    const vFallbackPrice = getSimulatedOptionPrice(objConfig.symbol, pDelta);
     return {
         contractName: `${objConfig.contractName} ${pOptionSide}`,
         strike: vFallbackStrike,
         expiryDate: objConfig.expiryDate,
-        entryPrice: getSimulatedOptionPrice(objConfig.symbol, pDelta),
+        entryPrice: vFallbackPrice,
+        bestBid: Number((vFallbackPrice * 0.995).toFixed(2)),
+        bestAsk: Number((vFallbackPrice * 1.005).toFixed(2)),
         entryDelta: pDelta,
         metadata: {
             entrySpotPrice: objSnapshot.spotPrice,
@@ -1233,7 +1260,7 @@ export async function executeRollingOptionsStrangleManualOption(
     const vBlockedMargin = calculateBlockedMargin(objOpenPositions);
     const vAdditionalMargin = objLegPlans.reduce((sum, objLegPlan) => {
         return sum + objLegPlan.planned.reduce((innerSum, objPlanned) => {
-            return innerSum + calculatePaperNotional(objLegPlan.qty, vLotSize, objPlanned.quote.entryPrice);
+            return innerSum + calculatePaperNotional(objLegPlan.qty, vLotSize, getOptionEntryPriceForAction(objPlanned.quote, objLegPlan.action));
         }, 0);
     }, 0);
     if (!(vDemoBalance > 0) || vBlockedMargin + vAdditionalMargin > vDemoBalance) {
@@ -1304,6 +1331,7 @@ export async function executeRollingOptionsStrangleManualOption(
         for (const objPlanned of objLegPlan.planned) {
             const vOptionSide = objPlanned.side;
             const objQuote = objPlanned.quote;
+            const vEntryPrice = getOptionEntryPriceForAction(objQuote, objLegPlan.action);
             const vRuleColor: "G" | "R" = vOptionSide === "PE" ? "R" : "G";
             const vLegTpDelta = vRuleColor === "R" ? vLegRedTpDelta : vLegGreenTpDelta;
             const vLegSlDelta = vRuleColor === "R" ? vLegRedSlDelta : vLegGreenSlDelta;
@@ -1331,12 +1359,12 @@ export async function executeRollingOptionsStrangleManualOption(
                 expiryDate: objQuote.expiryDate || objLegPlan.expiryDate || vExpiryDate,
                 qty: objLegPlan.qty,
                 lotSize: vLotSize,
-                entryPrice: objQuote.entryPrice,
+                entryPrice: vEntryPrice,
                 exitPrice: null,
                 markPrice: objQuote.entryPrice,
                 entryDelta: objQuote.entryDelta,
                 exitDelta: objQuote.entryDelta,
-                charges: estimatePositionCharges("OPTION", objLegPlan.qty, vLotSize, objQuote.entryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
+                charges: estimatePositionCharges("OPTION", objLegPlan.qty, vLotSize, vEntryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
                 pnl: 0,
                 openedReason: `Manual ${objLegPlan.action} ${vOptionSide}`,
                 closedReason: "",
@@ -1485,6 +1513,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
                 : vExpiryDate
         };
         const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
+        const vEntryPrice = getOptionEntryPriceForAction(objQuote, vAction);
         const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
         const vConfiguredTpPct = normalizeNumber((objSourcePosition.metadata as any)?.configuredTakeProfitPct, 15);
         const vConfiguredSlPct = normalizeNumber((objSourcePosition.metadata as any)?.configuredStopLossPct, 85);
@@ -1509,12 +1538,12 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
             expiryDate: objQuote.expiryDate || vExpiryDate || objSourcePosition.expiryDate,
             qty: vQty,
             lotSize: vLotSize,
-            entryPrice: objQuote.entryPrice,
+            entryPrice: vEntryPrice,
             exitPrice: null,
             markPrice: objQuote.entryPrice,
             entryDelta: vEntryDelta,
             exitDelta: vEntryDelta,
-            charges: estimatePositionCharges("OPTION", vQty, vLotSize, objQuote.entryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
+            charges: estimatePositionCharges("OPTION", vQty, vLotSize, vEntryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
             pnl: 0,
             openedReason: `Negative PnL adjustment for ${objSourcePosition.contractName || objSourcePosition.positionId}`,
             closedReason: "",

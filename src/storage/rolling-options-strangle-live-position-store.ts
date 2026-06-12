@@ -33,6 +33,9 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     negativePnlAdjustment?: boolean;
     actionSlot?: 3;
     actionLabel?: string;
+    productMarkPrice?: number | null;
+    productBestBid?: number | null;
+    productBestAsk?: number | null;
     sourceImportId?: string;
     trailBestDelta?: number | null;
     trailTpPeakDelta?: number | null;
@@ -86,6 +89,15 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     const vTrailTpPeakDelta = objMetadata.trailTpPeakDelta === null || objMetadata.trailTpPeakDelta === undefined
         ? undefined
         : Number(objMetadata.trailTpPeakDelta);
+    const vProductMarkPrice = objMetadata.productMarkPrice === null || objMetadata.productMarkPrice === undefined
+        ? undefined
+        : Number(objMetadata.productMarkPrice);
+    const vProductBestBid = objMetadata.productBestBid === null || objMetadata.productBestBid === undefined
+        ? undefined
+        : Number(objMetadata.productBestBid);
+    const vProductBestAsk = objMetadata.productBestAsk === null || objMetadata.productBestAsk === undefined
+        ? undefined
+        : Number(objMetadata.productBestAsk);
     const objNormalized: RollingOptionsStrangleLivePositionMetadata = {};
 
     if (vRuleColor === "R" || vRuleColor === "G") {
@@ -115,6 +127,15 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     }
     if (String(objMetadata.actionLabel || "").trim()) {
         objNormalized.actionLabel = String(objMetadata.actionLabel).trim();
+    }
+    if (Number.isFinite(vProductMarkPrice)) {
+        objNormalized.productMarkPrice = vProductMarkPrice;
+    }
+    if (Number.isFinite(vProductBestBid)) {
+        objNormalized.productBestBid = vProductBestBid;
+    }
+    if (Number.isFinite(vProductBestAsk)) {
+        objNormalized.productBestAsk = vProductBestAsk;
     }
     if (String(objMetadata.sourceImportId || "").trim()) {
         objNormalized.sourceImportId = String(objMetadata.sourceImportId).trim();
