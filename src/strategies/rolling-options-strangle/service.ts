@@ -100,6 +100,7 @@ export class RollingOptionsStrangleService {
             redTpPct2: 15,
             redSlPct2: 85,
             negativePnlHedgeEnabled: true,
+            negativePnlAction3: "buy",
             negativePnlHedgeQty: 10,
             negativePnlHedgeExpiryMode: "1",
             negativePnlHedgeDelta: 0.53,
@@ -1836,9 +1837,8 @@ export class RollingOptionsStrangleService {
                 continue;
             }
 
-            const vSourceAction = String(objSource.action || "").trim().toUpperCase();
-            const vAdjustmentAction: "buy" | "sell" = vSourceAction === "SELL" ? "buy" : "sell";
             const vOptionSide = String(objSource.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const vAction3: "buy" | "sell" = String((pUiState as any).negativePnlAction3 || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
             const vRuleSet = Math.floor(Number((objSource.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
             const objRuleConfig = this.buildRuleSetConfig(pUiState, vRuleSet);
             const vHedgeExpiryModeRaw = String((pUiState as any).negativePnlHedgeExpiryMode || "1").trim();
@@ -1849,7 +1849,7 @@ export class RollingOptionsStrangleService {
             const vQty = this.getNegativePnlAdjustmentQty(objSource, vMaxHedgeQty);
             const objAdjustmentConfig: RollingOptionsPtDeConfig = {
                 ...objRuleConfig,
-                action: vAdjustmentAction,
+                action: vAction3,
                 legSide: vOptionSide === "PE" ? "pe" : "ce",
                 expiryMode: vHedgeExpiryMode,
                 expiryDate: vHedgeExpiryModeRaw === "source" ? String(objSource.expiryDate || objRuleConfig.expiryDate || "") : objRuleConfig.expiryDate,
@@ -1868,6 +1868,8 @@ export class RollingOptionsStrangleService {
                 [vOptionSide],
                 {
                     negativePnlAdjustment: true,
+                    actionSlot: 3,
+                    actionLabel: "Action 3",
                     sourcePositionId: vSourcePositionId,
                     sourceContractName: objSource.contractName,
                     sourceLossAmount: Math.abs(vSourcePnl),

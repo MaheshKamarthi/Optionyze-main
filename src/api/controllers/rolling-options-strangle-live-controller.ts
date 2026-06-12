@@ -665,6 +665,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         targetOpenPnl: 0,
         negativePnlHedgeEnabled: true,
         negativePnlPlaceOrders: false,
+        negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
@@ -1308,7 +1309,7 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
     const vRuleSet: 1 | 2 = String(req.body?.ruleSet || "").trim() === "2" ? 2 : 1;
     const objProfileState = await readLiveProfile(vUserId);
     const objUiState = getMergedLiveUiState(objProfileState);
-    const vAction = String(
+    let vAction = String(
         req.body?.action
         || (vRuleSet === 2 ? objUiState.action2 : objUiState.action1)
         || ""
@@ -1347,6 +1348,10 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
     ));
     const vReason = String(req.body?.reason || "").trim();
     const vSourceImportId = String(req.body?.sourceImportId || "").trim();
+    const vActionSlot = vReason === "negative_pnl_auto_adjustment" ? 3 : null;
+    if (vReason === "negative_pnl_auto_adjustment") {
+        vAction = String(req.body?.action || objUiState.negativePnlAction3 || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
+    }
 
     if (vAction !== "buy" && vAction !== "sell") {
         res.status(400).json({ status: "warning", message: "Select a valid option action before placing a live option order." });
@@ -1573,6 +1578,7 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
                         reEnter: Boolean(vRuleSet === 2 ? objUiState.reEnter2 : objUiState.reEnter1),
                         reason: vReason || "manual_option_open",
                         negativePnlAdjustment: vReason === "negative_pnl_auto_adjustment",
+                        ...(vActionSlot === 3 ? { actionSlot: 3, actionLabel: "Action 3" } : {}),
                         sourceImportId: vSourceImportId
                     },
                     openedAt: new Date().toISOString(),

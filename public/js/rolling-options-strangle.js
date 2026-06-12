@@ -43,6 +43,7 @@
         trailRedTp2Enabled: document.getElementById("chkRollingDemoTrailRedTp2Enabled"),
         trailRedSl2Enabled: document.getElementById("chkRollingDemoTrailRedSl2Enabled"),
         negativePnlHedgeEnabled: document.getElementById("chkRollingDemoNegativePnlHedgeEnabled"),
+        negativePnlAction3: document.getElementById("ddlRollingDemoNegativePnlAction3"),
         negativePnlHedgeQty: document.getElementById("txtRollingDemoNegativePnlHedgeQty"),
         negativePnlHedgeExpiryMode: document.getElementById("ddlRollingDemoNegativePnlHedgeExpiryMode"),
         negativePnlHedgeDelta: document.getElementById("txtRollingDemoNegativePnlHedgeDelta"),
@@ -761,6 +762,7 @@
             trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             negativePnlHedgeEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
+            negativePnlAction3: String(ids.negativePnlAction3?.value || "buy"),
             negativePnlHedgeQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
             negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
             negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
@@ -846,6 +848,7 @@
         setFieldValue("trailRedTp2Enabled", uiState.trailRedTp2Enabled ?? true);
         setFieldValue("trailRedSl2Enabled", uiState.trailRedSl2Enabled ?? true);
         setFieldValue("negativePnlHedgeEnabled", uiState.negativePnlHedgeEnabled ?? true);
+        setFieldValue("negativePnlAction3", uiState.negativePnlAction3 ?? "buy");
         setFieldValue("negativePnlHedgeQty", uiState.negativePnlHedgeQty ?? 10);
         setFieldValue("negativePnlHedgeExpiryMode", uiState.negativePnlHedgeExpiryMode ?? "1");
         setFieldValue("negativePnlHedgeDelta", uiState.negativePnlHedgeDelta ?? 0.53);
@@ -1011,6 +1014,7 @@
 
         const hedgeExpiryMode = String(ids.negativePnlHedgeExpiryMode?.value || "1");
         const hedgeDelta = Math.max(0, parseNumberInput(ids.negativePnlHedgeDelta, 0.53));
+        const action3 = String(ids.negativePnlAction3?.value || "buy").trim().toLowerCase() === "sell" ? "SELL" : "BUY";
         const resolvedHedgeExpiry = hedgeExpiryMode === "source"
             ? ""
             : resolveExpiryDateValue(hedgeExpiryMode);
@@ -1035,7 +1039,7 @@
                 && Number.isFinite(markPrice)
                 && markPrice >= 0;
         }).map(function (row, index) {
-            const action = String(row?.action || row?.side || "").trim().toUpperCase() === "SELL" ? "BUY" : "SELL";
+            const action = action3;
             const positionId = String(row?.positionId || row?.contractName || row?.symbol || index);
             const hedgeExpiryDate = hedgeExpiryMode === "source"
                 ? getSourceExpiryDate(row)
@@ -1064,6 +1068,8 @@
                     ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
                     negativePnlOptionLegPreview: true,
                     negativePnlOptionLegAdjustment: true,
+                    actionSlot: 3,
+                    actionLabel: "Action 3",
                     sourcePositionId: positionId,
                     hedgeExpiryMode,
                     hedgeTargetDelta: hedgeDelta,
@@ -1117,7 +1123,8 @@
                 adjustments: rowsToPlace.map(function (row) {
                     return {
                         sourcePositionId: String(row?.metadata?.sourcePositionId || "").trim(),
-                        action: String(row?.action || row?.side || "BUY").trim().toUpperCase(),
+                        action: String(row?.action || row?.side || ids.negativePnlAction3?.value || "BUY").trim().toUpperCase() === "SELL" ? "SELL" : "BUY",
+                        actionSlot: 3,
                         optionSide: String(row?.optionSide || "").trim().toUpperCase(),
                         expiryMode: String(row?.metadata?.hedgeExpiryMode || ids.negativePnlHedgeExpiryMode?.value || "1"),
                         expiryDate: String(row?.expiryDate || row?.metadata?.resolvedExpiryDate || row?.metadata?.requestedExpiryDate || ""),
@@ -1945,7 +1952,7 @@
     [ids.negativePnlHedgeQty, ids.negativePnlHedgeDelta, ids.negativePnlRecoveryTarget].forEach(function (objField) {
         objField?.addEventListener("input", refreshNegativePnlHedgePreview);
     });
-    [ids.negativePnlHedgeEnabled, ids.negativePnlHedgeExpiryMode].forEach(function (objField) {
+    [ids.negativePnlHedgeEnabled, ids.negativePnlAction3, ids.negativePnlHedgeExpiryMode].forEach(function (objField) {
         objField?.addEventListener("change", refreshNegativePnlHedgePreview);
     });
 

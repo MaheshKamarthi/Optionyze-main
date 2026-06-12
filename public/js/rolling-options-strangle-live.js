@@ -72,6 +72,7 @@
         trailRedSl2Enabled: document.getElementById("chkRollingStrangleLiveTrailRedSl2Enabled"),
         negativePnlHedgeEnabled: document.getElementById("chkRollingStrangleLiveNegativePnlHedgeEnabled"),
         negativePnlPlaceOrders: document.getElementById("chkRollingStrangleLiveNegativePnlPlaceOrders"),
+        negativePnlAction3: document.getElementById("ddlRollingStrangleLiveNegativePnlAction3"),
         negativePnlHedgeQty: document.getElementById("txtRollingStrangleLiveNegativePnlHedgeQty"),
         negativePnlHedgeExpiryMode: document.getElementById("ddlRollingStrangleLiveNegativePnlHedgeExpiryMode"),
         negativePnlHedgeDelta: document.getElementById("txtRollingStrangleLiveNegativePnlHedgeDelta"),
@@ -481,6 +482,7 @@
 
         const hedgeExpiryMode = String(ids.negativePnlHedgeExpiryMode?.value || "1");
         const hedgeDelta = Math.max(0, parseNumberInput(ids.negativePnlHedgeDelta, 0.53));
+        const action3 = String(ids.negativePnlAction3?.value || "buy").trim().toLowerCase() === "sell" ? "SELL" : "BUY";
         const resolvedHedgeExpiry = hedgeExpiryMode === "source"
             ? ""
             : resolveExpiryDateValue(hedgeExpiryMode);
@@ -503,7 +505,7 @@
                 && Number.isFinite(markPrice)
                 && markPrice >= 0;
         }).map(function (row, index) {
-            const side = String(row?.side || row?.action || "").trim().toUpperCase() === "SELL" ? "BUY" : "SELL";
+            const side = action3;
             const importId = String(row?.importId || row?.contractName || index);
             const hedgeExpiryDate = hedgeExpiryMode === "source"
                 ? getSourceExpiryDate(row)
@@ -529,6 +531,8 @@
                     ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
                     negativePnlOptionLegPreview: true,
                     negativePnlOptionLegAdjustment: true,
+                    actionSlot: 3,
+                    actionLabel: "Action 3",
                     sourceImportId: importId,
                     ruleSet: Math.max(1, Math.min(2, Math.floor(Number(row?.metadata?.ruleSet ?? 1)))),
                     hedgeExpiryMode,
@@ -596,7 +600,8 @@
                 try {
                     objResult = await postJson("/api/rollingoptions-strangle-live/manual/option", {
                         operation: "open",
-                        action: String(objMeta.orderAction || row.side || "buy").trim().toLowerCase(),
+                        action: String(objMeta.orderAction || ids.negativePnlAction3?.value || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy",
+                        actionSlot: 3,
                         symbol: String(ids.symbol?.value || "BTC").trim().toUpperCase(),
                         legSide: String(objMeta.orderLegSide || "ce").trim().toLowerCase(),
                         expiryMode: String(objMeta.hedgeExpiryMode || ids.negativePnlHedgeExpiryMode?.value || "1"),
@@ -747,6 +752,7 @@
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             negativePnlHedgeEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
             negativePnlPlaceOrders: Boolean(ids.negativePnlPlaceOrders?.checked),
+            negativePnlAction3: String(ids.negativePnlAction3?.value || "buy"),
             negativePnlHedgeQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
             negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
             negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
@@ -862,6 +868,7 @@
         setFieldValue(ids.trailRedSl2Enabled, uiState.trailRedSl2Enabled ?? true);
         setFieldValue(ids.negativePnlHedgeEnabled, uiState.negativePnlHedgeEnabled ?? true);
         setFieldValue(ids.negativePnlPlaceOrders, uiState.negativePnlPlaceOrders ?? false);
+        setFieldValue(ids.negativePnlAction3, uiState.negativePnlAction3 ?? "buy");
         setFieldValue(ids.negativePnlHedgeQty, uiState.negativePnlHedgeQty ?? 10);
         setFieldValue(ids.negativePnlHedgeExpiryMode, uiState.negativePnlHedgeExpiryMode ?? "1");
         setFieldValue(ids.negativePnlHedgeDelta, uiState.negativePnlHedgeDelta ?? 0.53);
@@ -1925,6 +1932,7 @@
     ids.trailRedSl2Enabled?.addEventListener("change", queueProfileSave);
     ids.negativePnlHedgeEnabled?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlPlaceOrders?.addEventListener("change", refreshNegativePnlHedgePreview);
+    ids.negativePnlAction3?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeQty?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeExpiryMode?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeDelta?.addEventListener("input", refreshNegativePnlHedgePreview);

@@ -31,6 +31,8 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     openedReason?: string;
     reason?: string;
     negativePnlAdjustment?: boolean;
+    actionSlot?: 3;
+    actionLabel?: string;
     sourceImportId?: string;
     trailBestDelta?: number | null;
     trailTpPeakDelta?: number | null;
@@ -107,6 +109,12 @@ function normalizeMetadata(pMetadata: unknown): RollingOptionsStrangleLivePositi
     }
     if (objMetadata.negativePnlAdjustment !== undefined) {
         objNormalized.negativePnlAdjustment = Boolean(objMetadata.negativePnlAdjustment);
+    }
+    if (Number(objMetadata.actionSlot) === 3) {
+        objNormalized.actionSlot = 3;
+    }
+    if (String(objMetadata.actionLabel || "").trim()) {
+        objNormalized.actionLabel = String(objMetadata.actionLabel).trim();
     }
     if (String(objMetadata.sourceImportId || "").trim()) {
         objNormalized.sourceImportId = String(objMetadata.sourceImportId).trim();

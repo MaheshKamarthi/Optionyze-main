@@ -97,6 +97,7 @@ function getDefaultUiState(): Record<string, unknown> {
         closeAllLegsOnAnyClose: false,
         skipRenkoEntryNoOpenOptions: false,
         negativePnlHedgeEnabled: true,
+        negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
@@ -1470,7 +1471,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
             continue;
         }
 
-        const vAction = String(objIncoming?.action || "").trim().toUpperCase() === "SELL" ? "SELL" : "BUY";
+        const vAction = String(objIncoming?.action || (objUiState as any).negativePnlAction3 || "BUY").trim().toUpperCase() === "SELL" ? "SELL" : "BUY";
         const vOptionSide: "CE" | "PE" = String(objIncoming?.optionSide || objSourcePosition.optionSide || "CE").trim().toUpperCase() === "PE" ? "PE" : "CE";
         const vQty = Math.max(1, Math.floor(normalizeNumber(objIncoming?.qty, 1)));
         const vTargetDelta = Math.max(0, normalizeNumber(objIncoming?.targetDelta, 0.53));
@@ -1522,6 +1523,8 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
             metadata: {
                 ...(objQuote.metadata || {}),
                 negativePnlAdjustment: true,
+                actionSlot: 3,
+                actionLabel: "Action 3",
                 sourcePositionId: vSourcePositionId,
                 sourceContractName: objSourcePosition.contractName,
                 sourceLossAmount: Math.abs(vSourcePnl),
