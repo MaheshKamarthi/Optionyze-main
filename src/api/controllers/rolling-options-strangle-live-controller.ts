@@ -667,6 +667,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         negativePnlPlaceOrders: false,
         negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
+        negativePnlMaxLegs: 1,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
@@ -1382,6 +1383,55 @@ export async function executeRollingOptionsStrangleLiveManualOption(req: Request
     const arrOptionSides: Array<"CE" | "PE"> = vLegSide === "both"
         ? ["CE", "PE"]
         : [vLegSide === "pe" ? "PE" : "CE"];
+    if (vReason === "negative_pnl_auto_adjustment") {
+        const arrTrackedPositions = await listRollingOptionsStrangleLiveImportedPositions(vUserId);
+        const arrSourceOptionPositions = arrTrackedPositions.filter((objPosition) => {
+            return Boolean(getOptionSideFromContractName(objPosition.contractName))
+                && !Boolean(objPosition.metadata?.negativePnlAdjustment);
+        });
+        if (arrSourceOptionPositions.length < 2) {
+            res.status(200).json({
+                status: "warning",
+                message: "Negative PnL adjustment requires at least two normal option legs to be open.",
+                data: { trackedOpenPositions: arrTrackedPositions }
+            });
+            return;
+        }
+        const vMaxLegs = Math.max(1, Math.floor(normalizeLiveNumber((objUiState as any).negativePnlMaxLegs, 1)));
+        const vOpenAdjustmentCount = arrTrackedPositions.filter((objPosition) => Boolean(objPosition.metadata?.negativePnlAdjustment)).length;
+        if (vOpenAdjustmentCount >= vMaxLegs) {
+            res.status(200).json({
+                status: "warning",
+                message: "Negative PnL Max Legs limit is reached.",
+                data: { trackedOpenPositions: arrTrackedPositions }
+            });
+            return;
+        }
+        const vActiveAdjustmentSide = arrTrackedPositions
+            .filter((objPosition) => Boolean(objPosition.metadata?.negativePnlAdjustment))
+            .map((objPosition) => getOptionSideFromContractName(objPosition.contractName))
+            .find((vSide) => vSide === "CE" || vSide === "PE") || "";
+        const bSourceAlreadyAdjusted = Boolean(vSourceImportId) && arrTrackedPositions.some((objPosition) => {
+            return Boolean(objPosition.metadata?.negativePnlAdjustment)
+                && String(objPosition.metadata?.sourceImportId || "").trim() === vSourceImportId;
+        });
+        if (bSourceAlreadyAdjusted) {
+            res.status(200).json({
+                status: "warning",
+                message: "Negative PnL adjustment already exists for this source leg.",
+                data: { trackedOpenPositions: arrTrackedPositions }
+            });
+            return;
+        }
+        if (vActiveAdjustmentSide && !arrOptionSides.includes(vActiveAdjustmentSide as "CE" | "PE")) {
+            res.status(200).json({
+                status: "warning",
+                message: `Negative PnL adjustment is already supporting ${vActiveAdjustmentSide}; skipped ${arrOptionSides.join("/")} to avoid supporting both sides.`,
+                data: { trackedOpenPositions: arrTrackedPositions }
+            });
+            return;
+        }
+    }
     try {
         const { client, profile } = await getDeltaClientForAccountId(vUserId, vSelectedApiProfileId);
         const arrOrders: Array<Record<string, unknown>> = [];

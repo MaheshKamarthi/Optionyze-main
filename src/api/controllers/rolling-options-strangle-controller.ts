@@ -99,6 +99,7 @@ function getDefaultUiState(): Record<string, unknown> {
         negativePnlHedgeEnabled: true,
         negativePnlAction3: "buy",
         negativePnlHedgeQty: 10,
+        negativePnlMaxLegs: 1,
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
@@ -513,6 +514,22 @@ function getLinkedLeaderPositionId(pPosition: RollingOptionsPtDePositionRecord):
 
 function isNegativePnlAdjustmentPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
     return Boolean((pPosition.metadata as any)?.negativePnlAdjustment);
+}
+
+function getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
+    const vDirectSide = String(pPosition.optionSide || (pPosition.metadata as any)?.optionSide || "").trim().toUpperCase();
+    if (vDirectSide === "CE" || vDirectSide === "PE") {
+        return vDirectSide;
+    }
+
+    const vContractName = String(pPosition.contractName || pPosition.symbol || "").trim().toUpperCase();
+    if (vContractName.startsWith("P-")) {
+        return "PE";
+    }
+    if (vContractName.startsWith("C-")) {
+        return "CE";
+    }
+    return "";
 }
 
 function getLinkedPositionLabel(pPosition: RollingOptionsPtDePositionRecord): string {
@@ -1451,14 +1468,53 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     const vLotSize = getLotSizeForSymbol(vSymbol);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const vNow = objSnapshot.ts;
-    const arrIncoming = Array.isArray(req.body?.adjustments) ? req.body.adjustments : [];
+    const arrIncoming: Array<Record<string, unknown>> = Array.isArray(req.body?.adjustments)
+        ? req.body.adjustments
+        : [];
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     const objClosedPositions = await listRollingOptionsPtDeClosedPositions(vUserId);
+    const objSourceOptionPositions = objOpenPositions.filter((objPosition) => {
+        return objPosition.status === "OPEN"
+            && objPosition.instrumentType === "OPTION"
+            && !isNegativePnlAdjustmentPosition(objPosition);
+    });
+    if (objSourceOptionPositions.length < 2) {
+        res.status(200).json({
+            status: "warning",
+            message: "No negative PnL adjustment opened because at least two normal option legs must be open.",
+            data: { positions: [] }
+        });
+        return;
+    }
+    const bHasPositiveSourceOption = objOpenPositions.some((objPosition) => {
+        return objPosition.status === "OPEN"
+            && objPosition.instrumentType === "OPTION"
+            && !isNegativePnlAdjustmentPosition(objPosition)
+            && Number(objPosition.pnl || 0) > 0;
+    });
+    if (!bHasPositiveSourceOption) {
+        res.status(200).json({
+            status: "warning",
+            message: "No negative PnL adjustment opened because no positive option leg is currently open.",
+            data: { positions: [] }
+        });
+        return;
+    }
     const objOpenById = new Map(objOpenPositions.map((objPosition) => [String(objPosition.positionId || "").trim(), objPosition]));
     const objAlreadyAdjustedSourceIds = new Set(objOpenPositions
         .filter((objPosition) => Boolean((objPosition.metadata as any)?.negativePnlAdjustment))
         .map((objPosition) => String((objPosition.metadata as any)?.sourcePositionId || "").trim())
         .filter(Boolean));
+    const vMaxLegs = Math.max(1, Math.floor(normalizeNumber((objUiState as any).negativePnlMaxLegs, 1)));
+    let vRemainingLegSlots = Math.max(0, vMaxLegs - objOpenPositions.filter(isNegativePnlAdjustmentPosition).length);
+    if (!(vRemainingLegSlots > 0)) {
+        res.status(200).json({
+            status: "warning",
+            message: "No negative PnL adjustment opened because Max Legs limit is reached.",
+            data: { positions: [] }
+        });
+        return;
+    }
     const objClosedAdjustmentPnlBySource = new Map<string, number>();
     const objSavedPositions: RollingOptionsPtDePositionRecord[] = [];
 
@@ -1476,6 +1532,41 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
             (objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0) + (Number.isFinite(vPnl) ? vPnl : 0)
         );
     }
+
+    const vActiveAdjustmentSide = objOpenPositions
+        .filter(isNegativePnlAdjustmentPosition)
+        .map(getNegativePnlOptionSide)
+        .find((vSide) => vSide === "CE" || vSide === "PE") || "";
+    const objIncomingCandidates = arrIncoming.map((objIncoming) => {
+        const vSourcePositionId = String(objIncoming?.sourcePositionId || "").trim();
+        const objSourcePosition = objOpenById.get(vSourcePositionId);
+        return { incoming: objIncoming, sourcePositionId: vSourcePositionId, sourcePosition: objSourcePosition };
+    }).filter((objCandidate) => {
+        if (!objCandidate.sourcePositionId || objAlreadyAdjustedSourceIds.has(objCandidate.sourcePositionId)) {
+            return false;
+        }
+        if (!objCandidate.sourcePosition || objCandidate.sourcePosition.instrumentType !== "OPTION") {
+            return false;
+        }
+        const vSourcePnl = Number(objCandidate.sourcePosition.pnl || 0);
+        if (!(Number.isFinite(vSourcePnl) && vSourcePnl < 0)) {
+            return false;
+        }
+        const vRecoveryTarget = Number.isFinite(Number((objUiState as any).negativePnlRecoveryTarget))
+            ? Number((objUiState as any).negativePnlRecoveryTarget)
+            : 0;
+        if ((vSourcePnl + (objClosedAdjustmentPnlBySource.get(objCandidate.sourcePositionId) || 0)) >= vRecoveryTarget) {
+            return false;
+        }
+        return Boolean(getNegativePnlOptionSide(objCandidate.sourcePosition));
+    });
+    const vTargetOptionSide = vActiveAdjustmentSide || objIncomingCandidates.reduce<"CE" | "PE" | "">((vSelectedSide, objCandidate) => {
+        const vSourceSide = getNegativePnlOptionSide(objCandidate.sourcePosition as RollingOptionsPtDePositionRecord);
+        const vSourceLoss = Math.abs(Number(objCandidate.sourcePosition?.pnl || 0));
+        const objSelectedSource = objIncomingCandidates.find((objSelectedCandidate) => getNegativePnlOptionSide(objSelectedCandidate.sourcePosition as RollingOptionsPtDePositionRecord) === vSelectedSide);
+        const vSelectedLoss = Math.abs(Number(objSelectedSource?.sourcePosition?.pnl || 0));
+        return vSourceSide && vSourceLoss > vSelectedLoss ? vSourceSide : vSelectedSide;
+    }, "");
 
     for (const objIncoming of arrIncoming) {
         const vSourcePositionId = String(objIncoming?.sourcePositionId || "").trim();
@@ -1501,6 +1592,12 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
 
         const vAction = String(objIncoming?.action || (objUiState as any).negativePnlAction3 || "BUY").trim().toUpperCase() === "SELL" ? "SELL" : "BUY";
         const vOptionSide: "CE" | "PE" = String(objIncoming?.optionSide || objSourcePosition.optionSide || "CE").trim().toUpperCase() === "PE" ? "PE" : "CE";
+        if (!vTargetOptionSide || vOptionSide !== vTargetOptionSide) {
+            continue;
+        }
+        if (vRemainingLegSlots <= 0) {
+            break;
+        }
         const vQty = Math.max(1, Math.floor(normalizeNumber(objIncoming?.qty, 1)));
         const vTargetDelta = Math.max(0, normalizeNumber(objIncoming?.targetDelta, 0.53));
         const vExpiryMode = String(objIncoming?.expiryMode || "1").trim() || "1";
@@ -1575,6 +1672,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
 
         objSavedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
         objAlreadyAdjustedSourceIds.add(vSourcePositionId);
+        vRemainingLegSlots -= 1;
     }
 
     if (objSavedPositions.length <= 0) {

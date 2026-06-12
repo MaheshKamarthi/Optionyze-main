@@ -74,6 +74,7 @@
         negativePnlPlaceOrders: document.getElementById("chkRollingStrangleLiveNegativePnlPlaceOrders"),
         negativePnlAction3: document.getElementById("ddlRollingStrangleLiveNegativePnlAction3"),
         negativePnlHedgeQty: document.getElementById("txtRollingStrangleLiveNegativePnlHedgeQty"),
+        negativePnlMaxLegs: document.getElementById("txtRollingStrangleLiveNegativePnlMaxLegs"),
         negativePnlHedgeExpiryMode: document.getElementById("ddlRollingStrangleLiveNegativePnlHedgeExpiryMode"),
         negativePnlHedgeDelta: document.getElementById("txtRollingStrangleLiveNegativePnlHedgeDelta"),
         negativePnlRecoveryTarget: document.getElementById("txtRollingStrangleLiveNegativePnlRecoveryTarget"),
@@ -424,6 +425,22 @@
         return Boolean(row?.metadata?.negativePnlOptionLegPreview);
     }
 
+    function getNegativePnlOptionSide(row) {
+        const directSide = String(row?.optionSide || row?.metadata?.optionSide || "").trim().toUpperCase();
+        if (directSide === "PE" || directSide === "CE") {
+            return directSide;
+        }
+
+        const contractName = String(row?.contractName || row?.symbol || "").trim().toUpperCase();
+        if (contractName.startsWith("P-")) {
+            return "PE";
+        }
+        if (contractName.startsWith("C-")) {
+            return "CE";
+        }
+        return "";
+    }
+
     function normalizePercentValue(value, fallbackValue) {
         const parsedValue = Number(value);
         if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
@@ -479,6 +496,14 @@
         if (!(maxHedgeQty > 0)) {
             return [];
         }
+        const maxLegs = Math.max(1, Math.floor(parseNumberInput(ids.negativePnlMaxLegs, 1)));
+        const openAdjustmentCount = (Array.isArray(rows) ? rows : []).filter(function (row) {
+            return Boolean(row?.metadata?.negativePnlAdjustment);
+        }).length;
+        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount - gNegativePnlAdjustedSourceKeys.size);
+        if (!(remainingLegSlots > 0)) {
+            return [];
+        }
 
         const hedgeExpiryMode = String(ids.negativePnlHedgeExpiryMode?.value || "1");
         const hedgeDelta = Math.max(0, parseNumberInput(ids.negativePnlHedgeDelta, 0.53));
@@ -491,8 +516,26 @@
                 ? String(row?.metadata?.sourceImportId || "").trim()
                 : "";
         }).filter(Boolean));
+        const sourceOptionRows = (Array.isArray(rows) ? rows : []).filter(function (row) {
+            return isOptionContract(String(row?.contractName || ""))
+                && !Boolean(row?.metadata?.negativePnlAdjustment);
+        });
+        if (sourceOptionRows.length < 2) {
+            return [];
+        }
+        const hasPositiveSourceOption = (Array.isArray(rows) ? rows : []).some(function (row) {
+            const contractName = String(row?.contractName || "");
+            const pnl = Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row);
+            return isOptionContract(contractName)
+                && !Boolean(row?.metadata?.negativePnlAdjustment)
+                && Number.isFinite(pnl)
+                && pnl > 0;
+        });
+        if (!hasPositiveSourceOption) {
+            return [];
+        }
 
-        return (Array.isArray(rows) ? rows : []).filter(function (row) {
+        const negativeCandidates = (Array.isArray(rows) ? rows : []).filter(function (row) {
             const contractName = String(row?.contractName || "");
             const importId = String(row?.importId || row?.contractName || "").trim();
             const pnl = Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row);
@@ -504,7 +547,22 @@
                 && pnl < 0
                 && Number.isFinite(markPrice)
                 && markPrice >= 0;
-        }).map(function (row, index) {
+        });
+        const targetOptionSide = negativeCandidates.reduce(function (selectedSide, row) {
+            const rowSide = getNegativePnlOptionSide(row);
+            const rowLoss = Math.abs(Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row));
+            const selectedRow = negativeCandidates.find(function (candidate) {
+                return getNegativePnlOptionSide(candidate) === selectedSide;
+            });
+            const selectedLoss = selectedRow
+                ? Math.abs(Number.isFinite(Number(selectedRow?.pnl)) ? Number(selectedRow.pnl) : calculateOpenPositionPnl(selectedRow))
+                : 0;
+            return rowSide && rowLoss > selectedLoss ? rowSide : selectedSide;
+        }, "");
+
+        return negativeCandidates.filter(function (row) {
+            return getNegativePnlOptionSide(row) === targetOptionSide;
+        }).slice(0, remainingLegSlots).map(function (row, index) {
             const side = action3;
             const importId = String(row?.importId || row?.contractName || index);
             const hedgeExpiryDate = hedgeExpiryMode === "source"
@@ -539,6 +597,8 @@
                     hedgeTargetDelta: hedgeDelta,
                     autoCalculatedHedgeQty: hedgeQty,
                     maxHedgeQty,
+                    maxLegs,
+                    remainingLegSlots,
                     sourceLossAmount: Math.abs(Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row)),
                     orderAction: side.toLowerCase(),
                     orderLegSide: String(row.contractName || "").trim().toUpperCase().startsWith("P-") ? "pe" : "ce",
@@ -576,10 +636,33 @@
             return;
         }
 
+        const maxLegs = Math.max(1, Math.floor(parseNumberInput(ids.negativePnlMaxLegs, 1)));
+        const openAdjustmentCount = (Array.isArray(gDisplayedPositions) ? gDisplayedPositions : []).filter(function (row) {
+            return Boolean(row?.metadata?.negativePnlAdjustment);
+        }).length;
+        const remainingLegSlots = Math.max(0, maxLegs - openAdjustmentCount - gNegativePnlAdjustedSourceKeys.size);
         const arrRows = (Array.isArray(adjustmentRows) ? adjustmentRows : []).filter(function (row) {
             const sourceKey = String(row?.metadata?.sourceImportId || "").trim();
             return sourceKey && !gNegativePnlAdjustedSourceKeys.has(sourceKey);
+        }).slice(0, remainingLegSlots);
+        const sourceOptionRows = (Array.isArray(gDisplayedPositions) ? gDisplayedPositions : []).filter(function (row) {
+            return isOptionContract(String(row?.contractName || ""))
+                && !Boolean(row?.metadata?.negativePnlAdjustment);
         });
+        if (sourceOptionRows.length < 2) {
+            return;
+        }
+        const hasPositiveSourceOption = (Array.isArray(gDisplayedPositions) ? gDisplayedPositions : []).some(function (row) {
+            const contractName = String(row?.contractName || "");
+            const pnl = Number.isFinite(Number(row?.pnl)) ? Number(row.pnl) : calculateOpenPositionPnl(row);
+            return isOptionContract(contractName)
+                && !Boolean(row?.metadata?.negativePnlAdjustment)
+                && Number.isFinite(pnl)
+                && pnl > 0;
+        });
+        if (!hasPositiveSourceOption) {
+            return;
+        }
         if (!arrRows.length) {
             return;
         }
@@ -754,6 +837,7 @@
             negativePnlPlaceOrders: Boolean(ids.negativePnlPlaceOrders?.checked),
             negativePnlAction3: String(ids.negativePnlAction3?.value || "buy"),
             negativePnlHedgeQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
+            negativePnlMaxLegs: parseNumberInput(ids.negativePnlMaxLegs, 1),
             negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
             negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
             negativePnlRecoveryTarget: parseNumberInput(ids.negativePnlRecoveryTarget, 0),
@@ -870,6 +954,7 @@
         setFieldValue(ids.negativePnlPlaceOrders, uiState.negativePnlPlaceOrders ?? false);
         setFieldValue(ids.negativePnlAction3, uiState.negativePnlAction3 ?? "buy");
         setFieldValue(ids.negativePnlHedgeQty, uiState.negativePnlHedgeQty ?? 10);
+        setFieldValue(ids.negativePnlMaxLegs, uiState.negativePnlMaxLegs ?? 1);
         setFieldValue(ids.negativePnlHedgeExpiryMode, uiState.negativePnlHedgeExpiryMode ?? "1");
         setFieldValue(ids.negativePnlHedgeDelta, uiState.negativePnlHedgeDelta ?? 0.53);
         setFieldValue(ids.negativePnlRecoveryTarget, uiState.negativePnlRecoveryTarget ?? 0);
@@ -1934,6 +2019,7 @@
     ids.negativePnlPlaceOrders?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlAction3?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeQty?.addEventListener("input", refreshNegativePnlHedgePreview);
+    ids.negativePnlMaxLegs?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeExpiryMode?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlHedgeDelta?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlRecoveryTarget?.addEventListener("input", refreshNegativePnlHedgePreview);

@@ -21,6 +21,7 @@ import {
     estimatePositionCharges,
     getOpenPositionsSummary,
     getPositionPnl,
+    resolveExpiryDateByMode,
     shouldTriggerOption,
     updateRenkoState
 } from "../rolling-options-pt-de/engine";
@@ -102,6 +103,7 @@ export class RollingOptionsStrangleService {
             negativePnlHedgeEnabled: true,
             negativePnlAction3: "buy",
             negativePnlHedgeQty: 10,
+            negativePnlMaxLegs: 1,
             negativePnlHedgeExpiryMode: "1",
             negativePnlHedgeDelta: 0.53,
             negativePnlRecoveryTarget: 0,
@@ -1211,6 +1213,7 @@ export class RollingOptionsStrangleService {
             const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
                 return objRow.status === "OPEN"
                     && objRow.instrumentType === "OPTION"
+                    && !Boolean((objRow.metadata as any)?.negativePnlAdjustment)
                     && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vRuleSet
                     && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
             });
@@ -1766,6 +1769,22 @@ export class RollingOptionsStrangleService {
         return Math.max(1, Math.min(vCappedMaxQty, Math.ceil(vLossAmount / vEstimatedProfitPerLot)));
     }
 
+    private getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
+        const vDirectSide = String(pPosition.optionSide || (pPosition.metadata as any)?.optionSide || "").trim().toUpperCase();
+        if (vDirectSide === "CE" || vDirectSide === "PE") {
+            return vDirectSide;
+        }
+
+        const vContractName = String(pPosition.contractName || pPosition.symbol || "").trim().toUpperCase();
+        if (vContractName.startsWith("P-")) {
+            return "PE";
+        }
+        if (vContractName.startsWith("C-")) {
+            return "CE";
+        }
+        return "";
+    }
+
     private async manageNegativePnlAdjustments(
         pUserId: string,
         pUiState: Record<string, unknown>,
@@ -1778,6 +1797,19 @@ export class RollingOptionsStrangleService {
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const arrClosedPositions = await listRollingOptionsPtDeClosedPositions(pUserId);
         const arrOpenOptions = arrOpenPositions.filter((objPosition) => objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION");
+        const arrSourceOpenOptions = arrOpenOptions.filter((objPosition) => {
+            return !Boolean((objPosition.metadata as any)?.negativePnlAdjustment);
+        });
+        if (arrSourceOpenOptions.length < 2) {
+            return;
+        }
+        const bHasPositiveSourceOption = arrOpenOptions.some((objPosition) => {
+            return !Boolean((objPosition.metadata as any)?.negativePnlAdjustment)
+                && Number(objPosition.pnl || 0) > 0;
+        });
+        if (!bHasPositiveSourceOption) {
+            return;
+        }
         const objSourceById = new Map(arrOpenOptions
             .filter((objPosition) => !Boolean((objPosition.metadata as any)?.negativePnlAdjustment))
             .map((objPosition) => [String(objPosition.positionId || "").trim(), objPosition]));
@@ -1847,12 +1879,17 @@ export class RollingOptionsStrangleService {
         if (!(vMaxHedgeQty > 0)) {
             return;
         }
+        const vMaxLegs = Math.max(1, Math.floor(Number((pUiState as any).negativePnlMaxLegs || 1)));
+        let vRemainingLegSlots = Math.max(0, vMaxLegs - arrAdjustmentPositions.length);
+        if (!(vRemainingLegSlots > 0)) {
+            return;
+        }
 
-        for (const objSource of objSourceById.values()) {
+        const arrNegativeSourceCandidates = Array.from(objSourceById.values()).filter((objSource) => {
             const vSourcePositionId = String(objSource.positionId || "").trim();
             const vSourcePnl = Number(objSource.pnl || 0);
             if (!vSourcePositionId || !(Number.isFinite(vSourcePnl) && vSourcePnl < 0)) {
-                continue;
+                return false;
             }
             const vClosedAdjustmentPnl = objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0;
             const vRecoveredGroupPnl = vSourcePnl + vClosedAdjustmentPnl;
@@ -1860,13 +1897,35 @@ export class RollingOptionsStrangleService {
                 ? Number((pUiState as any).negativePnlRecoveryTarget)
                 : 0;
             if (vRecoveredGroupPnl >= vRecoveryTarget) {
-                continue;
+                return false;
             }
             if ((objAdjustmentsBySource.get(vSourcePositionId) || []).length > 0) {
+                return false;
+            }
+            return Boolean(this.getNegativePnlOptionSide(objSource));
+        });
+        const vActiveAdjustmentSide = arrAdjustmentPositions
+            .map((objPosition) => this.getNegativePnlOptionSide(objPosition))
+            .find((vSide) => vSide === "CE" || vSide === "PE") || "";
+        const vTargetOptionSide = vActiveAdjustmentSide || arrNegativeSourceCandidates.reduce<"CE" | "PE" | "">((vSelectedSide, objSource) => {
+            const vSourceSide = this.getNegativePnlOptionSide(objSource);
+            const vSourceLoss = Math.abs(Number(objSource.pnl || 0));
+            const objSelectedSource = arrNegativeSourceCandidates.find((objCandidate) => this.getNegativePnlOptionSide(objCandidate) === vSelectedSide);
+            const vSelectedLoss = Math.abs(Number(objSelectedSource?.pnl || 0));
+            return vSourceSide && vSourceLoss > vSelectedLoss ? vSourceSide : vSelectedSide;
+        }, "");
+
+        for (const objSource of arrNegativeSourceCandidates) {
+            if (vRemainingLegSlots <= 0) {
+                break;
+            }
+            const vOptionSide = this.getNegativePnlOptionSide(objSource);
+            if (!vOptionSide || vOptionSide !== vTargetOptionSide) {
                 continue;
             }
 
-            const vOptionSide = String(objSource.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
+            const vSourcePositionId = String(objSource.positionId || "").trim();
+            const vSourcePnl = Number(objSource.pnl || 0);
             const vAction3: "buy" | "sell" = String((pUiState as any).negativePnlAction3 || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
             const vRuleSet = Math.floor(Number((objSource.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
             const objRuleConfig = this.buildRuleSetConfig(pUiState, vRuleSet);
@@ -1874,6 +1933,9 @@ export class RollingOptionsStrangleService {
             const vHedgeExpiryMode = ["1", "2", "4", "5", "6", "7"].includes(vHedgeExpiryModeRaw)
                 ? vHedgeExpiryModeRaw as RollingOptionsPtDeConfig["expiryMode"]
                 : (String((objSource.metadata as any)?.expiryMode || objRuleConfig.expiryMode || "1") as RollingOptionsPtDeConfig["expiryMode"]);
+            const vHedgeExpiryDate = vHedgeExpiryModeRaw === "source"
+                ? String(objSource.expiryDate || objRuleConfig.expiryDate || "")
+                : resolveExpiryDateByMode(vHedgeExpiryMode);
             const vTargetDelta = Math.max(0, Number((pUiState as any).negativePnlHedgeDelta || 0.53));
             const vQty = this.getNegativePnlAdjustmentQty(objSource, vMaxHedgeQty);
             const objAdjustmentConfig: RollingOptionsPtDeConfig = {
@@ -1881,7 +1943,7 @@ export class RollingOptionsStrangleService {
                 action: vAction3,
                 legSide: vOptionSide === "PE" ? "pe" : "ce",
                 expiryMode: vHedgeExpiryMode,
-                expiryDate: vHedgeExpiryModeRaw === "source" ? String(objSource.expiryDate || objRuleConfig.expiryDate || "") : objRuleConfig.expiryDate,
+                expiryDate: vHedgeExpiryDate,
                 optionQty: vQty,
                 newDelta: vTargetDelta,
                 reDelta: vTargetDelta
@@ -1911,6 +1973,7 @@ export class RollingOptionsStrangleService {
 
             if (objOpened.length > 0) {
                 objAdjustmentsBySource.set(vSourcePositionId, objOpened);
+                vRemainingLegSlots = Math.max(0, vRemainingLegSlots - objOpened.length);
             }
         }
     }

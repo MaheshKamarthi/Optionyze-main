@@ -1451,6 +1451,7 @@ export class RollingOptionsStrangleLiveService {
             const arrCurrentPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
             const bSameLegAlreadyOpen = arrCurrentPositions.some((objRow) => {
                 return isOptionContract(objRow.contractName)
+                    && !isNegativePnlAdjustmentPosition(objRow)
                     && Number(objRow.metadata?.ruleSet) === vRuleSet
                     && (String(objRow.contractName || "").trim().toUpperCase().startsWith("P-") ? "PE" : "CE") === vOptionSide;
             });
