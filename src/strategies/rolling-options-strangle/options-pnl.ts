@@ -1,6 +1,5 @@
 import {
-    loadRollingOptionsPtDeProfile,
-    saveRollingOptionsPtDeProfile
+    patchRollingOptionsPtDeProfileUiState
 } from "../../storage/rolling-options-strangle-profile-store";
 import { listRollingOptionsPtDeClosedPositions } from "../../storage/rolling-options-strangle-position-store";
 import type { RollingOptionsPtDePositionRecord } from "../../storage/rolling-options-strangle-position-store";
@@ -16,17 +15,8 @@ export async function syncOptionsPnlWithClosedPositions(pUserId: string): Promis
     }, 0);
 
     const vNormalized = Number((Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0).toFixed(3));
-    const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
-    const objUiState = {
-        ...(objProfile?.uiState || {})
-    };
-    await saveRollingOptionsPtDeProfile({
-        userId: pUserId,
-        uiState: {
-            ...objUiState,
-            optionsPnl: vNormalized
-        },
-        updatedAt: ""
+    await patchRollingOptionsPtDeProfileUiState(pUserId, {
+        optionsPnl: vNormalized
     });
 
     return vNormalized;

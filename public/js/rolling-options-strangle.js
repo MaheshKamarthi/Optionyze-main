@@ -1468,9 +1468,6 @@
             throw new Error("Server saved the profile but did not return synchronized settings.");
         }
         gConfirmedProfileRevision = Math.max(gConfirmedProfileRevision, revision);
-        if (revision === gProfileRevision) {
-            applyUiState(objSavedUiState);
-        }
         return objSavedUiState;
     }
 

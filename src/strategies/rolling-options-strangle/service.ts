@@ -8,7 +8,7 @@ import {
 } from "../../storage/rolling-options-strangle-position-store";
 import {
     loadRollingOptionsPtDeProfile,
-    saveRollingOptionsPtDeProfile
+    patchRollingOptionsPtDeProfileUiState
 } from "../../storage/rolling-options-strangle-profile-store";
 import {
     listRollingOptionsPtDeRuntime,
@@ -788,21 +788,18 @@ export class RollingOptionsStrangleService {
             .map((pPosition) => String((pPosition as any)?.positionId || "").trim())
             .filter(Boolean);
 
-        const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
         const objNextUiState = {
-            ...(objProfile?.uiState || {}),
             ...objUiState,
             payoffSlCheckpointPrices: arrRemainingCheckpoints
                 .filter((pCheckpoint) => pCheckpoint.legKey === vAllLegsKey)
                 .map((pCheckpoint) => pCheckpoint.price),
             payoffSlCheckpoints: arrRemainingCheckpoints
         } as Record<string, unknown>;
-        await saveRollingOptionsPtDeProfile({
-            userId: pUserId,
-            uiState: objNextUiState,
-            updatedAt: objProfile?.updatedAt || ""
+        const objUpdatedProfile = await patchRollingOptionsPtDeProfileUiState(pUserId, {
+            payoffSlCheckpointPrices: objNextUiState.payoffSlCheckpointPrices,
+            payoffSlCheckpoints: objNextUiState.payoffSlCheckpoints
         });
-        (pConfig as any).__uiState = objNextUiState;
+        (pConfig as any).__uiState = objUpdatedProfile.uiState;
 
         if (arrTargetPositions.length <= 0) {
             return { triggered: false, signal: "", message: "" };
