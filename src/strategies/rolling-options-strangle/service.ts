@@ -2280,10 +2280,10 @@ export class RollingOptionsStrangleService {
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            return !objSource || Number(objSource.pnl || 0) < vTriggerAmount;
+            return !objSource || Number(objSource.pnl || 0) < 0;
         });
         if (arrSupportsToClose.length > 0) {
-            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source fell below trigger amount or closed");
+            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source became negative or closed");
         }
 
         const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
@@ -2322,7 +2322,7 @@ export class RollingOptionsStrangleService {
 
         for (const objSource of arrOriginalSellOptions) {
             const vSourcePnl = Number(objSource.pnl || 0);
-            if (vSourcePnl < vTriggerAmount) {
+            if (vSourcePnl < 0) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
                 await saveSourceTriggerState(objSource, true, 0);
                 continue;
@@ -2330,6 +2330,11 @@ export class RollingOptionsStrangleService {
             if (objActiveSupportSourceIds.has(objSource.positionId)) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
                 await saveSourceTriggerState(objSource, false, 0);
+                continue;
+            }
+            if (vSourcePnl < vTriggerAmount && (objSource.metadata as any)?.positivePnlSupportArmed !== false) {
+                objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
+                await saveSourceTriggerState(objSource, true, 0);
             }
         }
 
