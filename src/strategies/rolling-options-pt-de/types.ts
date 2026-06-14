@@ -77,4 +77,5 @@ export interface RollingOptionsPtDeEngineState {
         lastFuturesPrice: number | null;
         lastSource: "public" | "simulated";
     };
+    sourcePositiveCycleCountByPositionId: Map<string, number>;
 }

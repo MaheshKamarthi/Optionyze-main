@@ -42,15 +42,15 @@
         trailGreenSl2Enabled: document.getElementById("chkRollingDemoTrailGreenSl2Enabled"),
         trailRedTp2Enabled: document.getElementById("chkRollingDemoTrailRedTp2Enabled"),
         trailRedSl2Enabled: document.getElementById("chkRollingDemoTrailRedSl2Enabled"),
-        negativePnlHedgeEnabled: document.getElementById("chkRollingDemoNegativePnlHedgeEnabled"),
-        negativePnlAction3: document.getElementById("ddlRollingDemoNegativePnlAction3"),
-        negativePnlHedgeQty: document.getElementById("txtRollingDemoNegativePnlHedgeQty"),
-        negativePnlMaxLegs: document.getElementById("txtRollingDemoNegativePnlMaxLegs"),
-        negativePnlHedgeExpiryMode: document.getElementById("ddlRollingDemoNegativePnlHedgeExpiryMode"),
-        negativePnlHedgeDelta: document.getElementById("txtRollingDemoNegativePnlHedgeDelta"),
-        negativePnlTpPct: document.getElementById("txtRollingDemoNegativePnlTp"),
-        negativePnlSlPct: document.getElementById("txtRollingDemoNegativePnlSl"),
-        negativePnlRecoveryTarget: document.getElementById("txtRollingDemoNegativePnlRecoveryTarget"),
+        positivePnlSupportEnabled: document.getElementById("chkRollingDemoPositivePnlSupportEnabled"),
+        positivePnlSupportAction: document.getElementById("ddlRollingDemoPositivePnlSupportAction"),
+        positivePnlSupportQty: document.getElementById("txtRollingDemoPositivePnlSupportQty"),
+        positivePnlMaxLegs: document.getElementById("txtRollingDemoPositivePnlMaxLegs"),
+        positivePnlExpiryMode: document.getElementById("ddlRollingDemoPositivePnlExpiryMode"),
+        positivePnlTargetDelta: document.getElementById("txtRollingDemoPositivePnlTargetDelta"),
+        positivePnlTpPct: document.getElementById("txtRollingDemoPositivePnlTp"),
+        positivePnlSlPct: document.getElementById("txtRollingDemoPositivePnlSl"),
+        positivePnlAdverseRenkoCloseEnabled: document.getElementById("chkRollingDemoPositivePnlAdverseRenkoClose"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
@@ -85,7 +85,7 @@
         updateGreenRulesButton2: document.getElementById("btnRollingDemoUpdateGreenRules2"),
         updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
         updateRedRulesButton2: document.getElementById("btnRollingDemoUpdateRedRules2"),
-        updateNegativePnlButton: document.getElementById("btnRollingDemoUpdateNegativePnl"),
+        updatePositivePnlButton: document.getElementById("btnRollingDemoUpdatePositivePnl"),
         openOptionButton: document.getElementById("btnRollingDemoOpenOption"),
         openOptionButton2: document.getElementById("btnRollingDemoOpenOption2"),
         exitOptionButton: document.getElementById("btnRollingDemoExitOption"),
@@ -115,6 +115,9 @@
 
     let gIsApplyingState = false;
     let gSaveTimer = null;
+    let gProfileRevision = 0;
+    let gConfirmedProfileRevision = 0;
+    let gProfileSaveChain = Promise.resolve();
     let gPreviousOpenPositionLtps = new Map();
     let gLatestRuntimeState = null;
     let gLatestOpenPositions = [];
@@ -765,15 +768,15 @@
             trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
             trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
-            negativePnlHedgeEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
-            negativePnlAction3: String(ids.negativePnlAction3?.value || "buy"),
-            negativePnlHedgeQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
-            negativePnlMaxLegs: parseNumberInput(ids.negativePnlMaxLegs, 1),
-            negativePnlHedgeExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
-            negativePnlHedgeDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
-            negativePnlTpPct: parseNumberInput(ids.negativePnlTpPct, 15),
-            negativePnlSlPct: parseNumberInput(ids.negativePnlSlPct, 85),
-            negativePnlRecoveryTarget: parseNumberInput(ids.negativePnlRecoveryTarget, 0),
+            positivePnlSupportEnabled: Boolean(ids.positivePnlSupportEnabled?.checked),
+            positivePnlSupportAction: "buy",
+            positivePnlSupportQty: parseNumberInput(ids.positivePnlSupportQty, 10),
+            positivePnlMaxLegs: parseNumberInput(ids.positivePnlMaxLegs, 1),
+            positivePnlExpiryMode: String(ids.positivePnlExpiryMode?.value || "1"),
+            positivePnlTargetDelta: parseNumberInput(ids.positivePnlTargetDelta, 0.53),
+            positivePnlTpPct: parseNumberInput(ids.positivePnlTpPct, 15),
+            positivePnlSlPct: parseNumberInput(ids.positivePnlSlPct, 85),
+            positivePnlAdverseRenkoCloseEnabled: Boolean(ids.positivePnlAdverseRenkoCloseEnabled?.checked),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -854,15 +857,15 @@
         setFieldValue("trailGreenSl2Enabled", uiState.trailGreenSl2Enabled ?? true);
         setFieldValue("trailRedTp2Enabled", uiState.trailRedTp2Enabled ?? true);
         setFieldValue("trailRedSl2Enabled", uiState.trailRedSl2Enabled ?? true);
-        setFieldValue("negativePnlHedgeEnabled", uiState.negativePnlHedgeEnabled ?? true);
-        setFieldValue("negativePnlAction3", uiState.negativePnlAction3 ?? "buy");
-        setFieldValue("negativePnlHedgeQty", uiState.negativePnlHedgeQty ?? 10);
-        setFieldValue("negativePnlMaxLegs", uiState.negativePnlMaxLegs ?? 1);
-        setFieldValue("negativePnlHedgeExpiryMode", uiState.negativePnlHedgeExpiryMode ?? "1");
-        setFieldValue("negativePnlHedgeDelta", uiState.negativePnlHedgeDelta ?? 0.53);
-        setFieldValue("negativePnlTpPct", uiState.negativePnlTpPct ?? 15);
-        setFieldValue("negativePnlSlPct", uiState.negativePnlSlPct ?? 85);
-        setFieldValue("negativePnlRecoveryTarget", uiState.negativePnlRecoveryTarget ?? 0);
+        setFieldValue("positivePnlSupportEnabled", uiState.positivePnlSupportEnabled ?? uiState.negativePnlHedgeEnabled ?? true);
+        setFieldValue("positivePnlSupportAction", "buy");
+        setFieldValue("positivePnlSupportQty", uiState.positivePnlSupportQty ?? uiState.negativePnlHedgeQty ?? 10);
+        setFieldValue("positivePnlMaxLegs", uiState.positivePnlMaxLegs ?? uiState.negativePnlMaxLegs ?? 1);
+        setFieldValue("positivePnlExpiryMode", uiState.positivePnlExpiryMode ?? uiState.negativePnlHedgeExpiryMode ?? "1");
+        setFieldValue("positivePnlTargetDelta", uiState.positivePnlTargetDelta ?? uiState.negativePnlHedgeDelta ?? 0.53);
+        setFieldValue("positivePnlTpPct", uiState.positivePnlTpPct ?? uiState.negativePnlTpPct ?? 15);
+        setFieldValue("positivePnlSlPct", uiState.positivePnlSlPct ?? uiState.negativePnlSlPct ?? 85);
+        setFieldValue("positivePnlAdverseRenkoCloseEnabled", uiState.positivePnlAdverseRenkoCloseEnabled ?? uiState.negativePnlRenkoCloseOnly ?? false);
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -873,7 +876,6 @@
         });
 
         applySymbolDefaults();
-        applyExpiryModeDefaults();
         updateRenkoFeedVisualState();
         updateFuturesEnabledVisualState();
 
@@ -962,6 +964,7 @@
         });
     }
 
+    /*
     function isSuggestedNegativePnlLeg(row) {
         return Boolean(row?.metadata?.negativePnlOptionLegPreview);
     }
@@ -1193,6 +1196,11 @@
             gNegativePnlAdjustmentOrderInFlight = false;
         }
     }
+    */
+
+    function refreshPositivePnlSupportSettings() {
+        queueProfileSave();
+    }
 
     function getPositionById(positionId, rows = gLatestOpenPositions) {
         const normalizedPositionId = String(positionId || "").trim();
@@ -1266,8 +1274,7 @@
         }
 
         gLatestOpenPositions = rows;
-        const displayRows = withNegativePnlOptionLegPreviews(rows);
-        const negativePnlAdjustmentRows = displayRows.filter(isSuggestedNegativePnlLeg);
+        const displayRows = rows;
         if (gSelectedLinkOutPositionId && !getPositionById(gSelectedLinkOutPositionId, rows)) {
             gSelectedLinkOutPositionId = "";
         }
@@ -1277,7 +1284,7 @@
         updateOpenPnlMetric(rows, rows.length);
         const nextLtps = new Map();
         const openRowsHtml = displayRows.map(function (row) {
-            const isPreviewLeg = isSuggestedNegativePnlLeg(row);
+            const isPreviewLeg = false;
             const tradeType = String(row.action || "-");
             const buyPrice = String(row.action || "").toUpperCase() === "BUY" ? row.entryPrice : null;
             const sellPrice = String(row.action || "").toUpperCase() === "SELL" ? row.entryPrice : null;
@@ -1360,7 +1367,6 @@
         updateTotalPnlMetric(rows);
         updateOpenPnlMetric(rows, rows.length);
         renderPayoffGraph(displayRows);
-        void placeNegativePnlAdjustmentOrders(negativePnlAdjustmentRows);
     }
 
     function renderClosedPositions(rows) {
@@ -1442,17 +1448,52 @@
         }).join("");
     }
 
-    async function saveProfile() {
+    async function saveProfile(uiState, revision) {
         const objResponse = await fetch(`${apiBase}/profile`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "same-origin",
-            body: JSON.stringify({ uiState: getUiState() })
+            body: JSON.stringify({ uiState })
         });
 
+        const objPayload = await objResponse.json().catch(() => ({}));
         if (!objResponse.ok) {
-            throw new Error("Unable to save Rolling Options profile.");
+            throw new Error(String(objPayload?.message || "Unable to save Rolling Options profile."));
         }
+        const objSavedUiState = objPayload?.data?.uiState;
+        if (!objSavedUiState || typeof objSavedUiState !== "object") {
+            throw new Error("Server saved the profile but did not return synchronized settings.");
+        }
+        gConfirmedProfileRevision = Math.max(gConfirmedProfileRevision, revision);
+        if (revision === gProfileRevision) {
+            applyUiState(objSavedUiState);
+        }
+        return objSavedUiState;
+    }
+
+    function enqueueProfileSave(revision) {
+        const objUiState = getUiState();
+        const objSave = async function () {
+            try {
+                return await saveProfile(objUiState, revision);
+            }
+            catch (objError) {
+                console.error(objError);
+                if (revision === gProfileRevision) {
+                    setStatus(objError instanceof Error ? objError.message : "Unable to synchronize settings with the server.", "danger");
+                    await loadProfile().then(function () {
+                        gConfirmedProfileRevision = Math.max(gConfirmedProfileRevision, revision);
+                    }).catch(function (objReloadError) {
+                        console.error(objReloadError);
+                    });
+                }
+                throw objError;
+            }
+        };
+        gProfileSaveChain = gProfileSaveChain.catch(function () {
+            return undefined;
+        }).then(objSave);
+        return gProfileSaveChain;
     }
 
     async function flushProfileSave() {
@@ -1465,7 +1506,13 @@
             gSaveTimer = null;
         }
 
-        await saveProfile();
+        await gProfileSaveChain.catch(function () {
+            return undefined;
+        });
+        if (gConfirmedProfileRevision >= gProfileRevision) {
+            return;
+        }
+        await enqueueProfileSave(gProfileRevision);
     }
 
     function queueProfileSave() {
@@ -1473,13 +1520,17 @@
             return;
         }
 
+        gProfileRevision += 1;
+        const vRevision = gProfileRevision;
         if (gSaveTimer) {
             clearTimeout(gSaveTimer);
         }
 
         gSaveTimer = setTimeout(function () {
             gSaveTimer = null;
-            void saveProfile();
+            void enqueueProfileSave(vRevision).catch(function () {
+                return undefined;
+            });
         }, 400);
     }
 
@@ -1495,6 +1546,7 @@
             ? objPayload.data.uiState
             : {};
         applyUiState(objUiState);
+        return objUiState;
     }
 
     async function loadStatus() {
@@ -1894,8 +1946,8 @@
             ruleSet: 2
         });
     });
-    ids.updateNegativePnlButton?.addEventListener("click", function () {
-        void runServerAction(`${apiBase}/negative-pnl/settings/update`, {});
+    ids.updatePositivePnlButton?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/positive-pnl/settings/update`, {});
     });
 
     ids.exitOptionButton?.addEventListener("click", function () {
@@ -1996,11 +2048,11 @@
         }
     });
 
-    [ids.negativePnlHedgeQty, ids.negativePnlMaxLegs, ids.negativePnlHedgeDelta, ids.negativePnlTpPct, ids.negativePnlSlPct, ids.negativePnlRecoveryTarget].forEach(function (objField) {
-        objField?.addEventListener("input", refreshNegativePnlHedgePreview);
+    [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
+        objField?.addEventListener("input", refreshPositivePnlSupportSettings);
     });
-    [ids.negativePnlHedgeEnabled, ids.negativePnlAction3, ids.negativePnlHedgeExpiryMode].forEach(function (objField) {
-        objField?.addEventListener("change", refreshNegativePnlHedgePreview);
+    [ids.positivePnlSupportEnabled, ids.positivePnlExpiryMode, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
+        objField?.addEventListener("change", refreshPositivePnlSupportSettings);
     });
 
     ids.telegramAlertsEnabled?.addEventListener("change", queueProfileSave);
@@ -2023,7 +2075,6 @@
 
     loadProfile().then(function () {
         gHasLoadedProfile = true;
-        queueProfileSave();
         return loadServerPanels();
     }).catch(function (objError) {
         console.error(objError);

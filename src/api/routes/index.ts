@@ -383,6 +383,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle/negative-pnl/settings/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleNegativePnlSettings(req, res);
     });
+    objRouter.post("/rollingoptions-strangle/positive-pnl/settings/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleNegativePnlSettings(req, res);
+    });
     objRouter.post("/rollingoptions-strangle/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleRuleSettings(req, res);
     });

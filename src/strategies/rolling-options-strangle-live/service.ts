@@ -134,9 +134,352 @@ function sleep(pDurationMs: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, pDurationMs));
 }
 
+function normalizeLiveNumber(pValue: unknown, pFallback: number): number {
+    const vNumber = Number(pValue);
+    return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function getContractNameForSymbol(pSymbol: string): string {
+    return String(pSymbol || "").trim().toUpperCase() === "ETH" ? "ETHUSD" : "BTCUSD";
+}
+
+function getLotSizeForSymbol(pSymbol: string): number {
+    return String(pSymbol || "").trim().toUpperCase() === "ETH" ? 0.01 : 0.001;
+}
+
+function formatIsoDate(pDateValue: Date): string {
+    const vYear = String(pDateValue.getFullYear());
+    const vMonth = String(pDateValue.getMonth() + 1).padStart(2, "0");
+    const vDay = String(pDateValue.getDate()).padStart(2, "0");
+    return `${vYear}-${vMonth}-${vDay}`;
+}
+
+function resolveLiveExpiryDateByMode(pExpiryMode: string): string {
+    const vMode = String(pExpiryMode || "1").trim();
+    const objDate = new Date();
+    const vDayOfWeek = objDate.getDay();
+
+    if (vMode === "1") {
+        objDate.setDate(objDate.getDate() + 1);
+        return formatIsoDate(objDate);
+    }
+    if (vMode === "2") {
+        objDate.setDate(objDate.getDate() + 2);
+        return formatIsoDate(objDate);
+    }
+    if (vMode === "4") {
+        const vDaysToFriday = (5 - vDayOfWeek + 7) % 7;
+        objDate.setDate(objDate.getDate() + (vDayOfWeek >= 2 ? vDaysToFriday + 7 : vDaysToFriday));
+        return formatIsoDate(objDate);
+    }
+    if (vMode === "5") {
+        const vDaysToFriday = (5 - vDayOfWeek + 7) % 7;
+        objDate.setDate(objDate.getDate() + (vDayOfWeek >= 2 ? vDaysToFriday + 14 : vDaysToFriday + 7));
+        return formatIsoDate(objDate);
+    }
+    if (vMode === "6") {
+        const getLastFridayOfMonth = (pYear: number, pMonthIndex: number): Date => {
+            const objLastDay = new Date(pYear, pMonthIndex + 1, 0);
+            while (objLastDay.getDay() !== 5) {
+                objLastDay.setDate(objLastDay.getDate() - 1);
+            }
+            return objLastDay;
+        };
+        const objLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth());
+        const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
+        return formatIsoDate(objDate.getDate() > 15 ? objNextLastFriday : objLastFriday);
+    }
+    if (vMode === "7") {
+        const getLastFridayOfMonth = (pYear: number, pMonthIndex: number): Date => {
+            const objLastDay = new Date(pYear, pMonthIndex + 1, 0);
+            while (objLastDay.getDay() !== 5) {
+                objLastDay.setDate(objLastDay.getDate() - 1);
+            }
+            return objLastDay;
+        };
+        const objNextLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 1);
+        const objThirdMonthLastFriday = getLastFridayOfMonth(objDate.getFullYear(), objDate.getMonth() + 2);
+        const vMsPerDay = 24 * 60 * 60 * 1000;
+        const vDaysToCandidate = Math.floor((objNextLastFriday.getTime() - objDate.getTime()) / vMsPerDay);
+        return formatIsoDate(vDaysToCandidate <= 30 ? objThirdMonthLastFriday : objNextLastFriday);
+    }
+
+    return formatIsoDate(objDate);
+}
+
+function getDefaultLiveUiState(): Record<string, unknown> {
+    return {
+        symbol: "BTC",
+        manualFutQty: 1,
+        manualFutOrderType: "market_order",
+        manualFutAction: "SELL",
+        futuresEnabled: true,
+        action1: "sell",
+        legSide1: "ce",
+        expiryMode1: "1",
+        expiryDate1: "",
+        manualOptQty1: 1,
+        reEnter1: false,
+        action2: "none",
+        legSide2: "pe",
+        expiryMode2: "1",
+        expiryDate2: "",
+        manualOptQty2: 1,
+        reEnter2: false,
+        redOptQty: 1,
+        reRedDelta: 0.53,
+        redTpPct: 15,
+        redSlPct: 85,
+        greenOptQty: 1,
+        greenReDelta: 0.53,
+        greenTpPct: 15,
+        greenSlPct: 85,
+        trailGreenTp1Enabled: true,
+        trailGreenSl1Enabled: true,
+        trailRedTp1Enabled: true,
+        trailRedSl1Enabled: true,
+        greenOptQty2: 1,
+        greenReDelta2: 0.53,
+        greenTpPct2: 15,
+        greenSlPct2: 85,
+        redOptQty2: 1,
+        redReDelta2: 0.53,
+        redTpPct2: 15,
+        redSlPct2: 85,
+        trailGreenTp2Enabled: true,
+        trailGreenSl2Enabled: true,
+        trailRedTp2Enabled: true,
+        trailRedSl2Enabled: true,
+        addOneLotFuture: false,
+        renkoFeedPts: 10,
+        renkoFeedPriceSrc: "mark_price",
+        targetOpenPnl: 0,
+        negativePnlHedgeEnabled: true,
+        negativePnlPlaceOrders: false,
+        negativePnlAction3: "buy",
+        negativePnlHedgeQty: 10,
+        negativePnlMaxLegs: 1,
+        negativePnlTpPct: 15,
+        negativePnlSlPct: 85,
+        negativePnlHedgeExpiryMode: "1",
+        negativePnlHedgeDelta: 0.53,
+        negativePnlRecoveryTarget: 0,
+        closedFromDate: "",
+        closedToDate: "",
+        telegramAlertsEnabled: false,
+        telegramAlertTypes: []
+    };
+}
+
+function sanitizeLiveUiState(pUiState?: Record<string, unknown> | null): Record<string, unknown> {
+    const objUiState = pUiState && typeof pUiState === "object" ? pUiState : {};
+    const {
+        reDelta1: _legacyReDelta1,
+        deltaTp1: _legacyDeltaTp1,
+        deltaSl1: _legacyDeltaSl1,
+        ...objSanitized
+    } = objUiState;
+    return objSanitized;
+}
+
+function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record<string, unknown> {
+    const objUiState = pUiState && typeof pUiState === "object" ? { ...pUiState } : {};
+    const vManualFutQty = Math.max(1, Math.floor(normalizeLiveNumber(objUiState.manualFutQty, 1)));
+    const vLegacyRedPct = normalizeLiveNumber(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct, NaN);
+    if (!Number.isFinite(Number(objUiState.redOptQty))) {
+        objUiState.redOptQty = Number.isFinite(vLegacyRedPct)
+            ? Math.max(0, Math.round(vManualFutQty * vLegacyRedPct / 100))
+            : 1;
+    }
+    const vLegacyGreenPct = normalizeLiveNumber(objUiState.greenOptQtyPct, NaN);
+    if (!Number.isFinite(Number(objUiState.greenOptQty))) {
+        objUiState.greenOptQty = Number.isFinite(vLegacyGreenPct)
+            ? Math.max(0, Math.round(vManualFutQty * vLegacyGreenPct / 100))
+            : 1;
+    }
+    if (!Number.isFinite(Number(objUiState.reRedDelta))) {
+        objUiState.reRedDelta = normalizeLiveNumber(objUiState.reDelta1, 0.53);
+    }
+    const vRedTpLegacy = normalizeLiveNumber(objUiState.redTpDelta ?? objUiState.deltaTp1, 0.15);
+    const vRedSlLegacy = normalizeLiveNumber(objUiState.redSlDelta ?? objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.redTpPct))) {
+        objUiState.redTpPct = vRedTpLegacy <= 2 ? (vRedTpLegacy * 100) : vRedTpLegacy;
+    }
+    if (!Number.isFinite(Number(objUiState.redSlPct))) {
+        objUiState.redSlPct = vRedSlLegacy <= 2 ? (vRedSlLegacy * 100) : vRedSlLegacy;
+    }
+    if (!Number.isFinite(Number(objUiState.greenReDelta))) {
+        objUiState.greenReDelta = normalizeLiveNumber(objUiState.reDelta1, 0.53);
+    }
+    if (!Number.isFinite(Number(objUiState.greenReDelta2))) {
+        objUiState.greenReDelta2 = normalizeLiveNumber(objUiState.greenReDelta, 0.53);
+    }
+    if (!Number.isFinite(Number(objUiState.newDelta1))) {
+        objUiState.newDelta1 = normalizeLiveNumber(objUiState.greenReDelta, 0.53);
+    }
+    const vGreenTpLegacy = normalizeLiveNumber(objUiState.greenTpDelta ?? objUiState.deltaTp1, 0.15);
+    const vGreenSlLegacy = normalizeLiveNumber(objUiState.greenSlDelta ?? objUiState.deltaSl1, 0.85);
+    if (!Number.isFinite(Number(objUiState.greenTpPct))) {
+        objUiState.greenTpPct = vGreenTpLegacy <= 2 ? (vGreenTpLegacy * 100) : vGreenTpLegacy;
+    }
+    if (!Number.isFinite(Number(objUiState.greenSlPct))) {
+        objUiState.greenSlPct = vGreenSlLegacy <= 2 ? (vGreenSlLegacy * 100) : vGreenSlLegacy;
+    }
+    if (!Number.isFinite(Number(objUiState.greenTpPct2))) {
+        objUiState.greenTpPct2 = normalizeLiveNumber(objUiState.greenTpPct, 15);
+    }
+    if (!Number.isFinite(Number(objUiState.greenSlPct2))) {
+        objUiState.greenSlPct2 = normalizeLiveNumber(objUiState.greenSlPct, 85);
+    }
+    if (!Number.isFinite(Number(objUiState.redReDelta2))) {
+        objUiState.redReDelta2 = normalizeLiveNumber(objUiState.reRedDelta, 0.53);
+    }
+    if (!Number.isFinite(Number(objUiState.redTpPct2))) {
+        objUiState.redTpPct2 = normalizeLiveNumber(objUiState.redTpPct, 15);
+    }
+    if (!Number.isFinite(Number(objUiState.redSlPct2))) {
+        objUiState.redSlPct2 = normalizeLiveNumber(objUiState.redSlPct, 85);
+    }
+    return sanitizeLiveUiState(objUiState);
+}
+
+function getMergedLiveUiState(pProfile?: { uiState?: Record<string, unknown> | null } | null): Record<string, unknown> {
+    const objUiState = normalizeLiveUiState({
+        ...getDefaultLiveUiState(),
+        ...(pProfile?.uiState || {})
+    });
+    return {
+        ...objUiState,
+        expiryDate1: String(objUiState.expiryDate1 || "").trim() || resolveLiveExpiryDateByMode(String(objUiState.expiryMode1 || "1"))
+    };
+}
+
+function buildLiveRuleConfigFromUiState(pUiState: Record<string, unknown>, pRuleSet: 1 | 2) {
+    const objState = { ...(pUiState || {}) } as Record<string, unknown>;
+    if (pRuleSet === 2) {
+        objState.action1 = objState.action2;
+        objState.legSide1 = objState.legSide2;
+        objState.expiryMode1 = objState.expiryMode2;
+        objState.expiryDate1 = objState.expiryDate2;
+        objState.manualOptQty1 = objState.manualOptQty2;
+        objState.reEnter1 = objState.reEnter2;
+        objState.greenOptQty = objState.greenOptQty2;
+        objState.greenReDelta = objState.greenReDelta2;
+        objState.greenTpPct = objState.greenTpPct2;
+        objState.greenSlPct = objState.greenSlPct2;
+        objState.redOptQty = objState.redOptQty2;
+        objState.reRedDelta = objState.redReDelta2;
+        objState.redTpPct = objState.redTpPct2;
+        objState.redSlPct = objState.redSlPct2;
+    }
+    return buildConfigFromUiState(objState);
+}
+
+function getLiveOptionDeltaTargetsFromPct(
+    pEntryDelta: number,
+    pSide: string,
+    pTakeProfitPct: number,
+    pStopLossPct: number
+): { takeProfitDelta: number; stopLossDelta: number; } {
+    const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
+    const vSide = String(pSide || "").trim().toUpperCase();
+    const vIsBuy = vSide === "BUY";
+    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
+    const vStopLossMove = clamp01(pStopLossPct / 100);
+    const vTakeProfitDelta = vIsBuy
+        ? clamp01(vEntryDelta + vTakeProfitMove)
+        : clamp01(vEntryDelta - vTakeProfitMove);
+    const vRawStopLoss = vIsBuy ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
+    const vStopLossDelta = !vIsBuy && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    return {
+        takeProfitDelta: vTakeProfitDelta,
+        stopLossDelta: vStopLossDelta
+    };
+}
+
+function getOptionSideFromContractName(pContractName: string): "" | "CE" | "PE" {
+    const vContractName = String(pContractName || "").trim().toUpperCase();
+    if (vContractName.startsWith("C-")) {
+        return "CE";
+    }
+    if (vContractName.startsWith("P-")) {
+        return "PE";
+    }
+    return "";
+}
+
+async function getLiveOrFallbackOptionQuote(
+    pUiState: Record<string, unknown>,
+    pOptionSide: "CE" | "PE",
+    pTargetDelta: number,
+    pReDeltaTolerance: number
+): Promise<{
+    contractName: string;
+    markPrice: number;
+    entryPrice: number;
+    bestBid: number | null;
+    bestAsk: number | null;
+    entryDelta: number;
+    metadata: Record<string, unknown>;
+    strike: number;
+    expiryDate: string;
+    contractSymbol: string;
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    usedNextDayFallback: boolean;
+}> {
+    const objConfig = buildConfigFromUiState(pUiState);
+    const objContract = await findBestLiveOptionContract(
+        objConfig,
+        pOptionSide,
+        pTargetDelta,
+        false,
+        pReDeltaTolerance
+    );
+    const vMarkPrice = Number(objContract?.markPrice || 0);
+    const vBestBid = objContract?.bestBid ?? null;
+    const vBestAsk = objContract?.bestAsk ?? null;
+    const vEntryPrice = (pUiState as any).negativePnlAction3 === "sell" && vBestBid ? vBestBid : (vBestAsk || vMarkPrice);
+    const vEntryDelta = objContract ? Math.abs(objContract.delta) : pTargetDelta;
+    return {
+        contractName: objContract?.contractSymbol || `${objConfig.contractName} ${pOptionSide}`,
+        markPrice: vMarkPrice,
+        entryPrice: vEntryPrice,
+        bestBid: vBestBid,
+        bestAsk: vBestAsk,
+        entryDelta: vEntryDelta,
+        metadata: {},
+        strike: objContract?.strike || Math.round((objConfig as any).spotPrice || 50000),
+        expiryDate: objContract?.expiryDate || "",
+        contractSymbol: objContract?.contractSymbol || "",
+        delta: objContract?.delta || pTargetDelta,
+        gamma: objContract?.gamma || 0,
+        theta: objContract?.theta || 0,
+        vega: objContract?.vega || 0,
+        usedNextDayFallback: Boolean(objContract?.usedNextDayFallback)
+    };
+}
+
+function createPositionBase(pUserId: string): Partial<RollingOptionsStrangleLiveImportedPositionRecord> {
+    return {
+        userId: pUserId,
+        importId: crypto.randomUUID(),
+        charges: 0,
+        pnl: 0,
+        margin: 0,
+        liquidationPrice: 0,
+        openedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+}
+
+const RE_DELTA_TOLERANCE = 0.05;
+
 export class RollingOptionsStrangleLiveService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
-    private static readonly RE_DELTA_TOLERANCE = 0.05;
     private readonly lastErrorLogByUserId = new Map<string, { message: string; loggedAtMs: number }>();
 
     public constructor(private readonly runnerManager: RunnerManager) {}
@@ -887,7 +1230,8 @@ export class RollingOptionsStrangleLiveService {
                 lastSpotPrice: null,
                 lastFuturesPrice: null,
                 lastSource: "simulated"
-            }
+            },
+            sourcePositiveCycleCountByPositionId: new Map()
         };
     }
 
@@ -1226,7 +1570,7 @@ export class RollingOptionsStrangleLiveService {
                 vOptionSide,
                 pTargetDelta,
                 false,
-                pUseReEntryDelta ? RollingOptionsStrangleLiveService.RE_DELTA_TOLERANCE : undefined
+                pUseReEntryDelta ? RE_DELTA_TOLERANCE : undefined
             );
             if (!objContract?.contractSymbol) {
                 return [];
@@ -1428,21 +1772,25 @@ export class RollingOptionsStrangleLiveService {
         pReason: string
     ): Promise<RollingOptionsStrangleLiveImportedPositionRecord[]> {
         const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
-            .filter((objPosition) => isOptionContract(objPosition?.contractName || ""));
+            .filter((objPosition) => isOptionContract(objPosition?.contractName || ""))
+            .filter((objPosition) => !isNegativePnlAdjustmentPosition(objPosition));
         if (arrClosedOptions.length <= 0 || Boolean(this.getOrCreateState(pUserId).positionMismatchDetected)) {
             return [];
         }
 
-        const objUiState = await this.loadUiState(pUserId);
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = getMergedLiveUiState(objProfile);
         const objConfig1 = this.buildRuleSetConfig(objUiState, 1);
         const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
         const bFuturesEnabled = Boolean((objConfig1 as RollingOptionsPtDeConfig & { futuresEnabled?: boolean; }).futuresEnabled ?? true);
         const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
         const arrCreatedPositions: RollingOptionsStrangleLiveImportedPositionRecord[] = [];
+        const objSnapshot = await getLiveMarketSnapshot(objConfig1);
+        const vLotSize = getLotSizeForSymbol(objConfig1.symbol);
+        const vNow = objSnapshot.ts;
 
         for (const objClosedOption of arrClosedOptions) {
             const vRuleSet: 1 | 2 = Number(objClosedOption.metadata?.ruleSet) === 2 ? 2 : 1;
-            const objConfig = vRuleSet === 2 ? objConfig2 : objConfig1;
             const vStoredRuleColor = String(objClosedOption.metadata?.ruleColor || "").trim().toUpperCase();
             const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled
                 ? (vCurrentRenkoColor === "G" ? "G" : "R")
@@ -1459,30 +1807,100 @@ export class RollingOptionsStrangleLiveService {
                 continue;
             }
 
-            const vFutureQty = arrCurrentPositions
-                .filter((objRow) => !isOptionContract(objRow.contractName))
-                .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
-            const vBaseQty = bFuturesEnabled
-                ? Math.max(0, vFutureQty || Number(objClosedOption.qty || 0))
-                : Math.max(0, Number(objClosedOption.qty || 0));
-            const vReEntryQty = this.getConfiguredOptionQty(objConfig, vActiveRuleColor, vBaseQty);
+            // Use Action 3 settings for replacement legs
+            const vReEntryQty = Math.max(0, Math.floor(normalizeLiveNumber((objUiState as any).negativePnlHedgeQty, 1)));
             if (!(vReEntryQty > 0)) {
                 continue;
             }
 
-            const objRuleValues = this.getRuleValues(objConfig, vActiveRuleColor);
-            const arrCreated = await this.openOptionEntries(
-                pUserId,
-                objConfig,
-                vReEntryQty,
-                objRuleValues.reDelta,
-                `${pReason} replacement option`,
-                vActiveRuleColor,
-                true,
-                vRuleSet,
-                [vOptionSide]
-            );
-            arrCreatedPositions.push(...arrCreated);
+            const vAction: "buy" | "sell" = String((objUiState as any).negativePnlAction3 || "buy").trim().toLowerCase() === "sell"
+                ? "sell"
+                : "buy";
+            const vTargetDelta = Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlHedgeDelta, 0.53));
+            const vExpiryMode = String((objUiState as any).negativePnlHedgeExpiryMode || "1").trim() || "1";
+            const vExpiryDate = String(objUiState.expiryDate1 || "").trim();
+
+            const objQuoteUiState = {
+                ...objUiState,
+                expiryMode1: vExpiryMode === "source" ? String((objClosedOption.metadata as any)?.expiryMode || objUiState.expiryMode1 || "1") : vExpiryMode,
+                expiryDate1: vExpiryMode === "source"
+                    ? (vExpiryDate || String((objClosedOption.metadata as any)?.expiryDate || objUiState.expiryDate1 || ""))
+                    : vExpiryDate
+            };
+            const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
+            if (!objQuote.contractSymbol) {
+                continue;
+            }
+            const vEntryPrice = this.getOptionEntryPriceForAction(objQuote, vAction);
+            const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
+            const vConfiguredTpPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlTpPct, 15)));
+            const vConfiguredSlPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlSlPct, 85)));
+            const objDeltaTargets = getLiveOptionDeltaTargetsFromPct(vEntryDelta, vAction.toUpperCase(), vConfiguredTpPct, vConfiguredSlPct);
+            const vTakeProfitDelta = objDeltaTargets.takeProfitDelta;
+            const vStopLossDelta = objDeltaTargets.stopLossDelta;
+
+            // Place the actual order
+            const { client } = await this.getDeltaClient(pUserId);
+            await client.apis.Orders.placeOrder({
+                order: {
+                    product_symbol: objQuote.contractSymbol,
+                    size: vReEntryQty,
+                    side: vAction,
+                    order_type: "market_order",
+                    time_in_force: "gtc",
+                    post_only: false,
+                    reduce_only: false
+                }
+            });
+
+            const objPosition: RollingOptionsStrangleLiveImportedPositionRecord = {
+                ...createPositionBase(pUserId),
+                contractName: objQuote.contractSymbol,
+                side: vAction.toUpperCase() as "BUY" | "SELL",
+                qty: vReEntryQty,
+                entryPrice: vEntryPrice,
+                markPrice: objQuote.markPrice,
+                entryDelta: vEntryDelta,
+                currentDelta: vEntryDelta,
+                metadata: {
+                    ...(objQuote.metadata || {}),
+                    takeProfitDelta: vTakeProfitDelta,
+                    stopLossDelta: vStopLossDelta,
+                    reEntryDelta: vTargetDelta,
+                    reEnter: false,
+                    ruleColor: vOptionSide === "PE" ? "R" : "G",
+                    ruleSet: vRuleSet,
+                    openedReason: `${pReason} replacement option`,
+                    productMarkPrice: objQuote.markPrice,
+                    productBestBid: objQuote.bestBid,
+                    productBestAsk: objQuote.bestAsk,
+                    expiryMode: vExpiryMode,
+                    requestedExpiryDate: vExpiryDate,
+                    resolvedExpiryDate: objQuote.expiryDate,
+                    usedNextDayFallback: objQuote.usedNextDayFallback
+                }
+            } as RollingOptionsStrangleLiveImportedPositionRecord;
+
+            // Persist the position
+            const arrExisting = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
+            const arrNewPositions = [...arrExisting, objPosition];
+            await this.persistImportedPositions(pUserId, arrNewPositions);
+
+            // Log the event
+            await logRollingOptionsStrangleLiveEvent({
+                userId: pUserId,
+                eventType: "reentry_opened",
+                severity: "success",
+                title: "Replacement Option Opened",
+                message: `Opened replacement live option leg from the server runner using Action 3 settings.`,
+                payload: {
+                    symbol: objConfig1.symbol,
+                    qty: vReEntryQty,
+                    reason: `${pReason} replacement option`
+                }
+            });
+
+            arrCreatedPositions.push(objPosition);
         }
 
         await this.closeOrphanReplacementOptionPositions(pUserId);

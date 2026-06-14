@@ -96,15 +96,15 @@ function getDefaultUiState(): Record<string, unknown> {
         demoBalance: 10000,
         closeAllLegsOnAnyClose: false,
         skipRenkoEntryNoOpenOptions: false,
-        negativePnlHedgeEnabled: true,
-        negativePnlAction3: "buy",
-        negativePnlHedgeQty: 10,
-        negativePnlMaxLegs: 1,
-        negativePnlTpPct: 15,
-        negativePnlSlPct: 85,
-        negativePnlHedgeExpiryMode: "1",
-        negativePnlHedgeDelta: 0.53,
-        negativePnlRecoveryTarget: 0,
+        positivePnlSupportEnabled: true,
+        positivePnlSupportAction: "buy",
+        positivePnlSupportQty: 10,
+        positivePnlMaxLegs: 1,
+        positivePnlTpPct: 15,
+        positivePnlSlPct: 85,
+        positivePnlExpiryMode: "1",
+        positivePnlTargetDelta: 0.53,
+        positivePnlAdverseRenkoCloseEnabled: false,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
         telegramAlertTypes: [
@@ -162,10 +162,42 @@ function calculateBlockedMargin(pPositions: RollingOptionsPtDePositionRecord[]):
 
 async function getMergedUiState(pUserId: string): Promise<Record<string, unknown>> {
     const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
+    const objSavedUiState = (objProfile?.uiState || {}) as Record<string, unknown>;
     const objUiState = {
         ...getDefaultUiState(),
-        ...(objProfile?.uiState || {})
+        ...objSavedUiState
     };
+    const getMigratedValue = (pPositiveKey: string, pLegacyKey: string, pFallback: unknown): unknown => {
+        if (objSavedUiState[pPositiveKey] !== undefined) {
+            return objSavedUiState[pPositiveKey];
+        }
+        if (objSavedUiState[pLegacyKey] !== undefined) {
+            return objSavedUiState[pLegacyKey];
+        }
+        return objUiState[pPositiveKey] ?? pFallback;
+    };
+    objUiState.positivePnlSupportEnabled = Boolean(getMigratedValue("positivePnlSupportEnabled", "negativePnlHedgeEnabled", true));
+    objUiState.positivePnlSupportAction = "buy";
+    objUiState.positivePnlSupportQty = getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10);
+    objUiState.positivePnlMaxLegs = getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1);
+    objUiState.positivePnlTpPct = getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15);
+    objUiState.positivePnlSlPct = getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85);
+    objUiState.positivePnlExpiryMode = getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1");
+    objUiState.positivePnlTargetDelta = getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53);
+    objUiState.positivePnlAdverseRenkoCloseEnabled = Boolean(getMigratedValue(
+        "positivePnlAdverseRenkoCloseEnabled",
+        "negativePnlRenkoCloseOnly",
+        false
+    ));
+    objUiState.positivePnlSupportQty = Math.max(0, Math.floor(normalizeNumber(objUiState.positivePnlSupportQty, 10)));
+    objUiState.positivePnlMaxLegs = Math.max(1, Math.floor(normalizeNumber(objUiState.positivePnlMaxLegs, 1)));
+    objUiState.positivePnlTpPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlTpPct, 15)));
+    objUiState.positivePnlSlPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlSlPct, 85)));
+    objUiState.positivePnlTargetDelta = Math.max(0, normalizeNumber(objUiState.positivePnlTargetDelta, 0.53));
+    const vPositivePnlExpiryMode = String(objUiState.positivePnlExpiryMode || "1").trim();
+    objUiState.positivePnlExpiryMode = ["source", "1", "2", "4", "5", "6", "7"].includes(vPositivePnlExpiryMode)
+        ? vPositivePnlExpiryMode
+        : "1";
     if (!Number.isFinite(Number(objUiState.redOptQty))) {
         const vLegacyPct = Number(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct);
         const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));
@@ -514,8 +546,8 @@ function getLinkedLeaderPositionId(pPosition: RollingOptionsPtDePositionRecord):
     return String((pPosition.metadata as any)?.linkedLeaderPositionId || "").trim();
 }
 
-function isNegativePnlAdjustmentPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
-    return Boolean((pPosition.metadata as any)?.negativePnlAdjustment);
+function isPositivePnlSupportPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
+    return Boolean((pPosition.metadata as any)?.positivePnlSupport || (pPosition.metadata as any)?.negativePnlAdjustment);
 }
 
 function getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
@@ -656,7 +688,7 @@ async function closeOpenPositionsByInstrument(
     const objUiState = await getMergedUiState(pUserId);
     const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const objDirectTargetPositions = objOpenPositions.filter((objPosition) => {
-        if (pExcludeNegativePnlAdjustments && isNegativePnlAdjustmentPosition(objPosition)) {
+        if (pExcludeNegativePnlAdjustments && isPositivePnlSupportPosition(objPosition)) {
             return false;
         }
         if (!(pInstrumentType === "ALL" || objPosition.instrumentType === pInstrumentType)) {
@@ -672,7 +704,7 @@ async function closeOpenPositionsByInstrument(
         return vRuleSet === pRuleSet;
     });
     const objTargetPositions = collectLinkedFollowerPositions(objOpenPositions, objDirectTargetPositions)
-        .filter((objPosition) => !pExcludeNegativePnlAdjustments || !isNegativePnlAdjustmentPosition(objPosition));
+        .filter((objPosition) => !pExcludeNegativePnlAdjustments || !isPositivePnlSupportPosition(objPosition));
     const objDirectPositionIds = new Set(objDirectTargetPositions.map((objPosition) => objPosition.positionId));
 
     const objClosedPositions: RollingOptionsPtDePositionRecord[] = [];
@@ -775,7 +807,7 @@ function shouldCloseAllLegsOnNegativeClosedOption(
 ): boolean {
     return pClosedPositions.some((objPosition) => {
         return objPosition.instrumentType === "OPTION"
-            && !isNegativePnlAdjustmentPosition(objPosition)
+            && !isPositivePnlSupportPosition(objPosition)
             && Number(objPosition.pnl || 0) < 0;
     });
 }
@@ -791,15 +823,13 @@ export function renderRollingOptionsStranglePage(req: Request, res: Response): v
 export async function getRollingOptionsStrangleProfile(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objProfile = await loadRollingOptionsPtDeProfile(vUserId);
+    const objUiState = await getMergedUiState(vUserId);
 
     res.json({
         status: "success",
         data: {
             userId: vUserId,
-            uiState: {
-                ...getDefaultUiState(),
-                ...(objProfile?.uiState || {})
-            },
+            uiState: objUiState,
             updatedAt: objProfile?.updatedAt || ""
         }
     });
@@ -819,8 +849,20 @@ export async function saveRollingOptionsStrangleProfileController(req: Request, 
         updatedAt: ""
     };
 
-    const objSaved = await saveRollingOptionsPtDeProfile(objProfile);
-    res.json({ status: "success", data: objSaved });
+    await saveRollingOptionsPtDeProfile(objProfile);
+    const objNormalizedUiState = await getMergedUiState(vUserId);
+    const objSaved = await saveRollingOptionsPtDeProfile({
+        userId: vUserId,
+        uiState: objNormalizedUiState,
+        updatedAt: ""
+    });
+    res.json({
+        status: "success",
+        data: {
+            ...objSaved,
+            uiState: objNormalizedUiState
+        }
+    });
 }
 
 export async function getRollingOptionsStrangleStatus(req: Request, res: Response): Promise<void> {
@@ -1485,6 +1527,18 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     req: Request,
     res: Response
 ): Promise<void> {
+    void req;
+    res.status(409).json({
+        status: "warning",
+        message: "Positive PnL support is opened only by the server engine after one original SELL leg stays profitable for two consecutive cycles.",
+        data: { positions: [] }
+    });
+    return;
+
+    /*
+     * Browser-managed support opening was removed. The server strategy owns the
+     * persisted two-cycle trigger and rearm state.
+     *
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
     const vSymbol = String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC";
@@ -1499,7 +1553,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     const objSourceOptionPositions = objOpenPositions.filter((objPosition) => {
         return objPosition.status === "OPEN"
             && objPosition.instrumentType === "OPTION"
-            && !isNegativePnlAdjustmentPosition(objPosition);
+            && !isPositivePnlSupportPosition(objPosition);
     });
     if (objSourceOptionPositions.length < 2) {
         res.status(200).json({
@@ -1512,7 +1566,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     const bHasPositiveSourceOption = objOpenPositions.some((objPosition) => {
         return objPosition.status === "OPEN"
             && objPosition.instrumentType === "OPTION"
-            && !isNegativePnlAdjustmentPosition(objPosition)
+            && !isPositivePnlSupportPosition(objPosition)
             && Number(objPosition.pnl || 0) > 0;
     });
     if (!bHasPositiveSourceOption) {
@@ -1529,7 +1583,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
         .map((objPosition) => String((objPosition.metadata as any)?.sourcePositionId || "").trim())
         .filter(Boolean));
     const vMaxLegs = Math.max(1, Math.floor(normalizeNumber((objUiState as any).negativePnlMaxLegs, 1)));
-    let vRemainingLegSlots = Math.max(0, vMaxLegs - objOpenPositions.filter(isNegativePnlAdjustmentPosition).length);
+    let vRemainingLegSlots = Math.max(0, vMaxLegs - objOpenPositions.filter(isPositivePnlSupportPosition).length);
     if (!(vRemainingLegSlots > 0)) {
         res.status(200).json({
             status: "warning",
@@ -1557,7 +1611,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     }
 
     const vActiveAdjustmentSide = objOpenPositions
-        .filter(isNegativePnlAdjustmentPosition)
+        .filter(isPositivePnlSupportPosition)
         .map(getNegativePnlOptionSide)
         .find((vSide) => vSide === "CE" || vSide === "PE") || "";
     const objIncomingCandidates = arrIncoming.map((objIncoming) => {
@@ -1731,21 +1785,22 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
         message: `Opened ${objSavedPositions.length} negative PnL adjustment paper leg(s).`,
         data: { positions: objSavedPositions, runtime: objRuntime }
     });
+    */
 }
 
 export async function updateRollingOptionsStrangleNegativePnlSettings(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objUiState = await getMergedUiState(vUserId);
-    const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlTpPct, 15)));
-    const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).negativePnlSlPct, 85)));
-    const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).negativePnlHedgeDelta, 0.53));
+    const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlTpPct, 15)));
+    const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
+    const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
     let vLastTakeProfitDelta = 0;
     let vLastStopLossDelta = 0;
 
     for (const objPosition of objOpenPositions) {
-        if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION" || !isNegativePnlAdjustmentPosition(objPosition)) {
+        if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION" || !isPositivePnlSupportPosition(objPosition)) {
             continue;
         }
         const vEntryDelta = Math.abs(Number(objPosition.entryDelta || objPosition.exitDelta || vReEntryDelta || 0.53));
@@ -1775,8 +1830,8 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
     res.json({
         status: "success",
         message: vUpdated > 0
-            ? `Negative PnL option leg settings applied to ${vUpdated} open Action 3 leg${vUpdated === 1 ? "" : "s"}. TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
-            : `Negative PnL option leg settings saved. No open Action 3 negative PnL legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
+            ? `Positive PnL support settings applied to ${vUpdated} open Action 3 leg${vUpdated === 1 ? "" : "s"}. TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
+            : `Positive PnL support settings saved. No open Positive PnL support legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
         data: {
             updated: vUpdated
         }

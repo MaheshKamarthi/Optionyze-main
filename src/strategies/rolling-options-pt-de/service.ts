@@ -59,7 +59,8 @@ export class RollingOptionsPtDeService {
                 lastSpotPrice: null,
                 lastFuturesPrice: null,
                 lastSource: "simulated"
-            }
+            },
+            sourcePositiveCycleCountByPositionId: new Map()
         };
     }
 

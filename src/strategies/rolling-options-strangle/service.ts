@@ -40,15 +40,384 @@ import type {
     RollingOptionsPtDeMarketSnapshot
 } from "../rolling-options-pt-de/types";
 
+const RE_DELTA_TOLERANCE = 0.05;
+
+function normalizeNumber(pValue: unknown, pFallback: number): number {
+    const vNumber = Number(pValue);
+    return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function getLotSizeForSymbol(pSymbol: string): number {
+    const vSymbol = String(pSymbol || "").trim().toUpperCase();
+    return vSymbol === "ETH" ? 0.01 : 0.001;
+}
+
+function createPositionBase(pUserId: string): Pick<
+    RollingOptionsPtDePositionRecord,
+    "positionId" | "userId" | "groupId" | "cycleId" | "createdAt" | "updatedAt"
+> {
+    const vNow = new Date().toISOString();
+    return {
+        positionId: crypto.randomUUID(),
+        userId: pUserId,
+        groupId: `group_${Date.now()}`,
+        cycleId: `manual_${Date.now()}`,
+        createdAt: vNow,
+        updatedAt: vNow
+    };
+}
+
+function getOptionDeltaTargetsFromPct(
+    pEntryDelta: number,
+    pAction: "BUY" | "SELL",
+    pTakeProfitPct: number,
+    pStopLossPct: number
+): { takeProfitDelta: number; stopLossDelta: number; } {
+    const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
+    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
+    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
+    const vStopLossMove = clamp01(pStopLossPct / 100);
+    const vTakeProfitDelta = pAction === "BUY"
+        ? clamp01(vEntryDelta + vTakeProfitMove)
+        : clamp01(vEntryDelta - vTakeProfitMove);
+    const vRawStopLoss = pAction === "BUY" ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
+    const vStopLossDelta = pAction === "SELL" && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    return {
+        takeProfitDelta: vTakeProfitDelta,
+        stopLossDelta: vStopLossDelta
+    };
+}
+
+function getSimulatedSpotPrice(pSymbol: string): number {
+    const vBase = String(pSymbol || "").trim().toUpperCase() === "ETH" ? 3200 : 64000;
+    return Number((vBase + ((Date.now() % 1000) - 500) / 10).toFixed(2));
+}
+
+function getSimulatedFuturePrice(pSymbol: string): number {
+    const vSpotPrice = getSimulatedSpotPrice(pSymbol);
+    return Number((vSpotPrice * 1.0012).toFixed(2));
+}
+
+function getSimulatedOptionPrice(pSymbol: string, pDelta: number): number {
+    const vSpotPrice = getSimulatedSpotPrice(pSymbol);
+    const vPremiumFactor = Math.max(0.0025, Math.min(Math.abs(pDelta) * 0.018, 0.02));
+    return Number((vSpotPrice * vPremiumFactor).toFixed(2));
+}
+
+async function getLiveOrFallbackMarketSnapshot(pUiState: Record<string, unknown>): Promise<{
+    spotPrice: number;
+    futuresPrice: number;
+    bestBidPrice: number;
+    bestAskPrice: number;
+    ts: string;
+    priceSource: "public" | "simulated";
+}> {
+    const objConfig = buildConfigFromUiState(pUiState);
+    ensureLiveTickerSymbols([objConfig.contractName]);
+
+    try {
+        const objSnapshot = await getLiveMarketSnapshot(objConfig);
+        return {
+            spotPrice: objSnapshot.spotPrice,
+            futuresPrice: objSnapshot.futuresPrice,
+            bestBidPrice: objSnapshot.bestBidPrice,
+            bestAskPrice: objSnapshot.bestAskPrice,
+            ts: objSnapshot.ts,
+            priceSource: objSnapshot.priceSource
+        };
+    }
+    catch (_objError) {
+        const vNow = new Date().toISOString();
+        const vSpotPrice = getSimulatedSpotPrice(objConfig.symbol);
+        const vFuturesPrice = getSimulatedFuturePrice(objConfig.symbol);
+        return {
+            spotPrice: vSpotPrice,
+            futuresPrice: vFuturesPrice,
+            bestBidPrice: Number((vFuturesPrice * 0.9998).toFixed(2)),
+            bestAskPrice: Number((vFuturesPrice * 1.0002).toFixed(2)),
+            ts: vNow,
+            priceSource: "simulated"
+        };
+    }
+}
+
+async function getLiveOrFallbackOptionQuote(
+    pUiState: Record<string, unknown>,
+    pOptionSide: "CE" | "PE",
+    pDelta: number,
+    pMaxDeltaGap?: number
+): Promise<{
+    contractName: string;
+    strike: number;
+    expiryDate: string;
+    entryPrice: number;
+    bestBid: number | null;
+    bestAsk: number | null;
+    entryDelta: number;
+    metadata: Record<string, unknown>;
+    usedNextDayFallback?: boolean;
+    contractSymbol?: string;
+    delta?: number;
+    gamma?: number;
+    theta?: number;
+    vega?: number;
+    markPrice?: number;
+    requestedExpiryDate?: string;
+    resolvedExpiryDate?: string;
+}> {
+    const objConfig = buildConfigFromUiState(pUiState);
+    const objSnapshot = await getLiveOrFallbackMarketSnapshot(pUiState);
+    const vFallbackStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
+
+    try {
+        const objLiveContract = await findBestLiveOptionContract(objConfig, pOptionSide, pDelta, false, pMaxDeltaGap);
+        if (objLiveContract?.contractSymbol) {
+            ensureLiveTickerSymbols([objLiveContract.contractSymbol]);
+        }
+        if (objLiveContract) {
+            return {
+                contractName: objLiveContract.contractSymbol,
+                strike: objLiveContract.strike,
+                expiryDate: objLiveContract.expiryDate,
+                entryPrice: objLiveContract.markPrice,
+                bestBid: objLiveContract.bestBid,
+                bestAsk: objLiveContract.bestAsk,
+                entryDelta: Math.abs(objLiveContract.delta),
+                contractSymbol: objLiveContract.contractSymbol,
+                delta: objLiveContract.delta,
+                gamma: objLiveContract.gamma,
+                theta: objLiveContract.theta,
+                vega: objLiveContract.vega,
+                markPrice: objLiveContract.markPrice,
+                usedNextDayFallback: Boolean(objLiveContract.usedNextDayFallback),
+                requestedExpiryDate: objLiveContract.requestedExpiryDate,
+                resolvedExpiryDate: objLiveContract.expiryDate,
+                metadata: {
+                    entrySpotPrice: objSnapshot.spotPrice,
+                    productSymbol: objLiveContract.contractSymbol,
+                    productDelta: objLiveContract.delta,
+                    productGamma: objLiveContract.gamma,
+                    productTheta: objLiveContract.theta,
+                    productVega: objLiveContract.vega,
+                    productMarkPrice: objLiveContract.markPrice,
+                    productBestBid: objLiveContract.bestBid,
+                    productBestAsk: objLiveContract.bestAsk,
+                    requestedExpiryDate: objLiveContract.requestedExpiryDate,
+                    resolvedExpiryDate: objLiveContract.expiryDate,
+                    usedNextDayFallback: Boolean(objLiveContract.usedNextDayFallback),
+                    source: objSnapshot.priceSource === "public" ? "demo-manual-option-live" : "demo-manual-option-simulated"
+                }
+            };
+        }
+    }
+    catch (_objError) {
+    }
+
+    const vFallbackPrice = getSimulatedOptionPrice(objConfig.symbol, pDelta);
+    return {
+        contractName: `${objConfig.contractName} ${pOptionSide}`,
+        strike: vFallbackStrike,
+        expiryDate: objConfig.expiryDate,
+        entryPrice: vFallbackPrice,
+        bestBid: Number((vFallbackPrice * 0.995).toFixed(2)),
+        bestAsk: Number((vFallbackPrice * 1.005).toFixed(2)),
+        entryDelta: pDelta,
+        metadata: {
+            entrySpotPrice: objSnapshot.spotPrice,
+            productSymbol: "",
+            productDelta: pDelta,
+            productGamma: 0,
+            productTheta: 0,
+            productVega: 0,
+            source: "demo-manual-option-simulated"
+        }
+    };
+}
+
+async function loadMergedUiState(pUserId: string): Promise<Record<string, unknown>> {
+    const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
+    const objUiState = {
+        ...getDefaultUiState(),
+        ...(objProfile?.uiState || {})
+    };
+    if (!Number.isFinite(Number(objUiState.redOptQty))) {
+        const vLegacyPct = Number(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct);
+        const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));
+        objUiState.redOptQty = Number.isFinite(vLegacyPct)
+            ? Math.max(0, Math.round(vBaseQty * vLegacyPct / 100))
+            : 1;
+    }
+    else {
+        objUiState.redOptQty = Math.max(0, Math.floor(Number(objUiState.redOptQty)));
+    }
+    if (!Number.isFinite(Number(objUiState.greenOptQty))) {
+        const vLegacyPct = Number(objUiState.greenOptQtyPct);
+        const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));
+        objUiState.greenOptQty = Number.isFinite(vLegacyPct)
+            ? Math.max(0, Math.round(vBaseQty * vLegacyPct / 100))
+            : 1;
+    }
+    else {
+        objUiState.greenOptQty = Math.max(0, Math.floor(Number(objUiState.greenOptQty)));
+    }
+    if (!Number.isFinite(Number(objUiState.greenReDelta))) {
+        objUiState.greenReDelta = normalizeNumber(objUiState.reDelta1, 0.53);
+    }
+    if (!Number.isFinite(Number(objUiState.greenTpDelta))) {
+        objUiState.greenTpDelta = normalizeNumber(objUiState.deltaTp1, 0.15);
+    }
+    if (!Number.isFinite(Number(objUiState.greenSlDelta))) {
+        objUiState.greenSlDelta = normalizeNumber(objUiState.deltaSl1, 0.85);
+    }
+    if (!Number.isFinite(Number(objUiState.greenTpPct))) {
+        const vLegacy = normalizeNumber(objUiState.greenTpDelta, 0.15);
+        objUiState.greenTpPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.greenSlPct))) {
+        const vLegacy = normalizeNumber(objUiState.greenSlDelta, 0.85);
+        objUiState.greenSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.redTpPct))) {
+        const vLegacy = normalizeNumber((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1, 0.15);
+        objUiState.redTpPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    if (!Number.isFinite(Number(objUiState.redSlPct))) {
+        const vLegacy = normalizeNumber((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1, 0.85);
+        objUiState.redSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
+    }
+    objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
+    objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
+    const vExpiryMode = String(objUiState.expiryMode1 || "1");
+    return {
+        ...objUiState,
+        expiryDate1: resolveExpiryDateByMode(vExpiryMode)
+    };
+}
+
+function getDefaultUiState(): Record<string, unknown> {
+    return {
+        symbol: "BTC",
+        manualFutQty: 1,
+        manualFutOrderType: "market_order",
+        manualFutAction: "SELL",
+        futuresEnabled: true,
+        action1: "sell",
+        legSide1: "ce",
+        expiryMode1: "1",
+        expiryDate1: "",
+        manualOptQty1: 1,
+        reDelta1: 0.53,
+        deltaTp1: 0.15,
+        deltaSl1: 0.85,
+        reEnter1: false,
+        action2: "none",
+        legSide2: "pe",
+        expiryMode2: "1",
+        expiryDate2: "",
+        manualOptQty2: 1,
+        reEnter2: false,
+        greenOptQty2: 1,
+        greenReDelta2: 0.53,
+        greenTpPct2: 15,
+        greenSlPct2: 85,
+        redOptQty2: 1,
+        redReDelta2: 0.53,
+        redTpPct2: 15,
+        redSlPct2: 85,
+        redOptQty: 1,
+        redTpPct: 15,
+        redSlPct: 85,
+        greenOptQty: 1,
+        greenReDelta: 0.53,
+        greenTpDelta: 0.15,
+        greenSlDelta: 0.85,
+        greenTpPct: 15,
+        greenSlPct: 85,
+        trailGreenTp1Enabled: true,
+        trailGreenSl1Enabled: true,
+        trailRedTp1Enabled: true,
+        trailRedSl1Enabled: true,
+        renkoFeedEnabled: true,
+        trailGreenTp2Enabled: true,
+        trailGreenSl2Enabled: true,
+        trailRedTp2Enabled: true,
+        trailRedSl2Enabled: true,
+        renkoFeedPts: 10,
+        renkoFeedPriceSrc: "spot_price",
+        demoBalance: 10000,
+        closeAllLegsOnAnyClose: false,
+        skipRenkoEntryNoOpenOptions: false,
+        positivePnlSupportEnabled: true,
+        positivePnlSupportAction: "buy",
+        positivePnlSupportQty: 10,
+        positivePnlMaxLegs: 1,
+        positivePnlTpPct: 15,
+        positivePnlSlPct: 85,
+        positivePnlExpiryMode: "1",
+        positivePnlTargetDelta: 0.53,
+        positivePnlAdverseRenkoCloseEnabled: false,
+        optionsPnl: 0,
+        telegramAlertsEnabled: false,
+        telegramAlertTypes: [
+            "engine_started",
+            "engine_stopped",
+            "engine_error",
+            "sl_triggered",
+            "tp_triggered",
+            "reentry_opened",
+            "kill_switch"
+        ],
+        closedFromDate: "",
+        closedToDate: ""
+    };
+}
+
+function isPositivePnlSupportPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
+    const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
+    return Boolean(objMetadata.positivePnlSupport || objMetadata.negativePnlAdjustment);
+}
+
+function migratePositivePnlSettings(
+    pUiState: Record<string, unknown>,
+    pSavedUiState?: Record<string, unknown> | null
+): Record<string, unknown> {
+    const objSaved = pSavedUiState || {};
+    const getMigratedValue = (pPositiveKey: string, pLegacyKey: string, pFallback: unknown): unknown => {
+        if (objSaved[pPositiveKey] !== undefined) {
+            return objSaved[pPositiveKey];
+        }
+        if (objSaved[pLegacyKey] !== undefined) {
+            return objSaved[pLegacyKey];
+        }
+        return pUiState[pPositiveKey] ?? pFallback;
+    };
+    return {
+        ...pUiState,
+        positivePnlSupportEnabled: Boolean(getMigratedValue("positivePnlSupportEnabled", "negativePnlHedgeEnabled", true)),
+        positivePnlSupportAction: "buy",
+        positivePnlSupportQty: getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10),
+        positivePnlMaxLegs: getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1),
+        positivePnlTpPct: getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15),
+        positivePnlSlPct: getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85),
+        positivePnlExpiryMode: getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1"),
+        positivePnlTargetDelta: getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53),
+        positivePnlAdverseRenkoCloseEnabled: Boolean(getMigratedValue(
+            "positivePnlAdverseRenkoCloseEnabled",
+            "negativePnlRenkoCloseOnly",
+            false
+        ))
+    };
+}
+
 export class RollingOptionsStrangleService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
-    private static readonly RE_DELTA_TOLERANCE = 0.05;
 
     public constructor(private readonly runnerManager: RunnerManager) {}
 
     private async loadUiState(pUserId: string): Promise<Record<string, unknown>> {
         const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
-        const objUiState = {
+        const objSavedUiState = (objProfile?.uiState || {}) as Record<string, unknown>;
+        const objUiState = migratePositivePnlSettings({
             symbol: "BTC",
             manualFutQty: 1,
             manualFutOrderType: "market_order",
@@ -100,17 +469,17 @@ export class RollingOptionsStrangleService {
             redReDelta2: 0.53,
             redTpPct2: 15,
             redSlPct2: 85,
-            negativePnlHedgeEnabled: true,
-            negativePnlAction3: "buy",
-            negativePnlHedgeQty: 10,
-            negativePnlMaxLegs: 1,
-            negativePnlTpPct: 15,
-            negativePnlSlPct: 85,
-            negativePnlHedgeExpiryMode: "1",
-            negativePnlHedgeDelta: 0.53,
-            negativePnlRecoveryTarget: 0,
-            ...(objProfile?.uiState || {})
-        } as Record<string, unknown>;
+            positivePnlSupportEnabled: true,
+            positivePnlSupportAction: "buy",
+            positivePnlSupportQty: 10,
+            positivePnlMaxLegs: 1,
+            positivePnlTpPct: 15,
+            positivePnlSlPct: 85,
+            positivePnlExpiryMode: "1",
+            positivePnlTargetDelta: 0.53,
+            positivePnlAdverseRenkoCloseEnabled: false,
+            ...objSavedUiState
+        } as Record<string, unknown>, objSavedUiState);
 
         (objUiState as any).addOneLotFuture = false;
         return objUiState;
@@ -171,7 +540,8 @@ export class RollingOptionsStrangleService {
                 lastSpotPrice: null,
                 lastFuturesPrice: null,
                 lastSource: "simulated"
-            }
+            },
+            sourcePositiveCycleCountByPositionId: new Map()
         };
     }
 
@@ -815,7 +1185,7 @@ export class RollingOptionsStrangleService {
                 vOptionSide,
                 vTargetDelta,
                 false,
-                pUseReEntryDelta ? RollingOptionsStrangleService.RE_DELTA_TOLERANCE : undefined
+                pUseReEntryDelta ? RE_DELTA_TOLERANCE : undefined
             );
             if (pUseReEntryDelta && !objLiveContract?.contractSymbol) {
                 return [];
@@ -1188,6 +1558,7 @@ export class RollingOptionsStrangleService {
     ): Promise<RollingOptionsPtDePositionRecord[]> {
         const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
             .filter((objPosition) => objPosition?.instrumentType === "OPTION")
+            .filter((objPosition) => !isPositivePnlSupportPosition(objPosition))
             .filter((objPosition) => !Boolean((objPosition.metadata as any)?.linkedClosedByLink));
         if (arrClosedOptions.length <= 0) {
             return [];
@@ -1199,10 +1570,12 @@ export class RollingOptionsStrangleService {
         const bFuturesEnabled = Boolean((objConfig1 as any).futuresEnabled ?? true);
         const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
         const objOpenedPositions: RollingOptionsPtDePositionRecord[] = [];
+        const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), objConfig1);
+        const vLotSize = getLotSizeForSymbol(objConfig1.symbol);
+        const vNow = objSnapshot.ts;
 
         for (const objClosedOption of arrClosedOptions) {
             const vRuleSet: 1 | 2 = Math.floor(Number((objClosedOption.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
-            const objConfig = vRuleSet === 2 ? objConfig2 : objConfig1;
             const vStoredRuleColor = String(objClosedOption.metadata?.ruleColor || "").trim().toUpperCase();
             const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled
                 ? (vCurrentRenkoColor === "G" ? "G" : "R")
@@ -1215,7 +1588,7 @@ export class RollingOptionsStrangleService {
             const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
                 return objRow.status === "OPEN"
                     && objRow.instrumentType === "OPTION"
-                    && !Boolean((objRow.metadata as any)?.negativePnlAdjustment)
+                    && !isPositivePnlSupportPosition(objRow)
                     && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vRuleSet
                     && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
             });
@@ -1229,29 +1602,90 @@ export class RollingOptionsStrangleService {
             const vBaseQty = bFuturesEnabled
                 ? Math.max(0, vFutureQty || Number(objClosedOption.qty || 0))
                 : Math.max(0, Number(objClosedOption.qty || 0));
-            const vReEntryQty = this.getConfiguredOptionQty(
-                objUiState,
-                objConfig,
-                vRuleSet,
-                vActiveRuleColor,
-                vBaseQty
-            );
+
+            // Use Action 3 settings for replacement legs
+            const vReEntryQty = Math.max(0, Math.floor(normalizeNumber((objUiState as any).positivePnlSupportQty, 1)));
             if (!(vReEntryQty > 0)) {
                 continue;
             }
 
-            const objOpened = await this.openOptionPositions(
-                pUserId,
-                objConfig,
-                vReEntryQty,
-                `${pReason} replacement option`,
-                vActiveRuleColor,
-                true,
-                vRuleSet,
-                [vOptionSide],
-                bLinkedLeaderStillOpen ? { linkedLeaderPositionId: vLinkedLeaderPositionId } : {}
-            );
-            objOpenedPositions.push(...objOpened);
+            const vAction = "BUY";
+            const vTargetDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
+            const vExpiryMode = String((objUiState as any).positivePnlExpiryMode || "1").trim() || "1";
+            const vExpiryDate = String(objUiState.expiryDate1 || "").trim();
+
+            const objQuoteUiState = {
+                ...objUiState,
+                expiryMode1: vExpiryMode === "source" ? String((objClosedOption.metadata as any)?.expiryMode || objUiState.expiryMode1 || "1") : vExpiryMode,
+                expiryDate1: vExpiryMode === "source"
+                    ? (vExpiryDate || String(objClosedOption.expiryDate || objUiState.expiryDate1 || ""))
+                    : vExpiryDate
+            };
+            const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
+            const vEntryPrice = this.getOptionEntryPriceForAction(objQuote, vAction);
+            const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
+            const vConfiguredTpPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlTpPct, 15)));
+            const vConfiguredSlPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
+            const objDeltaTargets = getOptionDeltaTargetsFromPct(vEntryDelta, vAction, vConfiguredTpPct, vConfiguredSlPct);
+            const vTakeProfitDelta = objDeltaTargets.takeProfitDelta;
+            const vStopLossDelta = objDeltaTargets.stopLossDelta;
+
+            const objPosition: RollingOptionsPtDePositionRecord = {
+                ...createPositionBase(pUserId),
+                status: "OPEN",
+                symbol: objConfig1.symbol,
+                contractName: objQuote.contractName,
+                instrumentType: "OPTION",
+                optionSide: vOptionSide,
+                action: vAction,
+                strike: objQuote.strike,
+                expiryDate: objQuote.expiryDate || vExpiryDate || objClosedOption.expiryDate,
+                qty: vReEntryQty,
+                lotSize: vLotSize,
+                entryPrice: vEntryPrice,
+                exitPrice: null,
+                markPrice: objQuote.entryPrice,
+                entryDelta: vEntryDelta,
+                exitDelta: vEntryDelta,
+                charges: estimatePositionCharges("OPTION", vReEntryQty, vLotSize, vEntryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
+                pnl: 0,
+                openedReason: `${pReason} replacement option`,
+                closedReason: "",
+                openedAt: vNow,
+                closedAt: "",
+                metadata: {
+                    ...(objQuote.metadata || {}),
+                    deltaTakeProfit: vTakeProfitDelta,
+                    deltaStopLoss: vStopLossDelta,
+                    takeProfitDelta: vTakeProfitDelta,
+                    stopLossDelta: vStopLossDelta,
+                    configuredTakeProfitPct: vConfiguredTpPct,
+                    configuredStopLossPct: vConfiguredSlPct,
+                    reEntryDelta: vTargetDelta,
+                    reEnter: false,
+                    ruleColor: vOptionSide === "PE" ? "R" : "G",
+                    ruleSet: vRuleSet,
+                    entrySpotPrice: objSnapshot.spotPrice,
+                    productSymbol: objQuote.contractSymbol || "",
+                    productDelta: objQuote.delta || vTargetDelta,
+                    productGamma: objQuote.gamma || 0,
+                    productTheta: objQuote.theta || 0,
+                    productVega: objQuote.vega || 0,
+                    productMarkPrice: objQuote.entryPrice,
+                    productBestBid: objQuote.bestBid,
+                    productBestAsk: objQuote.bestAsk,
+                    expiryMode: vExpiryMode,
+                    requestedExpiryDate: vExpiryDate,
+                    resolvedExpiryDate: objQuote.expiryDate,
+                    usedNextDayExpiryFallback: Boolean(objQuote.usedNextDayFallback),
+                    source: objSnapshot.priceSource === "public" ? "server-strategy-live" : "server-strategy-simulated",
+                    ...(bLinkedLeaderStillOpen ? { linkedLeaderPositionId: vLinkedLeaderPositionId } : {})
+                },
+                createdAt: vNow,
+                updatedAt: vNow
+            };
+
+            objOpenedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
         }
 
         await this.closeOrphanReplacementOptionPositions(pUserId, objConfig1);
@@ -1282,6 +1716,45 @@ export class RollingOptionsStrangleService {
             pConfig,
             "Replacement option closed because all other legs are closed"
         );
+    }
+
+    private async closeReplacementWhenOriginalLegsPositive(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const arrReplacementOptions = arrOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
+        if (arrReplacementOptions.length <= 0) {
+            return [];
+        }
+
+        const arrClosed: RollingOptionsPtDePositionRecord[] = [];
+        for (const objReplacement of arrReplacementOptions) {
+            const vRuleSet: 1 | 2 = Math.floor(Number((objReplacement.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
+            // Get original legs (non-replacement, non-negative PnL) for this rule set
+            const arrOriginalLegs = arrOpenPositions.filter((objPosition) => {
+                const bIsOption = objPosition.instrumentType === "OPTION";
+                const bIsReplacement = this.isReplacementOptionPosition(objPosition);
+                const bIsPositivePnlSupport = isPositivePnlSupportPosition(objPosition);
+                const objPositionRuleSet = Math.floor(Number((objPosition.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
+                return bIsOption && !bIsReplacement && !bIsPositivePnlSupport && objPositionRuleSet === vRuleSet;
+            });
+
+            // Check if all original legs for this rule set are in positive PnL
+            const bAllLegsPositive = arrOriginalLegs.length > 0 && arrOriginalLegs.every((objLeg) => {
+                const vPnl = Number(objLeg.pnl || 0);
+                return Number.isFinite(vPnl) && vPnl >= 0;
+            });
+
+            if (bAllLegsPositive) {
+                const [objClosed] = await this.closePositions([objReplacement], pConfig, "Replacement option closed because all original legs are positive");
+                if (objClosed) {
+                    arrClosed.push(objClosed);
+                }
+            }
+        }
+
+        return arrClosed;
     }
 
     private getRenkoOptionQty(pFutureQty: number, pQtyPct: number): number {
@@ -1743,14 +2216,17 @@ export class RollingOptionsStrangleService {
         const vCloseReason = pReason === "sl" ? "SL triggered" : "TP triggered";
 
         const objClosedPositions = await this.closePositions([pPosition], objTriggeredConfig, vCloseReason);
+        if (isPositivePnlSupportPosition(pPosition)) {
+            return;
+        }
         const bShouldCloseAllLegs = objClosedPositions.some((objClosedPosition) => {
             return objClosedPosition.instrumentType === "OPTION"
-                && !Boolean((objClosedPosition.metadata as any)?.negativePnlAdjustment)
+                && !isPositivePnlSupportPosition(objClosedPosition)
                 && Number(objClosedPosition.pnl || 0) < 0;
         });
         if (Boolean((objUiState as any).closeAllLegsOnAnyClose) && bShouldCloseAllLegs) {
             const objRemaining = (await listRollingOptionsPtDeOpenPositions(pUserId))
-                .filter((objPosition) => !Boolean((objPosition.metadata as any)?.negativePnlAdjustment));
+                .filter((objPosition) => !isPositivePnlSupportPosition(objPosition));
             let objAllClosedPositions = objClosedPositions;
             if (objRemaining.length > 0) {
                 const objCloseAllPositions = await this.closePositions(objRemaining, objTriggeredConfig, "Close all legs switch");
@@ -1763,7 +2239,7 @@ export class RollingOptionsStrangleService {
         await this.reEnterClosedOptionPositions(pUserId, objClosedPositions, pReason === "sl" ? "SL" : "TP");
     }
 
-    private getNegativePnlOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
+    private getOptionSide(pPosition: RollingOptionsPtDePositionRecord): "CE" | "PE" | "" {
         const vDirectSide = String(pPosition.optionSide || (pPosition.metadata as any)?.optionSide || "").trim().toUpperCase();
         if (vDirectSide === "CE" || vDirectSide === "PE") {
             return vDirectSide;
@@ -1779,213 +2255,207 @@ export class RollingOptionsStrangleService {
         return "";
     }
 
-    private async manageNegativePnlAdjustments(
+    private async managePositivePnlSupports(
         pUserId: string,
         pUiState: Record<string, unknown>,
         pBaseConfig: RollingOptionsPtDeConfig
     ): Promise<void> {
-        if (!Boolean((pUiState as any).negativePnlHedgeEnabled ?? true)) {
-            return;
-        }
-
+        const bSupportEnabled = Boolean((pUiState as any).positivePnlSupportEnabled ?? true);
+        const objState = this.getOrCreateState(pUserId);
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
-        const arrClosedPositions = await listRollingOptionsPtDeClosedPositions(pUserId);
-        const arrOpenOptions = arrOpenPositions.filter((objPosition) => objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION");
-        const arrSourceOpenOptions = arrOpenOptions.filter((objPosition) => {
-            return !Boolean((objPosition.metadata as any)?.negativePnlAdjustment);
+        const arrOpenOptions = arrOpenPositions.filter((objPosition) => {
+            return objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION";
         });
-        if (arrSourceOpenOptions.length < 2) {
-            return;
-        }
-        const bHasPositiveSourceOption = arrOpenOptions.some((objPosition) => {
-            return !Boolean((objPosition.metadata as any)?.negativePnlAdjustment)
-                && Number(objPosition.pnl || 0) > 0;
+        const arrSupportPositions = arrOpenOptions.filter(isPositivePnlSupportPosition);
+        const arrOriginalSellOptions = arrOpenOptions.filter((objPosition) => {
+            return String(objPosition.action || "").trim().toUpperCase() === "SELL"
+                && !isPositivePnlSupportPosition(objPosition)
+                && !this.isReplacementOptionPosition(objPosition);
         });
-        if (!bHasPositiveSourceOption) {
-            return;
-        }
-        const objSourceById = new Map(arrOpenOptions
-            .filter((objPosition) => !Boolean((objPosition.metadata as any)?.negativePnlAdjustment))
-            .map((objPosition) => [String(objPosition.positionId || "").trim(), objPosition]));
-        const arrAdjustmentPositions = arrOpenOptions.filter((objPosition) => Boolean((objPosition.metadata as any)?.negativePnlAdjustment));
-        const objAdjustmentsBySource = new Map<string, RollingOptionsPtDePositionRecord[]>();
-        const objClosedAdjustmentPnlBySource = new Map<string, number>();
-
-        for (const objAdjustment of arrAdjustmentPositions) {
-            const vSourcePositionId = String((objAdjustment.metadata as any)?.sourcePositionId || "").trim();
-            if (!vSourcePositionId) {
-                continue;
-            }
-            const arrGroup = objAdjustmentsBySource.get(vSourcePositionId) || [];
-            arrGroup.push(objAdjustment);
-            objAdjustmentsBySource.set(vSourcePositionId, arrGroup);
-        }
-
-        for (const objClosed of arrClosedPositions) {
-            if (!Boolean((objClosed.metadata as any)?.negativePnlAdjustment)) {
-                continue;
-            }
-            const vSourcePositionId = String((objClosed.metadata as any)?.sourcePositionId || "").trim();
-            if (!vSourcePositionId) {
-                continue;
-            }
-            const vPnl = Number(objClosed.pnl || 0);
-            objClosedAdjustmentPnlBySource.set(
-                vSourcePositionId,
-                (objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0) + (Number.isFinite(vPnl) ? vPnl : 0)
-            );
-        }
-
-        for (const [vSourcePositionId, arrAdjustments] of objAdjustmentsBySource.entries()) {
+        const objSourceById = new Map(arrOriginalSellOptions.map((objPosition) => [objPosition.positionId, objPosition]));
+        const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
+            const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            if (!objSource) {
-                await this.closePositions(arrAdjustments, pBaseConfig, "Negative PnL source closed");
-                continue;
-            }
-
-            const vTotalGroupPnl = Number(objSource.pnl || 0) + (objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0) + arrAdjustments.reduce((sum, objAdjustment) => {
-                const vPnl = Number(objAdjustment.pnl || 0);
-                return sum + (Number.isFinite(vPnl) ? vPnl : 0);
-            }, 0);
-            const vRecoveryTarget = Number.isFinite(Number((pUiState as any).negativePnlRecoveryTarget))
-                ? Number((pUiState as any).negativePnlRecoveryTarget)
-                : 0;
-            if (vTotalGroupPnl >= vRecoveryTarget) {
-                await this.closePositions(arrAdjustments, pBaseConfig, "Negative PnL recovery target reached");
-                await logRollingOptionsPtDeEvent({
-                    userId: pUserId,
-                    eventType: "manual_action",
-                    severity: "success",
-                    title: "Negative PnL Adjustment Closed",
-                    message: "Closed adjustment leg(s) because source plus adjustment PnL reached the recovery target.",
-                    payload: {
-                        symbol: pBaseConfig.symbol,
-                        sourcePositionId: vSourcePositionId,
-                        totalGroupPnl: Number(vTotalGroupPnl.toFixed(3)),
-                        recoveryTarget: vRecoveryTarget,
-                        reason: "negative_pnl_recovery_target"
-                    }
-                });
-            }
-        }
-
-        const vManualHedgeQty = Math.max(0, Math.floor(Number((pUiState as any).negativePnlHedgeQty || 10)));
-        if (!(vManualHedgeQty > 0)) {
-            return;
-        }
-        const vMaxLegs = Math.max(1, Math.floor(Number((pUiState as any).negativePnlMaxLegs || 1)));
-        let vRemainingLegSlots = Math.max(0, vMaxLegs - arrAdjustmentPositions.length);
-        if (!(vRemainingLegSlots > 0)) {
-            return;
-        }
-
-        const arrNegativeSourceCandidates = Array.from(objSourceById.values()).filter((objSource) => {
-            const vSourcePositionId = String(objSource.positionId || "").trim();
-            const vSourcePnl = Number(objSource.pnl || 0);
-            if (!vSourcePositionId || !(Number.isFinite(vSourcePnl) && vSourcePnl < 0)) {
-                return false;
-            }
-            const vClosedAdjustmentPnl = objClosedAdjustmentPnlBySource.get(vSourcePositionId) || 0;
-            const vRecoveredGroupPnl = vSourcePnl + vClosedAdjustmentPnl;
-            const vRecoveryTarget = Number.isFinite(Number((pUiState as any).negativePnlRecoveryTarget))
-                ? Number((pUiState as any).negativePnlRecoveryTarget)
-                : 0;
-            if (vRecoveredGroupPnl >= vRecoveryTarget) {
-                return false;
-            }
-            if ((objAdjustmentsBySource.get(vSourcePositionId) || []).length > 0) {
-                return false;
-            }
-            return Boolean(this.getNegativePnlOptionSide(objSource));
+            return !objSource || Number(objSource.pnl || 0) <= 0;
         });
-        const vActiveAdjustmentSide = arrAdjustmentPositions
-            .map((objPosition) => this.getNegativePnlOptionSide(objPosition))
-            .find((vSide) => vSide === "CE" || vSide === "PE") || "";
-        const vTargetOptionSide = vActiveAdjustmentSide || arrNegativeSourceCandidates.reduce<"CE" | "PE" | "">((vSelectedSide, objSource) => {
-            const vSourceSide = this.getNegativePnlOptionSide(objSource);
-            const vSourceLoss = Math.abs(Number(objSource.pnl || 0));
-            const objSelectedSource = arrNegativeSourceCandidates.find((objCandidate) => this.getNegativePnlOptionSide(objCandidate) === vSelectedSide);
-            const vSelectedLoss = Math.abs(Number(objSelectedSource?.pnl || 0));
-            return vSourceSide && vSourceLoss > vSelectedLoss ? vSourceSide : vSelectedSide;
-        }, "");
+        if (arrSupportsToClose.length > 0) {
+            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source became non-positive or closed");
+        }
 
-        for (const objSource of arrNegativeSourceCandidates) {
-            if (vRemainingLegSlots <= 0) {
-                break;
+        const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
+        const arrActiveSupports = arrSupportPositions.filter((objPosition) => !objClosedSupportIds.has(objPosition.positionId));
+        const objActiveSupportSourceIds = new Set(arrActiveSupports
+            .map((objPosition) => String((objPosition.metadata as any)?.sourcePositionId || "").trim())
+            .filter(Boolean));
+
+        for (const vTrackedSourceId of Array.from(objState.sourcePositiveCycleCountByPositionId.keys())) {
+            if (!objSourceById.has(vTrackedSourceId)) {
+                objState.sourcePositiveCycleCountByPositionId.delete(vTrackedSourceId);
             }
-            const vOptionSide = this.getNegativePnlOptionSide(objSource);
-            if (!vOptionSide || vOptionSide !== vTargetOptionSide) {
+        }
+
+        const saveSourceTriggerState = async (
+            pSource: RollingOptionsPtDePositionRecord,
+            pArmed: boolean,
+            pPositiveCycleCount: number
+        ): Promise<void> => {
+            const objMetadata = (pSource.metadata || {}) as Record<string, unknown>;
+            const vCurrentArmed = objMetadata.positivePnlSupportArmed !== false;
+            const vCurrentCount = Math.max(0, Math.floor(Number(objMetadata.positivePnlCycleCount || 0)));
+            if (vCurrentArmed === pArmed && vCurrentCount === pPositiveCycleCount) {
+                return;
+            }
+            await saveRollingOptionsPtDePosition({
+                ...pSource,
+                metadata: {
+                    ...objMetadata,
+                    positivePnlSupportArmed: pArmed,
+                    positivePnlCycleCount: pPositiveCycleCount
+                },
+                updatedAt: ""
+            });
+        };
+
+        for (const objSource of arrOriginalSellOptions) {
+            const vSourcePnl = Number(objSource.pnl || 0);
+            if (vSourcePnl <= 0) {
+                objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
+                await saveSourceTriggerState(objSource, true, 0);
                 continue;
             }
-
-            const vSourcePositionId = String(objSource.positionId || "").trim();
-            const vSourcePnl = Number(objSource.pnl || 0);
-            const vAction3: "buy" | "sell" = String((pUiState as any).negativePnlAction3 || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
-            const vRuleSet = Math.floor(Number((objSource.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
-            const objRuleConfig = this.buildRuleSetConfig(pUiState, vRuleSet);
-            const vHedgeExpiryModeRaw = String((pUiState as any).negativePnlHedgeExpiryMode || "1").trim();
-            const vHedgeExpiryMode = ["1", "2", "4", "5", "6", "7"].includes(vHedgeExpiryModeRaw)
-                ? vHedgeExpiryModeRaw as RollingOptionsPtDeConfig["expiryMode"]
-                : (String((objSource.metadata as any)?.expiryMode || objRuleConfig.expiryMode || "1") as RollingOptionsPtDeConfig["expiryMode"]);
-            const vHedgeExpiryDate = vHedgeExpiryModeRaw === "source"
-                ? String(objSource.expiryDate || objRuleConfig.expiryDate || "")
-                : resolveExpiryDateByMode(vHedgeExpiryMode);
-            const vTargetDelta = Math.max(0, Number((pUiState as any).negativePnlHedgeDelta || 0.53));
-            const vTakeProfitPct = Math.min(100, Math.max(0, Number((pUiState as any).negativePnlTpPct || 15)));
-            const vStopLossPct = Math.min(100, Math.max(0, Number((pUiState as any).negativePnlSlPct || 85)));
-            const vTakeProfitMove = Math.min(1, Math.max(0, vTakeProfitPct / 100));
-            const vStopLossMove = Math.min(1, Math.max(0, vStopLossPct / 100));
-            const vQty = vManualHedgeQty;
-            const objAdjustmentConfig: RollingOptionsPtDeConfig = {
-                ...objRuleConfig,
-                action: vAction3,
-                legSide: vOptionSide === "PE" ? "pe" : "ce",
-                expiryMode: vHedgeExpiryMode,
-                expiryDate: vHedgeExpiryDate,
-                optionQty: vQty,
-                newDelta: vTargetDelta,
-                reDelta: vTargetDelta,
-                deltaTakeProfit: vTakeProfitMove,
-                deltaStopLoss: vStopLossMove,
-                redDeltaTakeProfit: vTakeProfitMove,
-                redDeltaStopLoss: vStopLossMove,
-                redTakeProfitPct: vTakeProfitPct,
-                redStopLossPct: vStopLossPct,
-                greenDeltaTakeProfit: vTakeProfitMove,
-                greenDeltaStopLoss: vStopLossMove,
-                greenTakeProfitPct: vTakeProfitPct,
-                greenStopLossPct: vStopLossPct
-            };
-            const objOpened = await this.openOptionPositions(
-                pUserId,
-                objAdjustmentConfig,
-                vQty,
-                "Negative PnL adjustment",
-                vOptionSide === "PE" ? "R" : "G",
-                false,
-                vRuleSet,
-                [vOptionSide],
-                {
-                    negativePnlAdjustment: true,
-                    actionSlot: 3,
-                    actionLabel: "Action 3",
-                    sourcePositionId: vSourcePositionId,
-                    sourceContractName: objSource.contractName,
-                    sourceLossAmount: Math.abs(vSourcePnl),
-                    adjustmentGroupId: `negative-pnl:${vSourcePositionId}`,
-                    hedgeTargetDelta: vTargetDelta,
-                    manualHedgeQty: vManualHedgeQty,
-                    maxHedgeQty: vManualHedgeQty,
-                    configuredTakeProfitPct: vTakeProfitPct,
-                    configuredStopLossPct: vStopLossPct,
-                    reason: "negative_pnl_auto_adjustment"
-                }
-            );
-
-            if (objOpened.length > 0) {
-                objAdjustmentsBySource.set(vSourcePositionId, objOpened);
-                vRemainingLegSlots = Math.max(0, vRemainingLegSlots - objOpened.length);
+            if (objActiveSupportSourceIds.has(objSource.positionId)) {
+                objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
+                await saveSourceTriggerState(objSource, false, 0);
             }
+        }
+
+        if (!bSupportEnabled) {
+            return;
+        }
+
+        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) > 0);
+        if (arrProfitableSources.length !== 1) {
+            for (const objSource of arrProfitableSources) {
+                const bArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
+                if (bArmed && !objActiveSupportSourceIds.has(objSource.positionId)) {
+                    objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
+                    await saveSourceTriggerState(objSource, true, 0);
+                }
+            }
+            return;
+        }
+
+        const objSource = arrProfitableSources[0];
+        if (objActiveSupportSourceIds.has(objSource.positionId)) {
+            return;
+        }
+        const bSourceArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
+        if (!bSourceArmed) {
+            objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
+            return;
+        }
+
+        const vPreviousCycleCount = Math.max(
+            0,
+            objState.sourcePositiveCycleCountByPositionId.get(objSource.positionId)
+                ?? Number((objSource.metadata as any)?.positivePnlCycleCount || 0)
+        );
+        const vPositiveCycleCount = Math.min(2, vPreviousCycleCount + 1);
+        objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, vPositiveCycleCount);
+        await saveSourceTriggerState(objSource, true, vPositiveCycleCount);
+        if (vPositiveCycleCount < 2) {
+            return;
+        }
+
+        const vMaxLegs = Math.max(1, Math.floor(normalizeNumber((pUiState as any).positivePnlMaxLegs, 1)));
+        if (arrActiveSupports.length >= vMaxLegs) {
+            return;
+        }
+        const vSourceSide = this.getOptionSide(objSource);
+        if (!vSourceSide) {
+            return;
+        }
+
+        const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        const vQty = Math.max(0, Math.floor(normalizeNumber((pUiState as any).positivePnlSupportQty, 10)));
+        if (!(vQty > 0)) {
+            return;
+        }
+        const vRuleSet: 1 | 2 = Math.floor(Number((objSource.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
+        const objRuleConfig = this.buildRuleSetConfig(pUiState, vRuleSet);
+        const vExpiryModeRaw = String((pUiState as any).positivePnlExpiryMode || "1").trim();
+        const vExpiryMode = ["1", "2", "4", "5", "6", "7"].includes(vExpiryModeRaw)
+            ? vExpiryModeRaw as RollingOptionsPtDeConfig["expiryMode"]
+            : (String((objSource.metadata as any)?.expiryMode || objRuleConfig.expiryMode || "1") as RollingOptionsPtDeConfig["expiryMode"]);
+        const vExpiryDate = vExpiryModeRaw === "source"
+            ? String(objSource.expiryDate || objRuleConfig.expiryDate || "")
+            : resolveExpiryDateByMode(vExpiryMode);
+        const vTargetDelta = Math.max(0, normalizeNumber((pUiState as any).positivePnlTargetDelta, 0.53));
+        const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlTpPct, 15)));
+        const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlSlPct, 85)));
+        const vTakeProfitMove = vTakeProfitPct / 100;
+        const vStopLossMove = vStopLossPct / 100;
+        const objSupportConfig: RollingOptionsPtDeConfig = {
+            ...objRuleConfig,
+            action: "buy",
+            legSide: vSupportSide === "PE" ? "pe" : "ce",
+            expiryMode: vExpiryMode,
+            expiryDate: vExpiryDate,
+            optionQty: vQty,
+            newDelta: vTargetDelta,
+            reDelta: vTargetDelta,
+            deltaTakeProfit: vTakeProfitMove,
+            deltaStopLoss: vStopLossMove,
+            redDeltaTakeProfit: vTakeProfitMove,
+            redDeltaStopLoss: vStopLossMove,
+            redTakeProfitPct: vTakeProfitPct,
+            redStopLossPct: vStopLossPct,
+            greenDeltaTakeProfit: vTakeProfitMove,
+            greenDeltaStopLoss: vStopLossMove,
+            greenTakeProfitPct: vTakeProfitPct,
+            greenStopLossPct: vStopLossPct
+        };
+        const arrOpenedSupports = await this.openOptionPositions(
+            pUserId,
+            objSupportConfig,
+            vQty,
+            "Positive PnL support",
+            vSupportSide === "PE" ? "R" : "G",
+            false,
+            vRuleSet,
+            [vSupportSide],
+            {
+                positivePnlSupport: true,
+                actionSlot: 3,
+                actionLabel: "Action 3",
+                sourcePositionId: objSource.positionId,
+                sourceContractName: objSource.contractName,
+                sourceOptionSide: vSourceSide,
+                adjustmentGroupId: `positive-pnl:${objSource.positionId}`,
+                hedgeTargetDelta: vTargetDelta,
+                manualHedgeQty: vQty,
+                maxHedgeQty: vQty,
+                configuredTakeProfitPct: vTakeProfitPct,
+                configuredStopLossPct: vStopLossPct,
+                reason: "positive_pnl_support"
+            }
+        );
+        if (arrOpenedSupports.length > 0) {
+            objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
+            await saveSourceTriggerState(objSource, false, 0);
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "success",
+                title: "Positive PnL Support Opened",
+                message: `Opened BUY ${vSupportSide} support after ${vSourceSide} source stayed profitable for two cycles.`,
+                payload: {
+                    symbol: pBaseConfig.symbol,
+                    sourcePositionId: objSource.positionId,
+                    supportSide: vSupportSide,
+                    reason: "positive_pnl_support"
+                }
+            });
         }
     }
 
@@ -2078,15 +2548,34 @@ export class RollingOptionsStrangleService {
 
                 if ((vPreviousRenkoColor === "R" || vPreviousRenkoColor === "G")
                     && vPreviousRenkoColor !== vLast) {
-                    const arrOpenOptionPositions = objCurrentOpenPositions.filter((objRow) => {
+                    const bAdverseRenkoCloseEnabled = Boolean((objUiState as any).positivePnlAdverseRenkoCloseEnabled ?? false);
+
+                    let arrOpenOptionPositions = objCurrentOpenPositions.filter((objRow) => {
                         const objMeta = (objRow.metadata || {}) as Record<string, unknown>;
                         const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                         const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
                         return objRow.status === "OPEN"
                             && objRow.instrumentType === "OPTION"
+                            && !isPositivePnlSupportPosition(objRow)
                             && vRuleColor === vPreviousRenkoColor
                             && isRenkoColorTrailTpEnabled(vRuleColor, vRuleSet);
                     });
+
+                    if (bAdverseRenkoCloseEnabled) {
+                        const arrAdverseSupportPositions = objCurrentOpenPositions.filter((objRow) => {
+                            const vSupportSide = this.getOptionSide(objRow);
+                            return objRow.status === "OPEN"
+                                && objRow.instrumentType === "OPTION"
+                                && isPositivePnlSupportPosition(objRow)
+                                && ((vSupportSide === "CE" && vLast === "R") || (vSupportSide === "PE" && vLast === "G"));
+                        });
+                        const objPositionsById = new Map(
+                            [...arrOpenOptionPositions, ...arrAdverseSupportPositions]
+                                .map((objPosition) => [objPosition.positionId, objPosition])
+                        );
+                        arrOpenOptionPositions = Array.from(objPositionsById.values());
+                    }
+
                     if (arrOpenOptionPositions.length > 0) {
                         const objClosedPositions = await this.closePositions(
                             arrOpenOptionPositions,
@@ -2099,6 +2588,8 @@ export class RollingOptionsStrangleService {
                             `Renko color changed from ${vPreviousRenkoColor} to ${vLast}`
                         );
                         objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+
+                        await this.closeReplacementWhenOriginalLegsPositive(pUserId, objConfig);
                     }
                 }
             }
@@ -2150,6 +2641,7 @@ export class RollingOptionsStrangleService {
                     ? Number(objCachedTicker?.markPrice || 0)
                     : Number(objPosition.markPrice || objPosition.entryPrice || 0);
                 const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+                const bPositivePnlSupport = isPositivePnlSupportPosition(objPosition);
                 const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                 const vAction = String(objPosition.action || "").trim().toUpperCase();
                 const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
@@ -2164,7 +2656,7 @@ export class RollingOptionsStrangleService {
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
                 let bMetaChanged = false;
 
-                if ((vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
+                if (!bPositivePnlSupport && (vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
                     const bTrailSlEnabled = vRuleSet === 2
                         ? (vRuleColor === "G" ? bTrailGreenSl2Enabled : (vRuleColor === "R" ? bTrailRedSl2Enabled : false))
                         : (vRuleColor === "G" ? bTrailGreenSl1Enabled : (vRuleColor === "R" ? bTrailRedSl1Enabled : false));
@@ -2249,10 +2741,6 @@ export class RollingOptionsStrangleService {
                     continue;
                 }
 
-                if (Boolean(objNextMeta.negativePnlAdjustment)) {
-                    continue;
-                }
-
                 const objDecision = shouldTriggerOption({ ...objPosition, metadata: objNextMeta }, vCurrentDelta);
                 if (objDecision.shouldAct && objDecision.reason) {
                     await this.handleOptionTrigger(pUserId, objConfig, objPosition, objDecision.reason);
@@ -2260,7 +2748,10 @@ export class RollingOptionsStrangleService {
                 }
             }
 
-            await this.manageNegativePnlAdjustments(pUserId, objUiState, objConfig);
+            await this.managePositivePnlSupports(pUserId, objUiState, objConfig);
+
+            // Check and close replacement legs if original legs are both positive
+            await this.closeReplacementWhenOriginalLegsPositive(pUserId, objConfig);
 
             objState.cycleCount += 1;
             objState.consecutiveFailures = 0;
@@ -2341,6 +2832,7 @@ export class RollingOptionsStrangleService {
         objState.renko.anchor = null;
         objState.renko.lastDir = 0;
         objState.renko.lastColor = "";
+        objState.sourcePositiveCycleCountByPositionId.clear();
         await this.syncRuntime(pUserId, objConfig, objState, {
             status: "stopped",
             autoTraderEnabled: false,
