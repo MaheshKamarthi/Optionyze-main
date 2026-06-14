@@ -351,6 +351,7 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: 10,
         positivePnlMaxLegs: 1,
+        positivePnlTriggerAmount: 0,
         positivePnlTpPct: 15,
         positivePnlSlPct: 85,
         positivePnlExpiryMode: "1",
@@ -397,6 +398,7 @@ function migratePositivePnlSettings(
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10),
         positivePnlMaxLegs: getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1),
+        positivePnlTriggerAmount: Math.max(0, normalizeNumber(pUiState.positivePnlTriggerAmount, 0)),
         positivePnlTpPct: getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15),
         positivePnlSlPct: getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85),
         positivePnlExpiryMode: getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1"),
@@ -473,6 +475,7 @@ export class RollingOptionsStrangleService {
             positivePnlSupportAction: "buy",
             positivePnlSupportQty: 10,
             positivePnlMaxLegs: 1,
+            positivePnlTriggerAmount: 0,
             positivePnlTpPct: 15,
             positivePnlSlPct: 85,
             positivePnlExpiryMode: "1",
@@ -2261,6 +2264,7 @@ export class RollingOptionsStrangleService {
         pBaseConfig: RollingOptionsPtDeConfig
     ): Promise<void> {
         const bSupportEnabled = Boolean((pUiState as any).positivePnlSupportEnabled ?? true);
+        const vTriggerAmount = Math.max(0, normalizeNumber((pUiState as any).positivePnlTriggerAmount, 0));
         const objState = this.getOrCreateState(pUserId);
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const arrOpenOptions = arrOpenPositions.filter((objPosition) => {
@@ -2276,10 +2280,10 @@ export class RollingOptionsStrangleService {
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            return !objSource || Number(objSource.pnl || 0) <= 0;
+            return !objSource || Number(objSource.pnl || 0) < vTriggerAmount;
         });
         if (arrSupportsToClose.length > 0) {
-            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source became non-positive or closed");
+            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source fell below trigger amount or closed");
         }
 
         const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
@@ -2318,7 +2322,7 @@ export class RollingOptionsStrangleService {
 
         for (const objSource of arrOriginalSellOptions) {
             const vSourcePnl = Number(objSource.pnl || 0);
-            if (vSourcePnl <= 0) {
+            if (vSourcePnl < vTriggerAmount) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
                 await saveSourceTriggerState(objSource, true, 0);
                 continue;
@@ -2333,7 +2337,7 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) > 0);
+        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) >= vTriggerAmount);
         if (arrProfitableSources.length !== 1) {
             for (const objSource of arrProfitableSources) {
                 const bArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
@@ -2437,6 +2441,7 @@ export class RollingOptionsStrangleService {
                 maxHedgeQty: vQty,
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
+                positivePnlTriggerAmount: vTriggerAmount,
                 reason: "positive_pnl_support"
             }
         );
@@ -2448,11 +2453,12 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened BUY ${vSupportSide} support after ${vSourceSide} source stayed profitable for two cycles.`,
+                message: `Opened BUY ${vSupportSide} support after ${vSourceSide} source stayed at or above PnL ${vTriggerAmount} for two cycles.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
                     supportSide: vSupportSide,
+                    triggerAmount: vTriggerAmount,
                     reason: "positive_pnl_support"
                 }
             });

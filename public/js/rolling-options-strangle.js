@@ -46,6 +46,7 @@
         positivePnlSupportAction: document.getElementById("ddlRollingDemoPositivePnlSupportAction"),
         positivePnlSupportQty: document.getElementById("txtRollingDemoPositivePnlSupportQty"),
         positivePnlMaxLegs: document.getElementById("txtRollingDemoPositivePnlMaxLegs"),
+        positivePnlTriggerAmount: document.getElementById("txtRollingDemoPositivePnlTriggerAmount"),
         positivePnlExpiryMode: document.getElementById("ddlRollingDemoPositivePnlExpiryMode"),
         positivePnlTargetDelta: document.getElementById("txtRollingDemoPositivePnlTargetDelta"),
         positivePnlTpPct: document.getElementById("txtRollingDemoPositivePnlTp"),
@@ -772,6 +773,7 @@
             positivePnlSupportAction: "buy",
             positivePnlSupportQty: parseNumberInput(ids.positivePnlSupportQty, 10),
             positivePnlMaxLegs: parseNumberInput(ids.positivePnlMaxLegs, 1),
+            positivePnlTriggerAmount: Math.max(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
             positivePnlExpiryMode: String(ids.positivePnlExpiryMode?.value || "1"),
             positivePnlTargetDelta: parseNumberInput(ids.positivePnlTargetDelta, 0.53),
             positivePnlTpPct: parseNumberInput(ids.positivePnlTpPct, 15),
@@ -861,6 +863,7 @@
         setFieldValue("positivePnlSupportAction", "buy");
         setFieldValue("positivePnlSupportQty", uiState.positivePnlSupportQty ?? uiState.negativePnlHedgeQty ?? 10);
         setFieldValue("positivePnlMaxLegs", uiState.positivePnlMaxLegs ?? uiState.negativePnlMaxLegs ?? 1);
+        setFieldValue("positivePnlTriggerAmount", uiState.positivePnlTriggerAmount ?? 0);
         setFieldValue("positivePnlExpiryMode", uiState.positivePnlExpiryMode ?? uiState.negativePnlHedgeExpiryMode ?? "1");
         setFieldValue("positivePnlTargetDelta", uiState.positivePnlTargetDelta ?? uiState.negativePnlHedgeDelta ?? 0.53);
         setFieldValue("positivePnlTpPct", uiState.positivePnlTpPct ?? uiState.negativePnlTpPct ?? 15);
@@ -2048,7 +2051,7 @@
         }
     });
 
-    [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
+    [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTriggerAmount, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
         objField?.addEventListener("input", refreshPositivePnlSupportSettings);
     });
     [ids.positivePnlSupportEnabled, ids.positivePnlExpiryMode, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {

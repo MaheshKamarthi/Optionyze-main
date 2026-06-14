@@ -100,6 +100,7 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: 10,
         positivePnlMaxLegs: 1,
+        positivePnlTriggerAmount: 0,
         positivePnlTpPct: 15,
         positivePnlSlPct: 85,
         positivePnlExpiryMode: "1",
@@ -180,6 +181,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.positivePnlSupportAction = "buy";
     objUiState.positivePnlSupportQty = getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10);
     objUiState.positivePnlMaxLegs = getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1);
+    objUiState.positivePnlTriggerAmount = Math.max(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
     objUiState.positivePnlTpPct = getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15);
     objUiState.positivePnlSlPct = getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85);
     objUiState.positivePnlExpiryMode = getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1");
@@ -191,6 +193,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     ));
     objUiState.positivePnlSupportQty = Math.max(0, Math.floor(normalizeNumber(objUiState.positivePnlSupportQty, 10)));
     objUiState.positivePnlMaxLegs = Math.max(1, Math.floor(normalizeNumber(objUiState.positivePnlMaxLegs, 1)));
+    objUiState.positivePnlTriggerAmount = Math.max(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
     objUiState.positivePnlTpPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlTpPct, 15)));
     objUiState.positivePnlSlPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlSlPct, 85)));
     objUiState.positivePnlTargetDelta = Math.max(0, normalizeNumber(objUiState.positivePnlTargetDelta, 0.53));
@@ -1794,6 +1797,7 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
     const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlTpPct, 15)));
     const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
     const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
+    const vTriggerAmount = Math.max(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
     let vLastTakeProfitDelta = 0;
@@ -1830,8 +1834,8 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
     res.json({
         status: "success",
         message: vUpdated > 0
-            ? `Positive PnL support settings applied to ${vUpdated} open Action 3 leg${vUpdated === 1 ? "" : "s"}. TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
-            : `Positive PnL support settings saved. No open Positive PnL support legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
+            ? `Positive PnL support settings applied to ${vUpdated} open Action 3 leg${vUpdated === 1 ? "" : "s"}. Trigger amount ${vTriggerAmount}, TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated. Last TP delta: ${vLastTakeProfitDelta.toFixed(4)}, SL delta: ${vLastStopLossDelta.toFixed(4)}.`
+            : `Positive PnL support settings saved. Trigger amount ${vTriggerAmount}. No open Positive PnL support legs were found to update. TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%.`,
         data: {
             updated: vUpdated
         }
