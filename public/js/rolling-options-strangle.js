@@ -1394,7 +1394,7 @@
 
         if (!Array.isArray(rows) || rows.length === 0) {
             gLatestClosedPositions = [];
-            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"12\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
+            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"13\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
             updateOptionsPnlMetric([]);
             updateTotalChargesMetric([]);
             updateTotalPnlMetric(gLatestOpenPositions);
@@ -1422,6 +1422,7 @@
                     <td>${escapeHtml(formatNumericValue(row.exitPrice, 2))}</td>
                     <td>${escapeHtml(formatChargeNegative(row.charges, 3))}</td>
                     <td>${escapeHtml(formatNumericValue(row.pnl, 3))}</td>
+                    <td>${escapeHtml(row.closedReason || "-")}</td>
                 </tr>
             `;
         }).join("");
@@ -1432,6 +1433,7 @@
                 <td colspan="10">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatChargeNegative(totalCharges, 3))}</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
+                <td>-</td>
             </tr>
         `;
         updateOptionsPnlMetric(rows);
