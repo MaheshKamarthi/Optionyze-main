@@ -288,9 +288,13 @@ async function loadMergedUiState(pUserId: string): Promise<Record<string, unknow
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
+    const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {
         ...objUiState,
-        expiryDate1: resolveExpiryDateByMode(vExpiryMode)
+        expiryDate1: resolveExpiryDateByMode(vExpiryMode),
+        expiryDate2: vExpiryMode2 === "1" || vExpiryMode2 === "2"
+            ? resolveExpiryDateByMode(vExpiryMode2)
+            : objUiState.expiryDate2
     };
 }
 
@@ -398,7 +402,7 @@ function migratePositivePnlSettings(
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10),
         positivePnlMaxLegs: getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1),
-        positivePnlTriggerAmount: Math.max(0, normalizeNumber(pUiState.positivePnlTriggerAmount, 0)),
+        positivePnlTriggerAmount: Math.min(0, normalizeNumber(pUiState.positivePnlTriggerAmount, 0)),
         positivePnlTpPct: getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15),
         positivePnlSlPct: getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85),
         positivePnlExpiryMode: getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1"),
@@ -2261,7 +2265,7 @@ export class RollingOptionsStrangleService {
         pBaseConfig: RollingOptionsPtDeConfig
     ): Promise<void> {
         const bSupportEnabled = Boolean((pUiState as any).positivePnlSupportEnabled ?? true);
-        const vTriggerAmount = Math.max(0, normalizeNumber((pUiState as any).positivePnlTriggerAmount, 0));
+        const vTriggerAmount = Math.min(0, normalizeNumber((pUiState as any).positivePnlTriggerAmount, 0));
         const objState = this.getOrCreateState(pUserId);
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const arrOpenOptions = arrOpenPositions.filter((objPosition) => {
@@ -2273,6 +2277,13 @@ export class RollingOptionsStrangleService {
                 && !isPositivePnlSupportPosition(objPosition)
                 && !this.isReplacementOptionPosition(objPosition);
         });
+        const vOpenOriginalPnl = arrOpenPositions
+            .filter((objPosition) => {
+                return objPosition.status === "OPEN"
+                    && !isPositivePnlSupportPosition(objPosition)
+                    && !this.isReplacementOptionPosition(objPosition);
+            })
+            .reduce((vTotal, objPosition) => vTotal + Number(objPosition.pnl || 0), 0);
         const objSourceById = new Map(arrOriginalSellOptions.map((objPosition) => [objPosition.positionId, objPosition]));
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
@@ -2329,7 +2340,7 @@ export class RollingOptionsStrangleService {
                 await saveSourceTriggerState(objSource, false, 0);
                 continue;
             }
-            if (vSourcePnl < vTriggerAmount && (objSource.metadata as any)?.positivePnlSupportArmed !== false) {
+            if (vOpenOriginalPnl > vTriggerAmount && (objSource.metadata as any)?.positivePnlSupportArmed !== false) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
                 await saveSourceTriggerState(objSource, true, 0);
             }
@@ -2339,7 +2350,11 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) >= vTriggerAmount);
+        if (vOpenOriginalPnl > vTriggerAmount) {
+            return;
+        }
+
+        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) >= 0);
         if (arrProfitableSources.length !== 1) {
             for (const objSource of arrProfitableSources) {
                 const bArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
@@ -2455,12 +2470,13 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened BUY ${vSupportSide} support after ${vSourceSide} source stayed at or above PnL ${vTriggerAmount} for two cycles.`,
+                message: `Opened BUY ${vSupportSide} support after open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
                     supportSide: vSupportSide,
                     triggerAmount: vTriggerAmount,
+                    openOriginalPnl: vOpenOriginalPnl,
                     reason: "positive_pnl_support"
                 }
             });

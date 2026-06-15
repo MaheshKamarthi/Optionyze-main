@@ -181,7 +181,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.positivePnlSupportAction = "buy";
     objUiState.positivePnlSupportQty = getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10);
     objUiState.positivePnlMaxLegs = getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1);
-    objUiState.positivePnlTriggerAmount = Math.max(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
+    objUiState.positivePnlTriggerAmount = Math.min(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
     objUiState.positivePnlTpPct = getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15);
     objUiState.positivePnlSlPct = getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85);
     objUiState.positivePnlExpiryMode = getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1");
@@ -193,7 +193,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     ));
     objUiState.positivePnlSupportQty = Math.max(0, Math.floor(normalizeNumber(objUiState.positivePnlSupportQty, 10)));
     objUiState.positivePnlMaxLegs = Math.max(1, Math.floor(normalizeNumber(objUiState.positivePnlMaxLegs, 1)));
-    objUiState.positivePnlTriggerAmount = Math.max(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
+    objUiState.positivePnlTriggerAmount = Math.min(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));
     objUiState.positivePnlTpPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlTpPct, 15)));
     objUiState.positivePnlSlPct = Math.min(100, Math.max(0, normalizeNumber(objUiState.positivePnlSlPct, 85)));
     objUiState.positivePnlTargetDelta = Math.max(0, normalizeNumber(objUiState.positivePnlTargetDelta, 0.53));
@@ -249,9 +249,13 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
+    const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {
         ...objUiState,
-        expiryDate1: resolveExpiryDateByMode(vExpiryMode)
+        expiryDate1: resolveExpiryDateByMode(vExpiryMode),
+        expiryDate2: vExpiryMode2 === "1" || vExpiryMode2 === "2"
+            ? resolveExpiryDateByMode(vExpiryMode2)
+            : objUiState.expiryDate2
     };
 }
 
@@ -1797,7 +1801,7 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
     const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlTpPct, 15)));
     const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
     const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
-    const vTriggerAmount = Math.max(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
+    const vTriggerAmount = Math.min(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
     let vLastTakeProfitDelta = 0;

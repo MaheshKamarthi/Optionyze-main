@@ -159,6 +159,7 @@
     let gLastTargetOpenPnl = null;
     let gIsClosedPositionsVisible = false;
     let gIsEventLogVisible = false;
+    let gLastExpiryRefreshDay = formatDateInputValue(new Date());
     const gStatusRefreshMs = 30000;
     const gOpenPositionsRefreshMs = 15000;
     const gClosedPositionsRefreshMs = 60000;
@@ -342,9 +343,13 @@
         }
     }
 
-    function applyExpiryModeDefaults() {
+    function applyExpiryModeDefaults(dailyOnly) {
         const applyFor = function (modeField, dateField) {
             if (!modeField || !dateField) {
+                return;
+            }
+            const modeValue = String(modeField.value || "").trim();
+            if (dailyOnly && modeValue !== "1" && modeValue !== "2") {
                 return;
             }
             const resolvedDate = resolveExpiryDateByMode(modeField.value);
@@ -355,6 +360,15 @@
         };
         applyFor(ids.expiryMode1, ids.expiryDate1);
         applyFor(ids.expiryMode2, ids.expiryDate2);
+    }
+
+    function refreshDailyExpiryDatesIfNeeded() {
+        const currentDay = formatDateInputValue(new Date());
+        if (!currentDay || currentDay === gLastExpiryRefreshDay) {
+            return;
+        }
+        gLastExpiryRefreshDay = currentDay;
+        applyExpiryModeDefaults(true);
     }
 
     function updateRenkoFeedVisualState() {
@@ -773,7 +787,7 @@
             positivePnlSupportAction: "buy",
             positivePnlSupportQty: parseNumberInput(ids.positivePnlSupportQty, 10),
             positivePnlMaxLegs: parseNumberInput(ids.positivePnlMaxLegs, 1),
-            positivePnlTriggerAmount: Math.max(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
+            positivePnlTriggerAmount: Math.min(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
             positivePnlExpiryMode: String(ids.positivePnlExpiryMode?.value || "1"),
             positivePnlTargetDelta: parseNumberInput(ids.positivePnlTargetDelta, 0.53),
             positivePnlTpPct: parseNumberInput(ids.positivePnlTpPct, 15),
@@ -879,6 +893,7 @@
         });
 
         applySymbolDefaults();
+        applyExpiryModeDefaults(true);
         updateRenkoFeedVisualState();
         updateFuturesEnabledVisualState();
 
@@ -2127,6 +2142,7 @@
     }
 
     setInterval(function () {
+        refreshDailyExpiryDatesIfNeeded();
         void kickRenkoCycleIfNeeded().then(function () {
             return loadStatus();
         }).then(function (objRuntimeState) {
