@@ -1537,7 +1537,7 @@ export async function executeRollingOptionsStrangleNegativePnlAdjustment(
     void req;
     res.status(409).json({
         status: "warning",
-        message: "Positive PnL support is opened only by the server engine after one original SELL leg stays profitable for two consecutive cycles.",
+        message: "Support is opened only by the server engine after total open original-position PnL stays at or below the trigger amount for two consecutive cycles.",
         data: { positions: [] }
     });
     return;

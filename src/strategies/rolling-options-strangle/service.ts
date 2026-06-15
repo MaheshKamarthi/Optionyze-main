@@ -2288,7 +2288,8 @@ export class RollingOptionsStrangleService {
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            return !objSource || Number(objSource.pnl || 0) < 0;
+            const bTriggeredByTotalPnl = Boolean((objSupport.metadata as any)?.triggeredByTotalPnl);
+            return !objSource || (!bTriggeredByTotalPnl && Number(objSource.pnl || 0) < 0);
         });
         if (arrSupportsToClose.length > 0) {
             await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source became negative or closed");
@@ -2329,12 +2330,6 @@ export class RollingOptionsStrangleService {
         };
 
         for (const objSource of arrOriginalSellOptions) {
-            const vSourcePnl = Number(objSource.pnl || 0);
-            if (vSourcePnl < 0) {
-                objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
-                await saveSourceTriggerState(objSource, true, 0);
-                continue;
-            }
             if (objActiveSupportSourceIds.has(objSource.positionId)) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
                 await saveSourceTriggerState(objSource, false, 0);
@@ -2354,26 +2349,24 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        const arrProfitableSources = arrOriginalSellOptions.filter((objSource) => Number(objSource.pnl || 0) >= 0);
-        if (arrProfitableSources.length !== 1) {
-            for (const objSource of arrProfitableSources) {
-                const bArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
-                if (bArmed && !objActiveSupportSourceIds.has(objSource.positionId)) {
-                    objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
-                    await saveSourceTriggerState(objSource, true, 0);
-                }
-            }
+        const objPendingSource = arrOriginalSellOptions.find((objPosition) => {
+            const vTrackedCount = objState.sourcePositiveCycleCountByPositionId.get(objPosition.positionId)
+                ?? Number((objPosition.metadata as any)?.positivePnlCycleCount || 0);
+            return vTrackedCount > 0;
+        });
+        const objSource = objPendingSource || [...arrOriginalSellOptions]
+            .sort((objLeft, objRight) => Number(objRight.pnl || 0) - Number(objLeft.pnl || 0))[0];
+        if (!objSource) {
             return;
         }
 
-        const objSource = arrProfitableSources[0];
         if (objActiveSupportSourceIds.has(objSource.positionId)) {
             return;
         }
         const bSourceArmed = (objSource.metadata as any)?.positivePnlSupportArmed !== false;
         if (!bSourceArmed) {
-            objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
-            return;
+            objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
+            await saveSourceTriggerState(objSource, true, 0);
         }
 
         const vPreviousCycleCount = Math.max(
@@ -2459,6 +2452,7 @@ export class RollingOptionsStrangleService {
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
                 positivePnlTriggerAmount: vTriggerAmount,
+                triggeredByTotalPnl: true,
                 reason: "positive_pnl_support"
             }
         );
@@ -2470,7 +2464,7 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened BUY ${vSupportSide} support after open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
+                message: `Opened BUY ${vSupportSide} support after total open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
