@@ -31,6 +31,7 @@ import {
     findBestLiveOptionContract,
     getLiveMarketSnapshot,
     getCachedOptionTicker,
+    getFreshWebSocketMarketSnapshot,
     getLiveOptionTicker
 } from "../rolling-options-pt-de/market-data";
 import { syncOptionsPnlWithClosedPositions } from "./options-pnl";
@@ -41,6 +42,7 @@ import type {
 } from "../rolling-options-pt-de/types";
 
 const RE_DELTA_TOLERANCE = 0.05;
+const RENKO_MAX_WEBSOCKET_TICK_AGE_MS = 3000;
 
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
@@ -2288,7 +2290,8 @@ export class RollingOptionsStrangleService {
     private async managePositivePnlSupports(
         pUserId: string,
         pUiState: Record<string, unknown>,
-        pBaseConfig: RollingOptionsPtDeConfig
+        pBaseConfig: RollingOptionsPtDeConfig,
+        pHasFreshRenkoTick = false
     ): Promise<void> {
         const bSupportEnabled = Boolean((pUiState as any).positivePnlSupportEnabled ?? true);
         const vTriggerAmount = Math.min(0, normalizeNumber((pUiState as any).positivePnlTriggerAmount, 0));
@@ -2430,6 +2433,23 @@ export class RollingOptionsStrangleService {
         }
 
         const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        if (!pHasFreshRenkoTick) {
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "info",
+                title: "Positive PnL Support Skipped",
+                message: "Skipped support because no fresh Delta WebSocket Renko tick is available.",
+                payload: {
+                    symbol: pBaseConfig.symbol,
+                    sourcePositionId: objSource.positionId,
+                    supportSide: vSupportSide,
+                    maxTickAgeMs: RENKO_MAX_WEBSOCKET_TICK_AGE_MS,
+                    reason: "positive_pnl_support_no_fresh_renko_tick"
+                }
+            });
+            return;
+        }
         const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
         const vRequiredRenkoColor: "R" | "G" = vSupportSide === "PE" ? "R" : "G";
         if (vCurrentRenkoColor !== vRequiredRenkoColor) {
@@ -2623,8 +2643,11 @@ export class RollingOptionsStrangleService {
             };
 
             const vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
-            const objRenkoSignals = objConfig.renkoEnabled
-                ? updateRenkoState(objState, objSnapshot, objConfig)
+            const objRenkoSnapshot = objConfig.renkoEnabled
+                ? getFreshWebSocketMarketSnapshot(objConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS)
+                : null;
+            const objRenkoSignals = objRenkoSnapshot
+                ? updateRenkoState(objState, objRenkoSnapshot, objConfig)
                 : [];
 
             if (objRenkoSignals.length > 0) {
@@ -2845,7 +2868,7 @@ export class RollingOptionsStrangleService {
                 }
             }
 
-            await this.managePositivePnlSupports(pUserId, objUiState, objConfig);
+            await this.managePositivePnlSupports(pUserId, objUiState, objConfig, Boolean(objRenkoSnapshot));
 
             // Check and close replacement legs if original legs are both positive
             await this.closeReplacementWhenOriginalLegsPositive(pUserId, objConfig);

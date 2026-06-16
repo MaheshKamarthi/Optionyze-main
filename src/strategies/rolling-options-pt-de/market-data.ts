@@ -101,6 +101,7 @@ class DeltaPublicTickerFeed {
     private readonly lastRequestedAtBySymbol = new Map<string, number>();
     private readonly symbolsByOwner = new Map<string, Set<string>>();
     private readonly tickerBySymbol = new Map<string, DeltaTickerRow>();
+    private readonly tickerReceivedAtBySymbol = new Map<string, number>();
     private isOpen = false;
     private isConnecting = false;
 
@@ -160,6 +161,19 @@ class DeltaPublicTickerFeed {
 
     public getTicker(pSymbol: string): DeltaTickerRow | null {
         return this.tickerBySymbol.get(String(pSymbol || "").trim()) || null;
+    }
+
+    public getFreshTicker(pSymbol: string, pMaxAgeMs: number): DeltaTickerRow | null {
+        const vSymbol = String(pSymbol || "").trim();
+        const objTicker = this.tickerBySymbol.get(vSymbol) || null;
+        if (!objTicker) {
+            return null;
+        }
+        const vReceivedAt = Number(this.tickerReceivedAtBySymbol.get(vSymbol) || 0);
+        if (!(vReceivedAt > 0) || (Date.now() - vReceivedAt) > Math.max(0, pMaxAgeMs)) {
+            return null;
+        }
+        return objTicker;
     }
 
     public getOwnerSymbols(pOwnerId: string): string[] {
@@ -229,6 +243,7 @@ class DeltaPublicTickerFeed {
             }
             this.lastRequestedAtBySymbol.delete(vSymbol);
             this.tickerBySymbol.delete(vSymbol);
+            this.tickerReceivedAtBySymbol.delete(vSymbol);
         }
         for (const [vOwnerId, objSymbols] of [...this.symbolsByOwner.entries()]) {
             const objFiltered = new Set([...objSymbols].filter((vSymbol) => this.lastRequestedAtBySymbol.has(vSymbol)));
@@ -296,10 +311,12 @@ class DeltaPublicTickerFeed {
         }
 
         if (Array.isArray(objMessage.result)) {
+            const vReceivedAt = Date.now();
             for (const objRow of objMessage.result) {
                 const vSymbol = String(objRow.symbol || "").trim();
                 if (vSymbol) {
                     this.tickerBySymbol.set(vSymbol, objRow);
+                    this.tickerReceivedAtBySymbol.set(vSymbol, vReceivedAt);
                 }
             }
             return;
@@ -308,6 +325,7 @@ class DeltaPublicTickerFeed {
         const vSymbol = String(objMessage.symbol || "").trim();
         if (vSymbol) {
             this.tickerBySymbol.set(vSymbol, objMessage);
+            this.tickerReceivedAtBySymbol.set(vSymbol, Date.now());
         }
     }
 }
@@ -376,6 +394,36 @@ export async function getLiveMarketSnapshot(
 
     if (!(vSpotPrice > 0) && !(vMarkPrice > 0)) {
         throw new Error(`No live ticker price available for ${pConfig.contractName}.`);
+    }
+
+    return {
+        symbol: pConfig.symbol,
+        contractName: pConfig.contractName,
+        spotPrice: vSpotPrice > 0 ? vSpotPrice : vMarkPrice,
+        futuresPrice: vMarkPrice > 0 ? vMarkPrice : vSpotPrice,
+        bestBidPrice: vBestBid > 0 ? vBestBid : (vMarkPrice > 0 ? vMarkPrice : vSpotPrice),
+        bestAskPrice: vBestAsk > 0 ? vBestAsk : (vMarkPrice > 0 ? vMarkPrice : vSpotPrice),
+        priceSource: "public",
+        ts: new Date().toISOString()
+    };
+}
+
+export function getFreshWebSocketMarketSnapshot(
+    pConfig: RollingOptionsPtDeConfig,
+    pMaxAgeMs: number
+): RollingOptionsPtDeMarketSnapshot | null {
+    const objTicker = gDeltaPublicTickerFeed.getFreshTicker(pConfig.contractName, pMaxAgeMs);
+    if (!objTicker) {
+        return null;
+    }
+
+    const vSpotPrice = parseNumber(objTicker.spot_price);
+    const vMarkPrice = parseNumber(objTicker.mark_price, vSpotPrice);
+    const vBestBid = parseNumber(objTicker.quotes?.best_bid, vMarkPrice);
+    const vBestAsk = parseNumber(objTicker.quotes?.best_ask, vMarkPrice);
+
+    if (!(vSpotPrice > 0) && !(vMarkPrice > 0)) {
+        return null;
     }
 
     return {
