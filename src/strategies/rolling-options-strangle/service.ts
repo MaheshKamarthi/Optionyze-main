@@ -1146,7 +1146,8 @@ export class RollingOptionsStrangleService {
         pUseReEntryDelta = false,
         pRuleSet: 1 | 2 = 1,
         pOptionSidesOverride?: Array<"CE" | "PE">,
-        pMetadataOverrides: Record<string, unknown> = {}
+        pMetadataOverrides: Record<string, unknown> = {},
+        pAllowNextDayExpiryFallback = true
     ): Promise<RollingOptionsPtDePositionRecord[]> {
         const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), pConfig);
         const vOptionSides: Array<"CE" | "PE"> = Array.isArray(pOptionSidesOverride) && pOptionSidesOverride.length > 0
@@ -1189,8 +1190,26 @@ export class RollingOptionsStrangleService {
                 vOptionSide,
                 vTargetDelta,
                 false,
-                pUseReEntryDelta ? RE_DELTA_TOLERANCE : undefined
+                pUseReEntryDelta ? RE_DELTA_TOLERANCE : undefined,
+                pAllowNextDayExpiryFallback
             );
+            if (!pAllowNextDayExpiryFallback && !objLiveContract?.contractSymbol) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "warning",
+                    title: "Exact Expiry Option Entry Skipped",
+                    message: `Skipped ${pReason} ${vOptionSide} because no exact-expiry contract was found for ${pConfig.expiryDate}.`,
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "exact_expiry_contract_not_found",
+                        optionSide: vOptionSide,
+                        requestedExpiryDate: pConfig.expiryDate,
+                        ruleSet: pRuleSet
+                    }
+                });
+                continue;
+            }
             if (pUseReEntryDelta && !objLiveContract?.contractSymbol) {
                 return [];
             }
@@ -1550,9 +1569,92 @@ export class RollingOptionsStrangleService {
                     reason: pReason
                 }
             });
+            await this.reArmPositivePnlSupportSourcesAfterClose(objClosed, pConfig);
         }
 
         return objClosed;
+    }
+
+    private async reArmPositivePnlSupportSourcesAfterClose(
+        pClosedPositions: RollingOptionsPtDePositionRecord[],
+        pConfig: RollingOptionsPtDeConfig
+    ): Promise<void> {
+        const arrClosedSupports = (Array.isArray(pClosedPositions) ? pClosedPositions : []).filter((objPosition) => {
+            return Boolean((objPosition.metadata as any)?.positivePnlSupport);
+        });
+        if (arrClosedSupports.length <= 0) {
+            return;
+        }
+
+        const vUserId = String(arrClosedSupports[0]?.userId || "").trim();
+        if (!vUserId) {
+            return;
+        }
+
+        const objUiState = await this.loadUiState(vUserId);
+        const bSupportEnabled = Boolean((objUiState as any).positivePnlSupportEnabled ?? true);
+        if (!bSupportEnabled) {
+            return;
+        }
+
+        const vTriggerAmount = Math.min(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+        const arrOriginalOpenPositions = arrOpenPositions.filter((objPosition) => {
+            return objPosition.status === "OPEN"
+                && !isPositivePnlSupportPosition(objPosition)
+                && !this.isReplacementOptionPosition(objPosition);
+        });
+        if (!this.hasTwoOpenOriginalSellSides(arrOpenPositions)) {
+            return;
+        }
+        const vOpenOriginalPnl = arrOriginalOpenPositions.reduce((vTotal, objPosition) => {
+            return vTotal + Number(objPosition.pnl || 0);
+        }, 0);
+        if (vOpenOriginalPnl > vTriggerAmount) {
+            return;
+        }
+
+        const objOpenOriginalById = new Map(arrOriginalOpenPositions.map((objPosition) => [objPosition.positionId, objPosition]));
+        const objState = this.getOrCreateState(vUserId);
+        let vReArmedCount = 0;
+
+        for (const objSupport of arrClosedSupports) {
+            const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
+            const objSource = objOpenOriginalById.get(vSourcePositionId);
+            if (!objSource || String(objSource.instrumentType || "").trim().toUpperCase() !== "OPTION") {
+                continue;
+            }
+
+            const objSourceMetadata = (objSource.metadata || {}) as Record<string, unknown>;
+            objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 1);
+            await saveRollingOptionsPtDePosition({
+                ...objSource,
+                metadata: {
+                    ...objSourceMetadata,
+                    positivePnlSupportArmed: true,
+                    positivePnlCycleCount: 1
+                },
+                updatedAt: ""
+            });
+            vReArmedCount += 1;
+        }
+
+        if (vReArmedCount > 0) {
+            await logRollingOptionsPtDeEvent({
+                userId: vUserId,
+                eventType: "manual_action",
+                severity: "info",
+                title: "Positive PnL Support Re-armed",
+                message: `Re-armed ${vReArmedCount} support source leg(s) after support close because open original PnL ${vOpenOriginalPnl.toFixed(3)} is at or below trigger ${vTriggerAmount}.`,
+                payload: {
+                    symbol: pConfig.symbol,
+                    reason: "positive_pnl_support_rearmed_after_close",
+                    reArmedCount: vReArmedCount,
+                    openOriginalPnl: vOpenOriginalPnl,
+                    triggerAmount: vTriggerAmount
+                }
+            });
+        }
     }
 
     public async reEnterClosedOptionPositions(
@@ -1560,140 +1662,10 @@ export class RollingOptionsStrangleService {
         pClosedPositions: RollingOptionsPtDePositionRecord[],
         pReason: string
     ): Promise<RollingOptionsPtDePositionRecord[]> {
-        const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
-            .filter((objPosition) => objPosition?.instrumentType === "OPTION")
-            .filter((objPosition) => !isPositivePnlSupportPosition(objPosition))
-            .filter((objPosition) => !Boolean((objPosition.metadata as any)?.linkedClosedByLink));
-        if (arrClosedOptions.length <= 0) {
-            return [];
-        }
-
-        const objUiState = await this.loadUiState(pUserId);
-        const objConfig1 = this.buildRuleSetConfig(objUiState, 1);
-        const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
-        const bFuturesEnabled = Boolean((objConfig1 as any).futuresEnabled ?? true);
-        const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
-        const objOpenedPositions: RollingOptionsPtDePositionRecord[] = [];
-        const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), objConfig1);
-        const vLotSize = getLotSizeForSymbol(objConfig1.symbol);
-        const vNow = objSnapshot.ts;
-
-        for (const objClosedOption of arrClosedOptions) {
-            const vRuleSet: 1 | 2 = Math.floor(Number((objClosedOption.metadata as any)?.ruleSet ?? 1)) === 2 ? 2 : 1;
-            const vStoredRuleColor = String(objClosedOption.metadata?.ruleColor || "").trim().toUpperCase();
-            const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled
-                ? (vCurrentRenkoColor === "G" ? "G" : "R")
-                : (vStoredRuleColor === "G" ? "G" : "R");
-            const vOptionSide: "CE" | "PE" = String(objClosedOption.optionSide || "").trim().toUpperCase() === "PE" ? "PE" : "CE";
-            const objRemainingPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
-            const vLinkedLeaderPositionId = this.getLinkedLeaderPositionId(objClosedOption);
-            const bLinkedLeaderStillOpen = Boolean(vLinkedLeaderPositionId)
-                && objRemainingPositions.some((objRow) => objRow.status === "OPEN" && objRow.positionId === vLinkedLeaderPositionId);
-            const bSameLegAlreadyOpen = objRemainingPositions.some((objRow) => {
-                return objRow.status === "OPEN"
-                    && objRow.instrumentType === "OPTION"
-                    && !isPositivePnlSupportPosition(objRow)
-                    && Math.floor(Number((objRow.metadata as any)?.ruleSet ?? 1)) === vRuleSet
-                    && String(objRow.optionSide || "").trim().toUpperCase() === vOptionSide;
-            });
-            if (bSameLegAlreadyOpen) {
-                continue;
-            }
-
-            const vFutureQty = objRemainingPositions
-                .filter((objRow) => objRow.status === "OPEN" && objRow.instrumentType === "FUTURE")
-                .reduce((pSum, objRow) => pSum + Math.max(0, Number(objRow.qty || 0)), 0);
-            const vBaseQty = bFuturesEnabled
-                ? Math.max(0, vFutureQty || Number(objClosedOption.qty || 0))
-                : Math.max(0, Number(objClosedOption.qty || 0));
-
-            // Use Action 3 settings for replacement legs
-            const vReEntryQty = Math.max(0, Math.floor(normalizeNumber((objUiState as any).positivePnlSupportQty, 1)));
-            if (!(vReEntryQty > 0)) {
-                continue;
-            }
-
-            const vAction = "BUY";
-            const vTargetDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
-            const vExpiryMode = String((objUiState as any).positivePnlExpiryMode || "1").trim() || "1";
-            const vExpiryDate = String(objUiState.expiryDate1 || "").trim();
-
-            const objQuoteUiState = {
-                ...objUiState,
-                expiryMode1: vExpiryMode === "source" ? String((objClosedOption.metadata as any)?.expiryMode || objUiState.expiryMode1 || "1") : vExpiryMode,
-                expiryDate1: vExpiryMode === "source"
-                    ? (vExpiryDate || String(objClosedOption.expiryDate || objUiState.expiryDate1 || ""))
-                    : vExpiryDate
-            };
-            const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
-            const vEntryPrice = this.getOptionEntryPriceForAction(objQuote, vAction);
-            const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
-            const vConfiguredTpPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlTpPct, 15)));
-            const vConfiguredSlPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
-            const objDeltaTargets = getOptionDeltaTargetsFromPct(vEntryDelta, vAction, vConfiguredTpPct, vConfiguredSlPct);
-            const vTakeProfitDelta = objDeltaTargets.takeProfitDelta;
-            const vStopLossDelta = objDeltaTargets.stopLossDelta;
-
-            const objPosition: RollingOptionsPtDePositionRecord = {
-                ...createPositionBase(pUserId),
-                status: "OPEN",
-                symbol: objConfig1.symbol,
-                contractName: objQuote.contractName,
-                instrumentType: "OPTION",
-                optionSide: vOptionSide,
-                action: vAction,
-                strike: objQuote.strike,
-                expiryDate: objQuote.expiryDate || vExpiryDate || objClosedOption.expiryDate,
-                qty: vReEntryQty,
-                lotSize: vLotSize,
-                entryPrice: vEntryPrice,
-                exitPrice: null,
-                markPrice: objQuote.entryPrice,
-                entryDelta: vEntryDelta,
-                exitDelta: vEntryDelta,
-                charges: estimatePositionCharges("OPTION", vReEntryQty, vLotSize, vEntryPrice, Number(objQuote.metadata?.entrySpotPrice || objSnapshot.spotPrice || 0)),
-                pnl: 0,
-                openedReason: `${pReason} replacement option`,
-                closedReason: "",
-                openedAt: vNow,
-                closedAt: "",
-                metadata: {
-                    ...(objQuote.metadata || {}),
-                    deltaTakeProfit: vTakeProfitDelta,
-                    deltaStopLoss: vStopLossDelta,
-                    takeProfitDelta: vTakeProfitDelta,
-                    stopLossDelta: vStopLossDelta,
-                    configuredTakeProfitPct: vConfiguredTpPct,
-                    configuredStopLossPct: vConfiguredSlPct,
-                    reEntryDelta: vTargetDelta,
-                    reEnter: false,
-                    ruleColor: vOptionSide === "PE" ? "R" : "G",
-                    ruleSet: vRuleSet,
-                    entrySpotPrice: objSnapshot.spotPrice,
-                    productSymbol: objQuote.contractSymbol || "",
-                    productDelta: objQuote.delta || vTargetDelta,
-                    productGamma: objQuote.gamma || 0,
-                    productTheta: objQuote.theta || 0,
-                    productVega: objQuote.vega || 0,
-                    productMarkPrice: objQuote.entryPrice,
-                    productBestBid: objQuote.bestBid,
-                    productBestAsk: objQuote.bestAsk,
-                    expiryMode: vExpiryMode,
-                    requestedExpiryDate: vExpiryDate,
-                    resolvedExpiryDate: objQuote.expiryDate,
-                    usedNextDayExpiryFallback: Boolean(objQuote.usedNextDayFallback),
-                    source: objSnapshot.priceSource === "public" ? "server-strategy-live" : "server-strategy-simulated",
-                    ...(bLinkedLeaderStillOpen ? { linkedLeaderPositionId: vLinkedLeaderPositionId } : {})
-                },
-                createdAt: vNow,
-                updatedAt: vNow
-            };
-
-            objOpenedPositions.push(await saveRollingOptionsPtDePosition(objPosition));
-        }
-
-        await this.closeOrphanReplacementOptionPositions(pUserId, objConfig1);
-        return objOpenedPositions;
+        void pUserId;
+        void pClosedPositions;
+        void pReason;
+        return [];
     }
 
     private isReplacementOptionPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
@@ -1926,7 +1898,10 @@ export class RollingOptionsStrangleService {
                         "Strategy initial option entry (Action 1)",
                         vRuleColor,
                         true,
-                        1
+                        1,
+                        undefined,
+                        {},
+                        false
                     );
                 }
             }
@@ -1941,7 +1916,10 @@ export class RollingOptionsStrangleService {
                         "Strategy initial option entry (Action 2)",
                         vRuleColor,
                         true,
-                        2
+                        2,
+                        undefined,
+                        {},
+                        false
                     );
                 }
             }
@@ -2131,7 +2109,10 @@ export class RollingOptionsStrangleService {
                     pColorCode === "R" ? "Renko RED option entry (Action 1)" : "Renko GREEN option entry (Action 1)",
                     pColorCode,
                     true,
-                    1
+                    1,
+                    undefined,
+                    {},
+                    false
                 );
             }
         }
@@ -2159,7 +2140,10 @@ export class RollingOptionsStrangleService {
                     pColorCode === "R" ? "Renko RED option entry (Action 2)" : "Renko GREEN option entry (Action 2)",
                     pColorCode,
                     true,
-                    2
+                    2,
+                    undefined,
+                    {},
+                    false
                 );
             }
         }
@@ -2259,6 +2243,48 @@ export class RollingOptionsStrangleService {
         return "";
     }
 
+    private findOpenOppositeBuySupportPosition(
+        pPositions: RollingOptionsPtDePositionRecord[],
+        pOptionSide: "CE" | "PE"
+    ): RollingOptionsPtDePositionRecord | undefined {
+        return pPositions.find((objPosition) => {
+            if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION") {
+                return false;
+            }
+            if (String(objPosition.action || "").trim().toUpperCase() !== "BUY") {
+                return false;
+            }
+            const objMetadata = (objPosition.metadata || {}) as Record<string, unknown>;
+            const bSupportStylePosition = Boolean(objMetadata.positivePnlSupport || objMetadata.negativePnlAdjustment)
+                || this.isReplacementOptionPosition(objPosition);
+            if (!bSupportStylePosition) {
+                return false;
+            }
+            const vExistingSide = this.getOptionSide(objPosition);
+            return vExistingSide !== "" && vExistingSide !== pOptionSide;
+        });
+    }
+
+    private hasTwoOpenOriginalSellSides(pPositions: RollingOptionsPtDePositionRecord[]): boolean {
+        const objSides = new Set<"CE" | "PE">();
+        for (const objPosition of Array.isArray(pPositions) ? pPositions : []) {
+            if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION") {
+                continue;
+            }
+            if (String(objPosition.action || "").trim().toUpperCase() !== "SELL") {
+                continue;
+            }
+            if (isPositivePnlSupportPosition(objPosition) || this.isReplacementOptionPosition(objPosition)) {
+                continue;
+            }
+            const vSide = this.getOptionSide(objPosition);
+            if (vSide === "CE" || vSide === "PE") {
+                objSides.add(vSide);
+            }
+        }
+        return objSides.has("CE") && objSides.has("PE");
+    }
+
     private async managePositivePnlSupports(
         pUserId: string,
         pUiState: Record<string, unknown>,
@@ -2277,6 +2303,19 @@ export class RollingOptionsStrangleService {
                 && !isPositivePnlSupportPosition(objPosition)
                 && !this.isReplacementOptionPosition(objPosition);
         });
+        if (arrSupportPositions.length > 0) {
+            const arrOpenOriginalOptions = arrOpenOptions.filter((objPosition) => {
+                return !isPositivePnlSupportPosition(objPosition)
+                    && !this.isReplacementOptionPosition(objPosition);
+            });
+            if (arrOpenOriginalOptions.length <= 0) {
+                await this.closePositions(arrSupportPositions, pBaseConfig, "Support closed because no original option legs are running");
+                return;
+            }
+        }
+        if (!this.hasTwoOpenOriginalSellSides(arrOpenOptions)) {
+            return;
+        }
         const vOpenOriginalPnl = arrOpenPositions
             .filter((objPosition) => {
                 return objPosition.status === "OPEN"
@@ -2391,6 +2430,26 @@ export class RollingOptionsStrangleService {
         }
 
         const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        const objOppositeBuyLeg = this.findOpenOppositeBuySupportPosition(arrOpenOptions, vSupportSide);
+        if (objOppositeBuyLeg) {
+            const vExistingSide = this.getOptionSide(objOppositeBuyLeg);
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "warning",
+                title: "Positive PnL Support Skipped",
+                message: `Skipped BUY ${vSupportSide} support because BUY ${vExistingSide} support/replacement is already open.`,
+                payload: {
+                    symbol: pBaseConfig.symbol,
+                    sourcePositionId: objSource.positionId,
+                    supportSide: vSupportSide,
+                    existingBuySide: vExistingSide,
+                    existingBuyPositionId: objOppositeBuyLeg.positionId,
+                    reason: "positive_pnl_support_opposite_buy_open"
+                }
+            });
+            return;
+        }
         const vQty = Math.max(0, Math.floor(normalizeNumber((pUiState as any).positivePnlSupportQty, 10)));
         if (!(vQty > 0)) {
             return;

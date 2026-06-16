@@ -395,11 +395,14 @@ export async function findBestLiveOptionContract(
     pOptionSide: "CE" | "PE",
     pTargetDelta: number,
     pRequireAtOrBelowTarget = false,
-    pMaxDeltaGap?: number
+    pMaxDeltaGap?: number,
+    pAllowNextDayExpiryFallback = true
 ): Promise<RollingOptionsPtDeLiveOptionContract | null> {
     const arrExpiryCandidates = [
         { expiryDate: pConfig.expiryDate, usedNextDayFallback: false },
-        { expiryDate: addDaysToIsoDate(pConfig.expiryDate, 1), usedNextDayFallback: true }
+        ...(pAllowNextDayExpiryFallback
+            ? [{ expiryDate: addDaysToIsoDate(pConfig.expiryDate, 1), usedNextDayFallback: true }]
+            : [])
     ].filter((objCandidate, vIndex, arrRows) => (
         Boolean(toExpiryDateForDelta(objCandidate.expiryDate)) &&
         arrRows.findIndex((objRow) => objRow.expiryDate === objCandidate.expiryDate) === vIndex
