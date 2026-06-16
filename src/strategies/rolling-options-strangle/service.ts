@@ -2430,6 +2430,26 @@ export class RollingOptionsStrangleService {
         }
 
         const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+        const vRequiredRenkoColor: "R" | "G" = vSupportSide === "PE" ? "R" : "G";
+        if (vCurrentRenkoColor !== vRequiredRenkoColor) {
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "info",
+                title: "Positive PnL Support Skipped",
+                message: `Skipped BUY ${vSupportSide} support because Renko color is ${vCurrentRenkoColor || "not available"}, expected ${vRequiredRenkoColor}.`,
+                payload: {
+                    symbol: pBaseConfig.symbol,
+                    sourcePositionId: objSource.positionId,
+                    supportSide: vSupportSide,
+                    currentRenkoColor: vCurrentRenkoColor,
+                    requiredRenkoColor: vRequiredRenkoColor,
+                    reason: "positive_pnl_support_renko_mismatch"
+                }
+            });
+            return;
+        }
         const objOppositeBuyLeg = this.findOpenOppositeBuySupportPosition(arrOpenOptions, vSupportSide);
         if (objOppositeBuyLeg) {
             const vExistingSide = this.getOptionSide(objOppositeBuyLeg);
