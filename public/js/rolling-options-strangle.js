@@ -486,11 +486,11 @@
         const openRows = Array.isArray(rows) ? rows : [];
         const openCount = Number.isFinite(Number(openCountOverride)) ? Number(openCountOverride) : openRows.length;
         const vUnrealized = sumNumeric(openRows, "pnl");
-        const vCombined = (Number.isFinite(vUnrealized) ? vUnrealized : 0) + getNetTotalPnlValue();
+        const vOpenPnl = Number.isFinite(vUnrealized) ? vUnrealized : 0;
         if (ids.openPnlValue) {
-            ids.openPnlValue.textContent = Number.isFinite(vCombined) ? formatNumericValue(vCombined, 3) : "0.000";
+            ids.openPnlValue.textContent = formatNumericValue(vOpenPnl, 3);
         }
-        checkTargetOpenPnl(vCombined, openCount);
+        checkTargetOpenPnl(vOpenPnl, openCount);
     }
 
     function getTargetOpenPnlValue() {
