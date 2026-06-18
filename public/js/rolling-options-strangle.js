@@ -1345,11 +1345,22 @@
             const positionId = String(row.positionId || "");
             const ltpBlinkClass = getLtpBlinkClass(positionId, row.markPrice);
             const currentLtp = Number(row.markPrice);
+            const rowMetadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+            const rowClasses = [];
+            if (isPreviewLeg) {
+                rowClasses.push("rolling-demo-suggested-leg-row");
+            }
+            if (rowMetadata.positivePnlSupport) {
+                rowClasses.push("rolling-demo-support-leg-row");
+            }
+            else if (rowMetadata.negativePnlAdjustment) {
+                rowClasses.push("rolling-demo-adjustment-leg-row");
+            }
             if (!isPreviewLeg && positionId && Number.isFinite(currentLtp)) {
                 nextLtps.set(positionId, currentLtp);
             }
             return `
-                <tr${isPreviewLeg ? " class=\"rolling-demo-suggested-leg-row\"" : ""}>
+                <tr${rowClasses.length > 0 ? ` class="${rowClasses.join(" ")}"` : ""}>
                     <td>${escapeHtml(formatNumericValue(row.entryDelta, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(currentDelta, 2))}</td>
                     <td>${escapeHtml(formatDeltaWithConfiguredPct(tpDelta, configuredTpPct, 2))}</td>

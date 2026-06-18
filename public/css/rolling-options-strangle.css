@@ -630,6 +630,24 @@
     border-left:3px solid #38bdf8;
 }
 
+.rolling-demo-support-leg-row td {
+    background:rgba(34,211,238,.10);
+    color:#d8fbff;
+}
+
+.rolling-demo-support-leg-row td:first-child {
+    border-left:3px solid #22d3ee;
+}
+
+.rolling-demo-adjustment-leg-row td {
+    background:rgba(251,191,36,.10);
+    color:#fff2c2;
+}
+
+.rolling-demo-adjustment-leg-row td:first-child {
+    border-left:3px solid #fbbf24;
+}
+
 .rolling-demo-suggested-leg-note {
     display:inline-flex;
     align-items:center;
