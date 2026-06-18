@@ -401,7 +401,7 @@ function migratePositivePnlSettings(
     return {
         ...pUiState,
         positivePnlSupportEnabled: Boolean(getMigratedValue("positivePnlSupportEnabled", "negativePnlHedgeEnabled", true)),
-        positivePnlSupportAction: "buy",
+        positivePnlSupportAction: String(getMigratedValue("positivePnlSupportAction", "negativePnlAction3", "buy")).trim().toLowerCase() === "sell" ? "sell" : "buy",
         positivePnlSupportQty: getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10),
         positivePnlMaxLegs: getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1),
         positivePnlTriggerAmount: Math.min(0, normalizeNumber(pUiState.positivePnlTriggerAmount, 0)),
@@ -1664,10 +1664,73 @@ export class RollingOptionsStrangleService {
         pClosedPositions: RollingOptionsPtDePositionRecord[],
         pReason: string
     ): Promise<RollingOptionsPtDePositionRecord[]> {
-        void pUserId;
-        void pClosedPositions;
-        void pReason;
-        return [];
+        const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
+            .filter((objPosition) => objPosition?.instrumentType === "OPTION")
+            .filter((objPosition) => !isPositivePnlSupportPosition(objPosition))
+            .filter((objPosition) => !this.isReplacementOptionPosition(objPosition));
+        const objState = this.getOrCreateState(pUserId);
+        if (arrClosedOptions.length <= 0 || Boolean(objState.positionMismatchDetected)) {
+            return [];
+        }
+
+        const objUiState = await this.loadUiState(pUserId);
+        const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+        const arrCreatedPositions: RollingOptionsPtDePositionRecord[] = [];
+        const arrCurrentPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+
+        for (const objClosedOption of arrClosedOptions) {
+            const vRuleSet: 1 | 2 = Number((objClosedOption.metadata as any)?.ruleSet) === 2 ? 2 : 1;
+            const objConfig = this.buildRuleSetConfig(objUiState, vRuleSet);
+            if (!Boolean(objConfig.reEnter)) {
+                continue;
+            }
+
+            const vOptionSide = this.getOptionSide(objClosedOption);
+            if (vOptionSide !== "CE" && vOptionSide !== "PE") {
+                continue;
+            }
+
+            const bSameLegAlreadyOpen = arrCurrentPositions.some((objPosition) => {
+                return objPosition.instrumentType === "OPTION"
+                    && !isPositivePnlSupportPosition(objPosition)
+                    && Number((objPosition.metadata as any)?.ruleSet) === vRuleSet
+                    && this.getOptionSide(objPosition) === vOptionSide;
+            });
+            if (bSameLegAlreadyOpen) {
+                continue;
+            }
+
+            const vStoredRuleColor = String((objClosedOption.metadata as any)?.ruleColor || "").trim().toUpperCase();
+            const vActiveRuleColor: "R" | "G" = objConfig.renkoEnabled
+                ? (vCurrentRenkoColor === "G" ? "G" : "R")
+                : (vStoredRuleColor === "G" ? "G" : "R");
+            const vQty = Math.max(0, Math.floor(Number(objClosedOption.qty || objConfig.optionQty || 0)));
+            if (!(vQty > 0)) {
+                continue;
+            }
+
+            const arrOpened = await this.openOptionPositions(
+                pUserId,
+                objConfig,
+                vQty,
+                `${pReason} re-entry replacement option`,
+                vActiveRuleColor,
+                true,
+                vRuleSet,
+                [vOptionSide],
+                {
+                    sourceClosedPositionId: objClosedOption.positionId,
+                    sourceClosedReason: objClosedOption.closedReason || pReason,
+                    replacementForRuleSet: vRuleSet
+                },
+                true
+            );
+            arrCreatedPositions.push(...arrOpened);
+            arrCurrentPositions.push(...arrOpened);
+        }
+
+        await this.closeOrphanReplacementOptionPositions(pUserId, this.buildRuleSetConfig(objUiState, 1));
+        return arrCreatedPositions;
     }
 
     private isReplacementOptionPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
@@ -2245,15 +2308,16 @@ export class RollingOptionsStrangleService {
         return "";
     }
 
-    private findOpenOppositeBuySupportPosition(
+    private findOpenOppositeSupportPosition(
         pPositions: RollingOptionsPtDePositionRecord[],
-        pOptionSide: "CE" | "PE"
+        pOptionSide: "CE" | "PE",
+        pAction: "BUY" | "SELL"
     ): RollingOptionsPtDePositionRecord | undefined {
         return pPositions.find((objPosition) => {
             if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION") {
                 return false;
             }
-            if (String(objPosition.action || "").trim().toUpperCase() !== "BUY") {
+            if (String(objPosition.action || "").trim().toUpperCase() !== pAction) {
                 return false;
             }
             const objMetadata = (objPosition.metadata || {}) as Record<string, unknown>;
@@ -2433,6 +2497,10 @@ export class RollingOptionsStrangleService {
         }
 
         const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        const vSupportAction: "buy" | "sell" = String((pUiState as any).positivePnlSupportAction || "buy").trim().toLowerCase() === "sell"
+            ? "sell"
+            : "buy";
+        const vSupportActionLabel = vSupportAction.toUpperCase();
         if (!pHasFreshRenkoTick) {
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
@@ -2458,7 +2526,7 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "info",
                 title: "Positive PnL Support Skipped",
-                message: `Skipped BUY ${vSupportSide} support because Renko color is ${vCurrentRenkoColor || "not available"}, expected ${vRequiredRenkoColor}.`,
+                message: `Skipped ${vSupportActionLabel} ${vSupportSide} support because Renko color is ${vCurrentRenkoColor || "not available"}, expected ${vRequiredRenkoColor}.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
@@ -2470,22 +2538,23 @@ export class RollingOptionsStrangleService {
             });
             return;
         }
-        const objOppositeBuyLeg = this.findOpenOppositeBuySupportPosition(arrOpenOptions, vSupportSide);
-        if (objOppositeBuyLeg) {
-            const vExistingSide = this.getOptionSide(objOppositeBuyLeg);
+        const objOppositeSupportLeg = this.findOpenOppositeSupportPosition(arrOpenOptions, vSupportSide, vSupportActionLabel as "BUY" | "SELL");
+        if (objOppositeSupportLeg) {
+            const vExistingSide = this.getOptionSide(objOppositeSupportLeg);
             await logRollingOptionsPtDeEvent({
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "warning",
                 title: "Positive PnL Support Skipped",
-                message: `Skipped BUY ${vSupportSide} support because BUY ${vExistingSide} support/replacement is already open.`,
+                message: `Skipped ${vSupportActionLabel} ${vSupportSide} support because ${vSupportActionLabel} ${vExistingSide} support/replacement is already open.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
                     supportSide: vSupportSide,
-                    existingBuySide: vExistingSide,
-                    existingBuyPositionId: objOppositeBuyLeg.positionId,
-                    reason: "positive_pnl_support_opposite_buy_open"
+                    supportAction: vSupportAction,
+                    existingSide: vExistingSide,
+                    existingPositionId: objOppositeSupportLeg.positionId,
+                    reason: "positive_pnl_support_opposite_open"
                 }
             });
             return;
@@ -2510,7 +2579,7 @@ export class RollingOptionsStrangleService {
         const vStopLossMove = vStopLossPct / 100;
         const objSupportConfig: RollingOptionsPtDeConfig = {
             ...objRuleConfig,
-            action: "buy",
+            action: vSupportAction,
             legSide: vSupportSide === "PE" ? "pe" : "ce",
             expiryMode: vExpiryMode,
             expiryDate: vExpiryDate,
@@ -2541,6 +2610,7 @@ export class RollingOptionsStrangleService {
                 positivePnlSupport: true,
                 actionSlot: 3,
                 actionLabel: "Action 3",
+                supportAction: vSupportAction,
                 sourcePositionId: objSource.positionId,
                 sourceContractName: objSource.contractName,
                 sourceOptionSide: vSourceSide,
@@ -2563,11 +2633,12 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened BUY ${vSupportSide} support after total open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
+                message: `Opened ${vSupportActionLabel} ${vSupportSide} support after total open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
                     supportSide: vSupportSide,
+                    supportAction: vSupportAction,
                     triggerAmount: vTriggerAmount,
                     openOriginalPnl: vOpenOriginalPnl,
                     reason: "positive_pnl_support"

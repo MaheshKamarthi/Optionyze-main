@@ -178,7 +178,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
         return objUiState[pPositiveKey] ?? pFallback;
     };
     objUiState.positivePnlSupportEnabled = Boolean(getMigratedValue("positivePnlSupportEnabled", "negativePnlHedgeEnabled", true));
-    objUiState.positivePnlSupportAction = "buy";
+    objUiState.positivePnlSupportAction = String(getMigratedValue("positivePnlSupportAction", "negativePnlAction3", "buy")).trim().toLowerCase() === "sell" ? "sell" : "buy";
     objUiState.positivePnlSupportQty = getMigratedValue("positivePnlSupportQty", "negativePnlHedgeQty", 10);
     objUiState.positivePnlMaxLegs = getMigratedValue("positivePnlMaxLegs", "negativePnlMaxLegs", 1);
     objUiState.positivePnlTriggerAmount = Math.min(0, normalizeNumber(objUiState.positivePnlTriggerAmount, 0));

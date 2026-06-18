@@ -160,10 +160,10 @@
     let gIsClosedPositionsVisible = false;
     let gIsEventLogVisible = false;
     let gLastExpiryRefreshDay = formatDateInputValue(new Date());
-    const gStatusRefreshMs = 30000;
-    const gOpenPositionsRefreshMs = 15000;
-    const gClosedPositionsRefreshMs = 60000;
-    const gEventsRefreshMs = 60000;
+    const gStatusRefreshMs = 45000;
+    const gOpenPositionsRefreshMs = 30000;
+    const gClosedPositionsRefreshMs = 90000;
+    const gEventsRefreshMs = 90000;
 
     function normalizePayoffSlCheckpointPrices(values, legacyValue) {
         return typeof shared.normalizePayoffSlCheckpointPrices === "function"
@@ -784,7 +784,7 @@
             trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             positivePnlSupportEnabled: Boolean(ids.positivePnlSupportEnabled?.checked),
-            positivePnlSupportAction: "buy",
+            positivePnlSupportAction: String(ids.positivePnlSupportAction?.value || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy",
             positivePnlSupportQty: parseNumberInput(ids.positivePnlSupportQty, 10),
             positivePnlMaxLegs: parseNumberInput(ids.positivePnlMaxLegs, 1),
             positivePnlTriggerAmount: Math.min(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
@@ -874,7 +874,7 @@
         setFieldValue("trailRedTp2Enabled", uiState.trailRedTp2Enabled ?? true);
         setFieldValue("trailRedSl2Enabled", uiState.trailRedSl2Enabled ?? true);
         setFieldValue("positivePnlSupportEnabled", uiState.positivePnlSupportEnabled ?? uiState.negativePnlHedgeEnabled ?? true);
-        setFieldValue("positivePnlSupportAction", "buy");
+        setFieldValue("positivePnlSupportAction", uiState.positivePnlSupportAction ?? "buy");
         setFieldValue("positivePnlSupportQty", uiState.positivePnlSupportQty ?? uiState.negativePnlHedgeQty ?? 10);
         setFieldValue("positivePnlMaxLegs", uiState.positivePnlMaxLegs ?? uiState.negativePnlMaxLegs ?? 1);
         setFieldValue("positivePnlTriggerAmount", uiState.positivePnlTriggerAmount ?? 0);
@@ -2068,7 +2068,7 @@
     [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTriggerAmount, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
         objField?.addEventListener("input", refreshPositivePnlSupportSettings);
     });
-    [ids.positivePnlSupportEnabled, ids.positivePnlExpiryMode, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
+    [ids.positivePnlSupportEnabled, ids.positivePnlSupportAction, ids.positivePnlExpiryMode, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
         objField?.addEventListener("change", refreshPositivePnlSupportSettings);
     });
 
