@@ -93,6 +93,8 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
+        tradingViewEmaEnabled: false,
+        tradingViewEmaSide: "both",
         demoBalance: 10000,
         closeAllLegsOnAnyClose: false,
         skipRenkoEntryNoOpenOptions: false,
@@ -279,9 +281,35 @@ async function getDefaultRuntimeState(pUserId: string): Promise<RollingOptionsPt
         lastSignal: "IDLE",
         lastCycleAt: "",
         lastError: "",
-        state: {},
+        state: {
+            tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
+            tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
+            tradingViewEmaTrend: "FLAT"
+        },
         updatedAt: ""
     };
+}
+
+function normalizeTradingViewEmaTrend(pValue: unknown): "UP" | "DOWN" | "FLAT" {
+    const vValue = String(pValue || "").trim().toUpperCase();
+    if (vValue === "UP" || vValue === "EMA_UP" || vValue === "BUY" || vValue === "LONG") {
+        return "UP";
+    }
+    if (vValue === "DOWN" || vValue === "EMA_DOWN" || vValue === "SELL" || vValue === "SHORT") {
+        return "DOWN";
+    }
+    return "FLAT";
+}
+
+function normalizeTradingViewEmaSide(pValue: unknown): "UP" | "DOWN" | "BOTH" {
+    const vValue = String(pValue || "").trim().toUpperCase();
+    if (vValue === "UP" || vValue === "EMA_UP" || vValue === "BUY" || vValue === "LONG") {
+        return "UP";
+    }
+    if (vValue === "DOWN" || vValue === "EMA_DOWN" || vValue === "SELL" || vValue === "SHORT") {
+        return "DOWN";
+    }
+    return "BOTH";
 }
 
 async function loadEffectiveRuntimeState(pUserId: string): Promise<RollingOptionsPtDeRuntimeRecord> {
@@ -677,6 +705,12 @@ async function updateRuntimeFromUiState(
         renkoEnabled: Boolean(objUiState.renkoFeedEnabled ?? objRuntime.renkoEnabled),
         renkoPoints: Number(objUiState.renkoFeedPts || objRuntime.renkoPoints || 10),
         renkoSource: String(objUiState.renkoFeedPriceSrc || objRuntime.renkoSource || "spot_price"),
+        state: {
+            ...(objRuntime.state || {}),
+            tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
+            tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
+            tradingViewEmaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.tradingViewEmaTrend)
+        },
         updatedAt: "",
         ...pOverrides
     };
@@ -2082,6 +2116,24 @@ export async function runRollingOptionsStrangleStrategyCycle(
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
 
+export async function openRollingOptionsStranglePositivePnlSupport(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const objResult = await pService.openPositivePnlSupportManually(vUserId);
+    const objRuntime = await loadEffectiveRuntimeState(vUserId);
+    res.json({
+        status: objResult.status,
+        message: objResult.message,
+        data: {
+            ...objRuntime,
+            openedCount: objResult.openedCount
+        }
+    });
+}
+
 export async function setRollingOptionsStrangleManualRenkoSignal(
     req: Request,
     res: Response,
@@ -2090,6 +2142,22 @@ export async function setRollingOptionsStrangleManualRenkoSignal(
     const vUserId = getUserIdFromReq(req);
     const vColorCode = String(req.body?.color || "").trim().toUpperCase() === "R" ? "R" : "G";
     const objResult = await pService.setManualRenkoSignal(vUserId, vColorCode);
+    const objRuntime = await loadEffectiveRuntimeState(vUserId);
+    res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
+}
+
+export async function setRollingOptionsStrangleTradingViewEmaTrend(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vRawTrend = req.body?.trend ?? req.body?.signal ?? req.body?.message ?? req.body?.action;
+    const vTrend = normalizeTradingViewEmaTrend(vRawTrend);
+    const objResult = await pService.setTradingViewEmaTrend(vUserId, vTrend, {
+        ...(req.body && typeof req.body === "object" ? req.body : {}),
+        query: req.query
+    });
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }

@@ -350,6 +350,8 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
+        tradingViewEmaEnabled: false,
+        tradingViewEmaSide: "both",
         demoBalance: 10000,
         closeAllLegsOnAnyClose: false,
         skipRenkoEntryNoOpenOptions: false,
@@ -382,6 +384,33 @@ function getDefaultUiState(): Record<string, unknown> {
 function isPositivePnlSupportPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
     const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
     return Boolean(objMetadata.positivePnlSupport || objMetadata.negativePnlAdjustment);
+}
+
+function isPositivePnlSupportLeg(pPosition: RollingOptionsPtDePositionRecord): boolean {
+    const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
+    return Boolean(objMetadata.positivePnlSupport);
+}
+
+function normalizeTradingViewEmaTrend(pValue: unknown): "UP" | "DOWN" | "FLAT" {
+    const vValue = String(pValue || "").trim().toUpperCase();
+    if (vValue === "UP" || vValue === "EMA_UP" || vValue === "BUY" || vValue === "LONG") {
+        return "UP";
+    }
+    if (vValue === "DOWN" || vValue === "EMA_DOWN" || vValue === "SELL" || vValue === "SHORT") {
+        return "DOWN";
+    }
+    return "FLAT";
+}
+
+function normalizeTradingViewEmaSide(pValue: unknown): "UP" | "DOWN" | "BOTH" {
+    const vValue = String(pValue || "").trim().toUpperCase();
+    if (vValue === "UP" || vValue === "EMA_UP" || vValue === "BUY" || vValue === "LONG") {
+        return "UP";
+    }
+    if (vValue === "DOWN" || vValue === "EMA_DOWN" || vValue === "SELL" || vValue === "SHORT") {
+        return "DOWN";
+    }
+    return "BOTH";
 }
 
 function migratePositivePnlSettings(
@@ -463,6 +492,8 @@ export class RollingOptionsStrangleService {
             trailRedSl2Enabled: true,
             renkoFeedPts: 10,
             renkoFeedPriceSrc: "spot_price",
+            tradingViewEmaEnabled: false,
+            tradingViewEmaSide: "both",
             action2: "none",
             legSide2: "pe",
             expiryMode2: "1",
@@ -540,6 +571,7 @@ export class RollingOptionsStrangleService {
             consecutiveFailures: 0,
             lastError: "",
             lastCycleAt: null,
+            tradingViewEmaTrend: "FLAT",
             renko: {
                 anchor: null,
                 lastDir: 0,
@@ -577,6 +609,7 @@ export class RollingOptionsStrangleService {
             objState.consecutiveFailures = Number((objRuntime.state?.consecutiveFailures as number) || 0);
             objState.lastError = String(objRuntime.lastError || "");
             objState.lastCycleAt = objRuntime.lastCycleAt || null;
+            objState.tradingViewEmaTrend = normalizeTradingViewEmaTrend(objRuntime.state?.tradingViewEmaTrend);
             objState.renko.anchor = Number.isFinite(Number(objRuntime.state?.renkoAnchor))
                 ? Number(objRuntime.state?.renkoAnchor)
                 : null;
@@ -914,6 +947,9 @@ export class RollingOptionsStrangleService {
                 renkoAnchor: pState.renko.anchor,
                 renkoLastDir: pState.renko.lastDir,
                 renkoLastColor: pState.renko.lastColor,
+                tradingViewEmaEnabled: Boolean(((pConfig as any).__uiState || {}).tradingViewEmaEnabled),
+                tradingViewEmaSide: normalizeTradingViewEmaSide(((pConfig as any).__uiState || {}).tradingViewEmaSide),
+                tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
                 marketSource: pState.market.lastSource,
                 openPositions: objOpenPositions.length
             },
@@ -1600,30 +1636,33 @@ export class RollingOptionsStrangleService {
         }
 
         const vTriggerAmount = Math.min(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
+        const vSupportAction: "buy" | "sell" = String((objUiState as any).positivePnlSupportAction || "buy").trim().toLowerCase() === "sell"
+            ? "sell"
+            : "buy";
+        const bSellSupportMode = vSupportAction === "sell";
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
-        const arrOriginalOpenPositions = arrOpenPositions.filter((objPosition) => {
+        const arrSourceOpenPositions = arrOpenPositions.filter((objPosition) => {
             return objPosition.status === "OPEN"
+                && objPosition.instrumentType === "OPTION"
                 && !isPositivePnlSupportPosition(objPosition)
-                && !this.isReplacementOptionPosition(objPosition);
+                && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
         });
-        if (!this.hasTwoOpenOriginalSellSides(arrOpenPositions)) {
-            return;
-        }
-        const vOpenOriginalPnl = arrOriginalOpenPositions.reduce((vTotal, objPosition) => {
-            return vTotal + Number(objPosition.pnl || 0);
-        }, 0);
-        if (vOpenOriginalPnl > vTriggerAmount) {
+        const arrNegativeSourcePositions = arrSourceOpenPositions.filter((objPosition) => Number(objPosition.pnl || 0) <= vTriggerAmount);
+        if (arrNegativeSourcePositions.length <= 0) {
             return;
         }
 
-        const objOpenOriginalById = new Map(arrOriginalOpenPositions.map((objPosition) => [objPosition.positionId, objPosition]));
+        const objOpenSourceById = new Map(arrSourceOpenPositions.map((objPosition) => [objPosition.positionId, objPosition]));
         const objState = this.getOrCreateState(vUserId);
         let vReArmedCount = 0;
 
         for (const objSupport of arrClosedSupports) {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
-            const objSource = objOpenOriginalById.get(vSourcePositionId);
+            const objSource = objOpenSourceById.get(vSourcePositionId);
             if (!objSource || String(objSource.instrumentType || "").trim().toUpperCase() !== "OPTION") {
+                continue;
+            }
+            if (Number(objSource.pnl || 0) > vTriggerAmount) {
                 continue;
             }
 
@@ -1647,12 +1686,11 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "info",
                 title: "Positive PnL Support Re-armed",
-                message: `Re-armed ${vReArmedCount} support source leg(s) after support close because open original PnL ${vOpenOriginalPnl.toFixed(3)} is at or below trigger ${vTriggerAmount}.`,
+                message: `Re-armed ${vReArmedCount} support source leg(s) after support close because the source leg PnL is at or below trigger ${vTriggerAmount}.`,
                 payload: {
                     symbol: pConfig.symbol,
                     reason: "positive_pnl_support_rearmed_after_close",
                     reArmedCount: vReArmedCount,
-                    openOriginalPnl: vOpenOriginalPnl,
                     triggerAmount: vTriggerAmount
                 }
             });
@@ -2308,97 +2346,44 @@ export class RollingOptionsStrangleService {
         return "";
     }
 
-    private findOpenOppositeSupportPosition(
-        pPositions: RollingOptionsPtDePositionRecord[],
-        pOptionSide: "CE" | "PE",
-        pAction: "BUY" | "SELL"
-    ): RollingOptionsPtDePositionRecord | undefined {
-        return pPositions.find((objPosition) => {
-            if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION") {
-                return false;
-            }
-            if (String(objPosition.action || "").trim().toUpperCase() !== pAction) {
-                return false;
-            }
-            const objMetadata = (objPosition.metadata || {}) as Record<string, unknown>;
-            const bSupportStylePosition = Boolean(objMetadata.positivePnlSupport || objMetadata.negativePnlAdjustment)
-                || this.isReplacementOptionPosition(objPosition);
-            if (!bSupportStylePosition) {
-                return false;
-            }
-            const vExistingSide = this.getOptionSide(objPosition);
-            return vExistingSide !== "" && vExistingSide !== pOptionSide;
-        });
-    }
-
-    private hasTwoOpenOriginalSellSides(pPositions: RollingOptionsPtDePositionRecord[]): boolean {
-        const objSides = new Set<"CE" | "PE">();
-        for (const objPosition of Array.isArray(pPositions) ? pPositions : []) {
-            if (objPosition.status !== "OPEN" || objPosition.instrumentType !== "OPTION") {
-                continue;
-            }
-            if (String(objPosition.action || "").trim().toUpperCase() !== "SELL") {
-                continue;
-            }
-            if (isPositivePnlSupportPosition(objPosition) || this.isReplacementOptionPosition(objPosition)) {
-                continue;
-            }
-            const vSide = this.getOptionSide(objPosition);
-            if (vSide === "CE" || vSide === "PE") {
-                objSides.add(vSide);
-            }
-        }
-        return objSides.has("CE") && objSides.has("PE");
-    }
-
     private async managePositivePnlSupports(
         pUserId: string,
         pUiState: Record<string, unknown>,
         pBaseConfig: RollingOptionsPtDeConfig,
-        pHasFreshRenkoTick = false
+        pManualOpen = false
     ): Promise<void> {
         const bSupportEnabled = Boolean((pUiState as any).positivePnlSupportEnabled ?? true);
         const vTriggerAmount = Math.min(0, normalizeNumber((pUiState as any).positivePnlTriggerAmount, 0));
+        const vSupportAction: "buy" | "sell" = String((pUiState as any).positivePnlSupportAction || "buy").trim().toLowerCase() === "sell"
+            ? "sell"
+            : "buy";
+        const vSupportActionLabel = vSupportAction.toUpperCase();
+        const bSellSupportMode = vSupportAction === "sell";
         const objState = this.getOrCreateState(pUserId);
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const arrOpenOptions = arrOpenPositions.filter((objPosition) => {
             return objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION";
         });
-        const arrSupportPositions = arrOpenOptions.filter(isPositivePnlSupportPosition);
-        const arrOriginalSellOptions = arrOpenOptions.filter((objPosition) => {
-            return String(objPosition.action || "").trim().toUpperCase() === "SELL"
-                && !isPositivePnlSupportPosition(objPosition)
-                && !this.isReplacementOptionPosition(objPosition);
+        const arrSupportPositions = arrOpenOptions.filter(isPositivePnlSupportLeg);
+        const arrSourceOptions = arrOpenOptions.filter((objPosition) => {
+            return !isPositivePnlSupportLeg(objPosition)
+                && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
         });
         if (arrSupportPositions.length > 0) {
-            const arrOpenOriginalOptions = arrOpenOptions.filter((objPosition) => {
-                return !isPositivePnlSupportPosition(objPosition)
-                    && !this.isReplacementOptionPosition(objPosition);
-            });
-            if (arrOpenOriginalOptions.length <= 0) {
-                await this.closePositions(arrSupportPositions, pBaseConfig, "Support closed because no original option legs are running");
+            if (arrSourceOptions.length <= 0) {
+                await this.closePositions(arrSupportPositions, pBaseConfig, "Support closed because no source option legs are running");
                 return;
             }
         }
-        if (!this.hasTwoOpenOriginalSellSides(arrOpenOptions)) {
-            return;
-        }
-        const vOpenOriginalPnl = arrOpenPositions
-            .filter((objPosition) => {
-                return objPosition.status === "OPEN"
-                    && !isPositivePnlSupportPosition(objPosition)
-                    && !this.isReplacementOptionPosition(objPosition);
-            })
-            .reduce((vTotal, objPosition) => vTotal + Number(objPosition.pnl || 0), 0);
-        const objSourceById = new Map(arrOriginalSellOptions.map((objPosition) => [objPosition.positionId, objPosition]));
+        const arrNegativeSourceOptions = arrSourceOptions.filter((objPosition) => Number(objPosition.pnl || 0) <= vTriggerAmount);
+        const objSourceById = new Map(arrSourceOptions.map((objPosition) => [objPosition.positionId, objPosition]));
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            const bTriggeredByTotalPnl = Boolean((objSupport.metadata as any)?.triggeredByTotalPnl);
-            return !objSource || (!bTriggeredByTotalPnl && Number(objSource.pnl || 0) < 0);
+            return !objSource || (bSellSupportMode ? Number(objSource.pnl || 0) > 0 : Number(objSource.pnl || 0) > vTriggerAmount);
         });
         if (arrSupportsToClose.length > 0) {
-            await this.closePositions(arrSupportsToClose, pBaseConfig, "Positive PnL source became negative or closed");
+            await this.closePositions(arrSupportsToClose, pBaseConfig, "Support source is no longer negative or closed");
         }
 
         const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
@@ -2435,13 +2420,14 @@ export class RollingOptionsStrangleService {
             });
         };
 
-        for (const objSource of arrOriginalSellOptions) {
+        for (const objSource of arrSourceOptions) {
             if (objActiveSupportSourceIds.has(objSource.positionId)) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, -1);
                 await saveSourceTriggerState(objSource, false, 0);
                 continue;
             }
-            if (vOpenOriginalPnl > vTriggerAmount && (objSource.metadata as any)?.positivePnlSupportArmed !== false) {
+            if ((bSellSupportMode ? Number(objSource.pnl || 0) > 0 : Number(objSource.pnl || 0) > vTriggerAmount)
+                && (objSource.metadata as any)?.positivePnlSupportArmed !== false) {
                 objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, 0);
                 await saveSourceTriggerState(objSource, true, 0);
             }
@@ -2451,17 +2437,17 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        if (vOpenOriginalPnl > vTriggerAmount) {
+        if (arrNegativeSourceOptions.length <= 0) {
             return;
         }
 
-        const objPendingSource = arrOriginalSellOptions.find((objPosition) => {
+        const objPendingSource = arrNegativeSourceOptions.find((objPosition) => {
             const vTrackedCount = objState.sourcePositiveCycleCountByPositionId.get(objPosition.positionId)
                 ?? Number((objPosition.metadata as any)?.positivePnlCycleCount || 0);
             return vTrackedCount > 0;
         });
-        const objSource = objPendingSource || [...arrOriginalSellOptions]
-            .sort((objLeft, objRight) => Number(objRight.pnl || 0) - Number(objLeft.pnl || 0))[0];
+        const objSource = objPendingSource || [...arrNegativeSourceOptions]
+            .sort((objLeft, objRight) => Number(objLeft.pnl || 0) - Number(objRight.pnl || 0))[0];
         if (!objSource) {
             return;
         }
@@ -2480,7 +2466,7 @@ export class RollingOptionsStrangleService {
             objState.sourcePositiveCycleCountByPositionId.get(objSource.positionId)
                 ?? Number((objSource.metadata as any)?.positivePnlCycleCount || 0)
         );
-        const vPositiveCycleCount = Math.min(2, vPreviousCycleCount + 1);
+        const vPositiveCycleCount = pManualOpen ? 2 : Math.min(2, vPreviousCycleCount + 1);
         objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, vPositiveCycleCount);
         await saveSourceTriggerState(objSource, true, vPositiveCycleCount);
         if (vPositiveCycleCount < 2) {
@@ -2497,68 +2483,6 @@ export class RollingOptionsStrangleService {
         }
 
         const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
-        const vSupportAction: "buy" | "sell" = String((pUiState as any).positivePnlSupportAction || "buy").trim().toLowerCase() === "sell"
-            ? "sell"
-            : "buy";
-        const vSupportActionLabel = vSupportAction.toUpperCase();
-        if (!pHasFreshRenkoTick) {
-            await logRollingOptionsPtDeEvent({
-                userId: pUserId,
-                eventType: "manual_action",
-                severity: "info",
-                title: "Positive PnL Support Skipped",
-                message: "Skipped support because no fresh Delta WebSocket Renko tick is available.",
-                payload: {
-                    symbol: pBaseConfig.symbol,
-                    sourcePositionId: objSource.positionId,
-                    supportSide: vSupportSide,
-                    maxTickAgeMs: RENKO_MAX_WEBSOCKET_TICK_AGE_MS,
-                    reason: "positive_pnl_support_no_fresh_renko_tick"
-                }
-            });
-            return;
-        }
-        const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
-        const vRequiredRenkoColor: "R" | "G" = vSupportSide === "PE" ? "R" : "G";
-        if (vCurrentRenkoColor !== vRequiredRenkoColor) {
-            await logRollingOptionsPtDeEvent({
-                userId: pUserId,
-                eventType: "manual_action",
-                severity: "info",
-                title: "Positive PnL Support Skipped",
-                message: `Skipped ${vSupportActionLabel} ${vSupportSide} support because Renko color is ${vCurrentRenkoColor || "not available"}, expected ${vRequiredRenkoColor}.`,
-                payload: {
-                    symbol: pBaseConfig.symbol,
-                    sourcePositionId: objSource.positionId,
-                    supportSide: vSupportSide,
-                    currentRenkoColor: vCurrentRenkoColor,
-                    requiredRenkoColor: vRequiredRenkoColor,
-                    reason: "positive_pnl_support_renko_mismatch"
-                }
-            });
-            return;
-        }
-        const objOppositeSupportLeg = this.findOpenOppositeSupportPosition(arrOpenOptions, vSupportSide, vSupportActionLabel as "BUY" | "SELL");
-        if (objOppositeSupportLeg) {
-            const vExistingSide = this.getOptionSide(objOppositeSupportLeg);
-            await logRollingOptionsPtDeEvent({
-                userId: pUserId,
-                eventType: "manual_action",
-                severity: "warning",
-                title: "Positive PnL Support Skipped",
-                message: `Skipped ${vSupportActionLabel} ${vSupportSide} support because ${vSupportActionLabel} ${vExistingSide} support/replacement is already open.`,
-                payload: {
-                    symbol: pBaseConfig.symbol,
-                    sourcePositionId: objSource.positionId,
-                    supportSide: vSupportSide,
-                    supportAction: vSupportAction,
-                    existingSide: vExistingSide,
-                    existingPositionId: objOppositeSupportLeg.positionId,
-                    reason: "positive_pnl_support_opposite_open"
-                }
-            });
-            return;
-        }
         const vQty = Math.max(0, Math.floor(normalizeNumber((pUiState as any).positivePnlSupportQty, 10)));
         if (!(vQty > 0)) {
             return;
@@ -2621,7 +2545,7 @@ export class RollingOptionsStrangleService {
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
                 positivePnlTriggerAmount: vTriggerAmount,
-                triggeredByTotalPnl: true,
+                triggeredByNegativeSourceLeg: true,
                 reason: "positive_pnl_support"
             }
         );
@@ -2633,18 +2557,112 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened ${vSupportActionLabel} ${vSupportSide} support after total open original-position PnL stayed at or below ${vTriggerAmount} for two cycles.`,
+                message: `Opened ${vSupportActionLabel} ${vSupportSide} support after source leg PnL stayed at or below ${vTriggerAmount} for two cycles.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
+                    sourceContractName: objSource.contractName,
+                    sourcePnl: Number(objSource.pnl || 0),
                     supportSide: vSupportSide,
                     supportAction: vSupportAction,
                     triggerAmount: vTriggerAmount,
-                    openOriginalPnl: vOpenOriginalPnl,
                     reason: "positive_pnl_support"
                 }
             });
         }
+    }
+
+    public async openPositivePnlSupportManually(pUserId: string): Promise<{ status: string; message: string; openedCount: number; }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        const objState = this.getOrCreateState(pUserId);
+        const arrBefore = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const vBeforeSupportCount = arrBefore.filter(isPositivePnlSupportLeg).length;
+        const objRenkoSnapshot = objConfig.renkoEnabled
+            ? getFreshWebSocketMarketSnapshot(objConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS)
+            : this.getSimulatedSnapshot(objState, objConfig);
+
+        if (objRenkoSnapshot) {
+            updateRenkoState(objState, objRenkoSnapshot, objConfig);
+        }
+
+        await this.managePositivePnlSupports(
+            pUserId,
+            objUiState,
+            objConfig,
+            true
+        );
+
+        const arrAfter = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const vAfterSupportCount = arrAfter.filter(isPositivePnlSupportLeg).length;
+        const vOpenedCount = Math.max(0, vAfterSupportCount - vBeforeSupportCount);
+        return {
+            status: vOpenedCount > 0 ? "success" : "warning",
+            message: vOpenedCount > 0
+                ? `Opened ${vOpenedCount} Positive PnL support leg${vOpenedCount === 1 ? "" : "s"}.`
+                : "No Positive PnL support leg was opened. Check negative source PnL, Max Legs, qty, and margin.",
+            openedCount: vOpenedCount
+        };
+    }
+
+    public async setTradingViewEmaTrend(
+        pUserId: string,
+        pTrend: "UP" | "DOWN" | "FLAT",
+        pPayload: Record<string, unknown> = {}
+    ): Promise<{ status: string; message: string; trend: "UP" | "DOWN" | "FLAT"; }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        const objState = this.getOrCreateState(pUserId);
+        const vTrend = normalizeTradingViewEmaTrend(pTrend);
+        const bTradingViewEmaEnabled = Boolean((objUiState as any).tradingViewEmaEnabled);
+        const vAllowedSide = normalizeTradingViewEmaSide((objUiState as any).tradingViewEmaSide);
+        if (!bTradingViewEmaEnabled) {
+            await this.syncRuntime(pUserId, objConfig, objState, {
+                lastSignal: "TV_EMA_OFF",
+                lastError: ""
+            });
+            return {
+                status: "warning",
+                message: "TradingView EMA message ignored because TV EMA is OFF.",
+                trend: objState.tradingViewEmaTrend || "FLAT"
+            };
+        }
+        if (vTrend !== "FLAT" && vAllowedSide !== "BOTH" && vTrend !== vAllowedSide) {
+            await this.syncRuntime(pUserId, objConfig, objState, {
+                lastSignal: `TV_EMA_${vTrend}_IGNORED`,
+                lastError: ""
+            });
+            return {
+                status: "warning",
+                message: `TradingView EMA ${vTrend} ignored because TV EMA side is ${vAllowedSide}.`,
+                trend: objState.tradingViewEmaTrend || "FLAT"
+            };
+        }
+        objState.tradingViewEmaTrend = vTrend;
+        await this.syncRuntime(pUserId, objConfig, objState, {
+            lastSignal: `TV_EMA_${vTrend}`,
+            lastError: ""
+        });
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: vTrend === "FLAT" ? "info" : "success",
+            title: "TradingView EMA Trend",
+            message: `TradingView EMA trend switched to ${vTrend}.`,
+            payload: {
+                symbol: objConfig.symbol,
+                trend: vTrend,
+                source: "tradingview",
+                receivedPayload: pPayload,
+                reason: "tradingview_ema_trend"
+            }
+        });
+
+        return {
+            status: "success",
+            message: `TradingView EMA trend switched to ${vTrend}.`,
+            trend: vTrend
+        };
     }
 
     public async runCycle(pUserId: string): Promise<{ status: string; message: string; }> {
@@ -2676,6 +2694,7 @@ export class RollingOptionsStrangleService {
             objState.market.lastSpotPrice = objSnapshot.spotPrice;
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
+            const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
 
             const objPayoffSlTrigger = await this.handlePayoffSlCheckpointTrigger(
                 pUserId,
@@ -2700,7 +2719,6 @@ export class RollingOptionsStrangleService {
                 return { status: "success", message: objPayoffSlTrigger.message };
             }
 
-            const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
             const bTrailGreenTp1Enabled = Boolean((objUiState as any).trailGreenTp1Enabled ?? true);
             const bTrailRedTp1Enabled = Boolean((objUiState as any).trailRedTp1Enabled ?? true);
             const bTrailGreenTp2Enabled = Boolean((objUiState as any).trailGreenTp2Enabled ?? true);
@@ -2939,7 +2957,7 @@ export class RollingOptionsStrangleService {
                 }
             }
 
-            await this.managePositivePnlSupports(pUserId, objUiState, objConfig, Boolean(objRenkoSnapshot));
+            await this.managePositivePnlSupports(pUserId, objUiState, objConfig);
 
             // Check and close replacement legs if original legs are both positive
             await this.closeReplacementWhenOriginalLegsPositive(pUserId, objConfig);

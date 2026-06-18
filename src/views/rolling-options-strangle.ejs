@@ -494,7 +494,10 @@
                     </div>
                     <div class="rolling-demo-field">
                         <label>&nbsp;</label>
-                        <button class="rolling-demo-btn primary" type="button" id="btnRollingDemoUpdatePositivePnl">Update</button>
+                        <div class="rolling-demo-inline">
+                            <button class="rolling-demo-btn buy" type="button" id="btnRollingDemoOpenPositivePnl">OPEN</button>
+                            <button class="rolling-demo-btn primary" type="button" id="btnRollingDemoUpdatePositivePnl">Update</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -653,6 +656,7 @@
                         <button class="rolling-demo-signal idle" type="button" id="rollingDemoLastSignal" title="Click to toggle manual Renko signal">
                             -
                         </button>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoTradingViewEmaTrend">TV EMA: FLAT</span>
                     </div>
                     <div class="rolling-demo-card-tools">
                         <div class="rolling-demo-field">
@@ -666,6 +670,21 @@
                                 <option value="spot_price" selected>Spot Price</option>
                                 <option value="best_bid">Best Bid</option>
                                 <option value="best_ask">Best Ask</option>
+                            </select>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="chkRollingDemoTradingViewEma">TV EMA</label>
+                            <label class="rolling-demo-check">
+                                <input type="checkbox" id="chkRollingDemoTradingViewEma" />
+                                <span>ON</span>
+                            </label>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="ddlRollingDemoTradingViewEmaSide">Side</label>
+                            <select id="ddlRollingDemoTradingViewEmaSide">
+                                <option value="both" selected>Both</option>
+                                <option value="up">UP</option>
+                                <option value="down">DOWN</option>
                             </select>
                         </div>
                     </div>

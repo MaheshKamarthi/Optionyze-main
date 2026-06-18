@@ -55,6 +55,9 @@
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
+        tradingViewEmaEnabled: document.getElementById("chkRollingDemoTradingViewEma"),
+        tradingViewEmaSide: document.getElementById("ddlRollingDemoTradingViewEmaSide"),
+        tradingViewEmaTrend: document.getElementById("rollingDemoTradingViewEmaTrend"),
         demoBalance: document.getElementById("txtRollingDemoDemoBalance"),
         targetOpenPnl: document.getElementById("txtRollingDemoTargetOpenPnl"),
         optionsPnl: document.getElementById("txtRollingDemoOptionsPnl"),
@@ -87,6 +90,7 @@
         updateRedRulesButton: document.getElementById("btnRollingDemoUpdateRedRules"),
         updateRedRulesButton2: document.getElementById("btnRollingDemoUpdateRedRules2"),
         updatePositivePnlButton: document.getElementById("btnRollingDemoUpdatePositivePnl"),
+        openPositivePnlButton: document.getElementById("btnRollingDemoOpenPositivePnl"),
         openOptionButton: document.getElementById("btnRollingDemoOpenOption"),
         openOptionButton2: document.getElementById("btnRollingDemoOpenOption2"),
         exitOptionButton: document.getElementById("btnRollingDemoExitOption"),
@@ -763,6 +767,8 @@
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
+            tradingViewEmaEnabled: Boolean(ids.tradingViewEmaEnabled?.checked),
+            tradingViewEmaSide: String(ids.tradingViewEmaSide?.value || "both"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
             targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
             payoffSlCheckpointPrices: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints)
@@ -863,6 +869,8 @@
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
+        setFieldValue("tradingViewEmaEnabled", uiState.tradingViewEmaEnabled ?? false);
+        setFieldValue("tradingViewEmaSide", uiState.tradingViewEmaSide ?? "both");
         setFieldValue("demoBalance", uiState.demoBalance);
         setFieldValue("targetOpenPnl", uiState.targetOpenPnl ?? 0);
         setFieldValue("closeAllLegsOnAnyClose", uiState.closeAllLegsOnAnyClose ?? false);
@@ -914,7 +922,11 @@
         const lastSignal = String(runtimeState?.lastSignal || "-").trim() || "-";
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
-
+        const tradingViewEmaEnabled = Boolean(runtimeState?.state?.tradingViewEmaEnabled ?? ids.tradingViewEmaEnabled?.checked);
+        const tradingViewEmaSideRaw = String(runtimeState?.state?.tradingViewEmaSide || ids.tradingViewEmaSide?.value || "BOTH").trim().toUpperCase();
+        const tradingViewEmaSide = tradingViewEmaSideRaw === "UP" || tradingViewEmaSideRaw === "DOWN" ? tradingViewEmaSideRaw : "BOTH";
+        const tradingViewEmaTrendRaw = String(runtimeState?.state?.tradingViewEmaTrend || "FLAT").trim().toUpperCase();
+        const tradingViewEmaTrend = tradingViewEmaTrendRaw === "UP" || tradingViewEmaTrendRaw === "DOWN" ? tradingViewEmaTrendRaw : "FLAT";
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
         }
@@ -932,6 +944,15 @@
         if (ids.lastSignal) {
             applyRenkoSignalBox(renkoColor);
             ids.lastSignal.dataset.lastSignalText = lastSignal;
+        }
+
+        if (ids.tradingViewEmaTrend) {
+            ids.tradingViewEmaTrend.textContent = tradingViewEmaEnabled
+                ? `TV EMA: ${tradingViewEmaTrend} / ${tradingViewEmaSide}`
+                : "TV EMA: OFF";
+            ids.tradingViewEmaTrend.classList.toggle("success", tradingViewEmaEnabled && tradingViewEmaTrend === "UP");
+            ids.tradingViewEmaTrend.classList.toggle("danger", tradingViewEmaEnabled && tradingViewEmaTrend === "DOWN");
+            ids.tradingViewEmaTrend.classList.toggle("secondary", !tradingViewEmaEnabled || tradingViewEmaTrend === "FLAT");
         }
 
         updateOptionsPnlMetric(gLatestClosedPositions);
@@ -1966,6 +1987,12 @@
     ids.updatePositivePnlButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/positive-pnl/settings/update`, {});
     });
+    ids.openPositivePnlButton?.addEventListener("click", function () {
+        queueProfileSave();
+        void flushProfileSave().then(function () {
+            return runServerAction(`${apiBase}/manual/positive-pnl-support`, {});
+        });
+    });
 
     ids.exitOptionButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/manual/exit`, {
@@ -2052,6 +2079,8 @@
         ids.greenSlPct,
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
+        ids.tradingViewEmaEnabled,
+        ids.tradingViewEmaSide,
         ids.demoBalance,
         ids.closeAllLegsOnAnyClose,
         ids.skipRenkoEntryNoOpenOptions,

@@ -55,11 +55,13 @@ import {
     getRollingOptionsStrangleOpenPositions,
     getRollingOptionsStrangleProfile,
     getRollingOptionsStrangleStatus,
+    openRollingOptionsStranglePositivePnlSupport,
     resetRollingOptionsStrangleStrategy,
     runRollingOptionsStrangleStrategyCycle,
     runRollingOptionsStrangleStrategyExecution,
     saveRollingOptionsStrangleProfileController,
     setRollingOptionsStrangleManualRenkoSignal,
+    setRollingOptionsStrangleTradingViewEmaTrend,
     toggleRollingOptionsStrangleAutoTrader,
     updateRollingOptionsStrangleNegativePnlSettings,
     updateRollingOptionsStrangleOpenPositionLinkController,
@@ -386,6 +388,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle/positive-pnl/settings/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleNegativePnlSettings(req, res);
     });
+    objRouter.post("/rollingoptions-strangle/manual/positive-pnl-support", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await openRollingOptionsStranglePositivePnlSupport(req, res, pRollingOptionsStrangleService);
+    });
     objRouter.post("/rollingoptions-strangle/rules/update", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await updateRollingOptionsStrangleRuleSettings(req, res);
     });
@@ -400,6 +405,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle/renko/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await setRollingOptionsStrangleManualRenkoSignal(req, res, pRollingOptionsStrangleService);
+    });
+    objRouter.post("/rollingoptions-strangle/tradingview/ema-trend", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await setRollingOptionsStrangleTradingViewEmaTrend(req, res, pRollingOptionsStrangleService);
     });
     objRouter.post("/rollingoptions-strangle/strategy/reset", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await resetRollingOptionsStrangleStrategy(req, res, pRollingOptionsStrangleService);

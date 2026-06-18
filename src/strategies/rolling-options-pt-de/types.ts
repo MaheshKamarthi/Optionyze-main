@@ -71,6 +71,7 @@ export interface RollingOptionsPtDeEngineState {
     lastCycleAt: string | null;
     manualCloseBlocksOptionEntry?: boolean;
     positionMismatchDetected?: boolean;
+    tradingViewEmaTrend?: "UP" | "DOWN" | "FLAT";
     renko: RollingOptionsPtDeRenkoState;
     market: {
         lastSpotPrice: number | null;
