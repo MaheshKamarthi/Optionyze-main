@@ -2523,10 +2523,10 @@ export class RollingOptionsStrangleService {
         const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
-            return !objSource || (bSellSupportMode ? Number(objSource.pnl || 0) > 0 : Number(objSource.pnl || 0) > vTriggerAmount);
+            return !objSource;
         });
         if (arrSupportsToClose.length > 0) {
-            await this.closePositions(arrSupportsToClose, pBaseConfig, "Support source is no longer negative or closed");
+            await this.closePositions(arrSupportsToClose, pBaseConfig, "Support source option leg is closed");
         }
 
         const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
