@@ -57,6 +57,7 @@
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
         emaEnabled: document.getElementById("chkRollingDemoEma"),
         emaSignalEnabled: document.getElementById("chkRollingDemoEmaSignal"),
+        emaRenkoConfirmEnabled: document.getElementById("chkRollingDemoEmaRenkoConfirm"),
         emaTimeframe: document.getElementById("ddlRollingDemoEmaTimeframe"),
         emaPeriod: document.getElementById("txtRollingDemoEmaPeriod"),
         emaIndicator: document.getElementById("rollingDemoEmaIndicator"),
@@ -772,6 +773,7 @@
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             emaEnabled: Boolean(ids.emaEnabled?.checked),
             emaSignalEnabled: Boolean(ids.emaSignalEnabled?.checked),
+            emaRenkoConfirmEnabled: Boolean(ids.emaRenkoConfirmEnabled?.checked),
             emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
             emaPeriod: parseNumberInput(ids.emaPeriod, 20),
             tradingViewEmaEnabled: Boolean(ids.tradingViewEmaEnabled?.checked),
@@ -878,6 +880,7 @@
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("emaEnabled", uiState.emaEnabled ?? false);
         setFieldValue("emaSignalEnabled", uiState.emaSignalEnabled ?? false);
+        setFieldValue("emaRenkoConfirmEnabled", uiState.emaRenkoConfirmEnabled ?? false);
         setFieldValue("emaTimeframe", uiState.emaTimeframe ?? "1m");
         setFieldValue("emaPeriod", uiState.emaPeriod ?? 20);
         setFieldValue("tradingViewEmaEnabled", uiState.tradingViewEmaEnabled ?? false);
@@ -940,6 +943,7 @@
         const tradingViewEmaTrend = tradingViewEmaTrendRaw === "UP" || tradingViewEmaTrendRaw === "DOWN" ? tradingViewEmaTrendRaw : "FLAT";
         const emaEnabled = Boolean(runtimeState?.state?.emaEnabled ?? ids.emaEnabled?.checked);
         const emaSignalEnabled = Boolean(runtimeState?.state?.emaSignalEnabled ?? ids.emaSignalEnabled?.checked);
+        const emaRenkoConfirmEnabled = Boolean(runtimeState?.state?.emaRenkoConfirmEnabled ?? ids.emaRenkoConfirmEnabled?.checked);
         const emaTimeframe = String(runtimeState?.state?.emaTimeframe || ids.emaTimeframe?.value || "1m");
         const emaPeriod = Number(runtimeState?.state?.emaPeriod || ids.emaPeriod?.value || 20);
         const emaValue = Number(runtimeState?.state?.emaValue);
@@ -982,6 +986,9 @@
                 : "EMA: OFF";
             if (emaEnabled && emaSignalEnabled && Number.isFinite(emaValue)) {
                 ids.emaIndicator.textContent += " / SIGNAL";
+            }
+            if (emaEnabled && emaRenkoConfirmEnabled && Number.isFinite(emaValue)) {
+                ids.emaIndicator.textContent += " / CONFIRM";
             }
             ids.emaIndicator.classList.toggle("success", emaEnabled && Number.isFinite(emaValue) && emaTrend === "UP");
             ids.emaIndicator.classList.toggle("danger", emaEnabled && ((Number.isFinite(emaValue) && emaTrend === "DOWN") || (Boolean(emaError) && !Number.isFinite(emaValue))));
@@ -2143,6 +2150,7 @@
         ids.renkoFeedPriceSrc,
         ids.emaEnabled,
         ids.emaSignalEnabled,
+        ids.emaRenkoConfirmEnabled,
         ids.emaTimeframe,
         ids.emaPeriod,
         ids.tradingViewEmaEnabled,

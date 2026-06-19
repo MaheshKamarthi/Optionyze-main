@@ -95,6 +95,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
         emaSignalEnabled: false,
+        emaRenkoConfirmEnabled: false,
         emaTimeframe: "1m",
         emaPeriod: 20,
         tradingViewEmaEnabled: false,
@@ -269,6 +270,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     objUiState.emaEnabled = Boolean((objUiState as any).emaEnabled);
     objUiState.emaSignalEnabled = Boolean((objUiState as any).emaSignalEnabled);
+    objUiState.emaRenkoConfirmEnabled = Boolean((objUiState as any).emaRenkoConfirmEnabled);
     objUiState.emaTimeframe = normalizeEmaTimeframe((objUiState as any).emaTimeframe);
     objUiState.emaPeriod = normalizeEmaPeriod((objUiState as any).emaPeriod);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
@@ -308,6 +310,7 @@ async function getDefaultRuntimeState(pUserId: string): Promise<RollingOptionsPt
             tradingViewEmaTrend: "FLAT",
             emaEnabled: Boolean(objUiState.emaEnabled),
             emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
+            emaRenkoConfirmEnabled: Boolean(objUiState.emaRenkoConfirmEnabled),
             emaTimeframe: normalizeEmaTimeframe(objUiState.emaTimeframe),
             emaPeriod: normalizeEmaPeriod(objUiState.emaPeriod),
             emaTrend: "FLAT",
@@ -744,6 +747,7 @@ async function updateRuntimeFromUiState(
             tradingViewEmaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.tradingViewEmaTrend),
             emaEnabled: Boolean(objUiState.emaEnabled),
             emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
+            emaRenkoConfirmEnabled: Boolean(objUiState.emaRenkoConfirmEnabled),
             emaTimeframe: normalizeEmaTimeframe(objUiState.emaTimeframe),
             emaPeriod: normalizeEmaPeriod(objUiState.emaPeriod),
             emaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.emaTrend),

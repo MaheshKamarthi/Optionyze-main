@@ -367,6 +367,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
         emaSignalEnabled: false,
+        emaRenkoConfirmEnabled: false,
         emaTimeframe: "1m",
         emaPeriod: 20,
         tradingViewEmaEnabled: false,
@@ -513,6 +514,7 @@ export class RollingOptionsStrangleService {
             renkoFeedPriceSrc: "spot_price",
             emaEnabled: false,
             emaSignalEnabled: false,
+            emaRenkoConfirmEnabled: false,
             emaTimeframe: "1m",
             emaPeriod: 20,
             tradingViewEmaEnabled: false,
@@ -999,6 +1001,7 @@ export class RollingOptionsStrangleService {
                 tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
                 emaEnabled: pState.ema.enabled,
                 emaSignalEnabled: Boolean(((pConfig as any).__uiState || {}).emaSignalEnabled),
+                emaRenkoConfirmEnabled: Boolean(((pConfig as any).__uiState || {}).emaRenkoConfirmEnabled),
                 emaTimeframe: pState.ema.timeframe,
                 emaPeriod: pState.ema.period,
                 emaTrend: pState.ema.trend,
@@ -1233,6 +1236,48 @@ export class RollingOptionsStrangleService {
         return vFallback;
     }
 
+    private async canOpenOptionByEmaRenkoConfirmation(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pColorCode: "R" | "G",
+        pReason: string,
+        pMetadataOverrides: Record<string, unknown>
+    ): Promise<boolean> {
+        const objUiState = ((pConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!Boolean((objUiState as any).emaRenkoConfirmEnabled)) {
+            return true;
+        }
+        if (Boolean((pMetadataOverrides as any).positivePnlSupport)) {
+            return true;
+        }
+
+        const objState = this.getOrCreateState(pUserId);
+        await this.updateStandaloneEmaIndicator(pConfig, objState, objUiState);
+        const vEmaTrend = objState.ema.trend;
+        const vRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+        const vExpectedEmaTrend = pColorCode === "G" ? "UP" : "DOWN";
+        const bAllowed = vEmaTrend === vExpectedEmaTrend && vRenkoColor === pColorCode;
+        if (bAllowed) {
+            return true;
+        }
+
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "Option Entry Skipped",
+            message: `Skipped ${pReason} because EMA and Renko confirmation did not match ${pColorCode === "G" ? "GREEN" : "RED"}.`,
+            payload: {
+                symbol: pConfig.symbol,
+                reason: "ema_renko_confirmation_mismatch",
+                requestedColor: pColorCode,
+                emaTrend: vEmaTrend,
+                renkoColor: vRenkoColor || "NONE"
+            }
+        });
+        return false;
+    }
+
     private async openOptionPositions(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
@@ -1245,6 +1290,10 @@ export class RollingOptionsStrangleService {
         pMetadataOverrides: Record<string, unknown> = {},
         pAllowNextDayExpiryFallback = true
     ): Promise<RollingOptionsPtDePositionRecord[]> {
+        if (!(await this.canOpenOptionByEmaRenkoConfirmation(pUserId, pConfig, pColorCode, pReason, pMetadataOverrides))) {
+            return [];
+        }
+
         const objSnapshot = await this.getMarketSnapshot(this.getOrCreateState(pUserId), pConfig);
         const vOptionSides: Array<"CE" | "PE"> = Array.isArray(pOptionSidesOverride) && pOptionSidesOverride.length > 0
             ? pOptionSidesOverride
