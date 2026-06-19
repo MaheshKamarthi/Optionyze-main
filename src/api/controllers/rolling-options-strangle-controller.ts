@@ -93,6 +93,10 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
+        emaEnabled: false,
+        emaSignalEnabled: false,
+        emaTimeframe: "1m",
+        emaPeriod: 20,
         tradingViewEmaEnabled: false,
         tradingViewEmaSide: "both",
         demoBalance: 10000,
@@ -140,6 +144,19 @@ function getLotSizeForSymbol(pSymbol: string): number {
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
     return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function normalizeEmaTimeframe(pValue: unknown): "1m" | "5m" | "15m" | "1h" {
+    const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "5m" || vValue === "15m" || vValue === "1h") {
+        return vValue;
+    }
+    return "1m";
+}
+
+function normalizeEmaPeriod(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.min(500, Math.max(1, vValue)) : 20;
 }
 
 function calculatePaperNotional(pQty: number, pLotSize: number, pPrice: number): number {
@@ -250,6 +267,10 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
+    objUiState.emaEnabled = Boolean((objUiState as any).emaEnabled);
+    objUiState.emaSignalEnabled = Boolean((objUiState as any).emaSignalEnabled);
+    objUiState.emaTimeframe = normalizeEmaTimeframe((objUiState as any).emaTimeframe);
+    objUiState.emaPeriod = normalizeEmaPeriod((objUiState as any).emaPeriod);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {
@@ -284,7 +305,18 @@ async function getDefaultRuntimeState(pUserId: string): Promise<RollingOptionsPt
         state: {
             tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
             tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
-            tradingViewEmaTrend: "FLAT"
+            tradingViewEmaTrend: "FLAT",
+            emaEnabled: Boolean(objUiState.emaEnabled),
+            emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
+            emaTimeframe: normalizeEmaTimeframe(objUiState.emaTimeframe),
+            emaPeriod: normalizeEmaPeriod(objUiState.emaPeriod),
+            emaTrend: "FLAT",
+            emaSignalTrend: "FLAT",
+            emaValue: null,
+            emaClose: null,
+            emaCandleCount: 0,
+            emaCalculatedAt: "",
+            emaError: ""
         },
         updatedAt: ""
     };
@@ -709,7 +741,18 @@ async function updateRuntimeFromUiState(
             ...(objRuntime.state || {}),
             tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
             tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
-            tradingViewEmaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.tradingViewEmaTrend)
+            tradingViewEmaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.tradingViewEmaTrend),
+            emaEnabled: Boolean(objUiState.emaEnabled),
+            emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
+            emaTimeframe: normalizeEmaTimeframe(objUiState.emaTimeframe),
+            emaPeriod: normalizeEmaPeriod(objUiState.emaPeriod),
+            emaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.emaTrend),
+            emaSignalTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.emaSignalTrend),
+            emaValue: (objRuntime.state as any)?.emaValue ?? null,
+            emaClose: (objRuntime.state as any)?.emaClose ?? null,
+            emaCandleCount: Math.max(0, Math.floor(Number((objRuntime.state as any)?.emaCandleCount || 0))),
+            emaCalculatedAt: String((objRuntime.state as any)?.emaCalculatedAt || ""),
+            emaError: String((objRuntime.state as any)?.emaError || "")
         },
         updatedAt: "",
         ...pOverrides
@@ -2112,6 +2155,17 @@ export async function runRollingOptionsStrangleStrategyCycle(
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const objResult = await pService.runCycle(vUserId);
+    const objRuntime = await loadEffectiveRuntimeState(vUserId);
+    res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
+}
+
+export async function refreshRollingOptionsStrangleEmaIndicator(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const objResult = await pService.refreshStandaloneEmaIndicator(vUserId);
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }

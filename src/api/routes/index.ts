@@ -56,6 +56,7 @@ import {
     getRollingOptionsStrangleProfile,
     getRollingOptionsStrangleStatus,
     openRollingOptionsStranglePositivePnlSupport,
+    refreshRollingOptionsStrangleEmaIndicator,
     resetRollingOptionsStrangleStrategy,
     runRollingOptionsStrangleStrategyCycle,
     runRollingOptionsStrangleStrategyExecution,
@@ -402,6 +403,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle/strategy/cycle", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await runRollingOptionsStrangleStrategyCycle(req, res, pRollingOptionsStrangleService);
+    });
+    objRouter.post("/rollingoptions-strangle/ema/refresh", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await refreshRollingOptionsStrangleEmaIndicator(req, res, pRollingOptionsStrangleService);
     });
     objRouter.post("/rollingoptions-strangle/renko/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await setRollingOptionsStrangleManualRenkoSignal(req, res, pRollingOptionsStrangleService);

@@ -1,4 +1,8 @@
-import type { RollingOptionsPtDeConfig, RollingOptionsPtDeMarketSnapshot } from "./types";
+import type {
+    RollingOptionsPtDeConfig,
+    RollingOptionsPtDeEmaTimeframe,
+    RollingOptionsPtDeMarketSnapshot
+} from "./types";
 import WebSocket from "ws";
 
 interface DeltaTickerGreeks {
@@ -24,6 +28,11 @@ interface DeltaTickerRow {
 interface DeltaApiResponse<T> {
     success?: boolean;
     result?: T;
+}
+
+interface DeltaCandleRow {
+    close?: string | number;
+    time?: string | number;
 }
 
 export interface RollingOptionsPtDeLiveOptionContract {
@@ -53,6 +62,19 @@ function getApiBaseUrl(): string {
 
 function getPublicSocketUrl(): string {
     return "wss://socket.india.delta.exchange";
+}
+
+function getSecondsForEmaTimeframe(pTimeframe: RollingOptionsPtDeEmaTimeframe): number {
+    if (pTimeframe === "1h") {
+        return 60 * 60;
+    }
+    if (pTimeframe === "15m") {
+        return 15 * 60;
+    }
+    if (pTimeframe === "5m") {
+        return 5 * 60;
+    }
+    return 60;
 }
 
 function toExpiryDateForDelta(pDateValue: string): string {
@@ -91,6 +113,54 @@ async function fetchJson<T>(pPath: string, pSearchParams?: URLSearchParams): Pro
     }
 
     return objResponse.json() as Promise<T>;
+}
+
+export function calculateEmaFromCloses(pCloses: number[], pPeriod: number): number | null {
+    const arrCloses = pCloses.filter((pClose) => Number.isFinite(Number(pClose)) && Number(pClose) > 0);
+    const vPeriod = Math.max(1, Math.floor(Number(pPeriod || 0)));
+    if (arrCloses.length < vPeriod) {
+        return null;
+    }
+
+    const vMultiplier = 2 / (vPeriod + 1);
+    let vEma = arrCloses.slice(0, vPeriod).reduce((pSum, pClose) => pSum + pClose, 0) / vPeriod;
+    for (const vClose of arrCloses.slice(vPeriod)) {
+        vEma = ((vClose - vEma) * vMultiplier) + vEma;
+    }
+    return Number(vEma.toFixed(8));
+}
+
+export async function getCandleEma(
+    pSymbol: string,
+    pTimeframe: RollingOptionsPtDeEmaTimeframe,
+    pPeriod: number
+): Promise<{ value: number | null; close: number | null; candleCount: number; calculatedAt: string; }> {
+    const vSymbol = String(pSymbol || "").trim().toUpperCase();
+    const vPeriod = Math.max(1, Math.floor(Number(pPeriod || 0)));
+    const vResolution = pTimeframe;
+    const vNowSeconds = Math.floor(Date.now() / 1000);
+    const vLookbackSeconds = getSecondsForEmaTimeframe(pTimeframe) * Math.max(vPeriod + 50, vPeriod * 4);
+    const objParams = new URLSearchParams({
+        symbol: vSymbol,
+        resolution: vResolution,
+        start: String(vNowSeconds - vLookbackSeconds),
+        end: String(vNowSeconds)
+    });
+    const objPayload = await fetchJson<DeltaApiResponse<DeltaCandleRow[]>>("/history/candles", objParams);
+    const arrRows = Array.isArray(objPayload.result) ? objPayload.result : [];
+    const arrCloses = arrRows
+        .slice()
+        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0))
+        .map((pRow) => parseNumber(pRow.close, NaN))
+        .filter((pClose) => Number.isFinite(pClose) && pClose > 0);
+    const vValue = calculateEmaFromCloses(arrCloses, vPeriod);
+    const vClose = arrCloses.length > 0 ? arrCloses[arrCloses.length - 1] : null;
+    return {
+        value: vValue,
+        close: vClose,
+        candleCount: arrCloses.length,
+        calculatedAt: new Date().toISOString()
+    };
 }
 
 class DeltaPublicTickerFeed {

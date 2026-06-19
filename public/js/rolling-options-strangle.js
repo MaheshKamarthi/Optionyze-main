@@ -55,6 +55,11 @@
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
+        emaEnabled: document.getElementById("chkRollingDemoEma"),
+        emaSignalEnabled: document.getElementById("chkRollingDemoEmaSignal"),
+        emaTimeframe: document.getElementById("ddlRollingDemoEmaTimeframe"),
+        emaPeriod: document.getElementById("txtRollingDemoEmaPeriod"),
+        emaIndicator: document.getElementById("rollingDemoEmaIndicator"),
         tradingViewEmaEnabled: document.getElementById("chkRollingDemoTradingViewEma"),
         tradingViewEmaSide: document.getElementById("ddlRollingDemoTradingViewEmaSide"),
         tradingViewEmaTrend: document.getElementById("rollingDemoTradingViewEmaTrend"),
@@ -165,6 +170,7 @@
     let gIsEventLogVisible = false;
     let gLastExpiryRefreshDay = formatDateInputValue(new Date());
     const gStatusRefreshMs = 45000;
+    const gEmaRefreshMs = 30000;
     const gOpenPositionsRefreshMs = 30000;
     const gClosedPositionsRefreshMs = 90000;
     const gEventsRefreshMs = 90000;
@@ -510,34 +516,10 @@
     }
 
     function checkTargetOpenPnl(openPnl, openCount) {
-        const vTarget = getTargetOpenPnlValue();
-        if (vTarget !== gLastTargetOpenPnl) {
-            gTargetOpenPnlTriggered = false;
-            gLastTargetOpenPnl = vTarget;
-        }
-
-        if (!Number.isFinite(openCount) || openCount <= 0) {
-            gTargetOpenPnlTriggered = false;
-            return;
-        }
-
-        if (!Number.isFinite(openPnl) || !Number.isFinite(vTarget)) {
-            return;
-        }
-
-        if (gTargetOpenPnlTriggered || gIsApplyingState) {
-            return;
-        }
-
-        const bHitTarget = vTarget > 0 ? (openPnl >= vTarget) : (openPnl <= vTarget);
-        if (!bHitTarget) {
-            return;
-        }
-
-        gTargetOpenPnlTriggered = true;
-        void runServerAction(`${apiBase}/manual/exit`, {
-            instrumentType: "ALL"
-        });
+        void openPnl;
+        void openCount;
+        gLastTargetOpenPnl = getTargetOpenPnlValue();
+        gTargetOpenPnlTriggered = false;
     }
 
     function updateTotalChargesMetric(rows = gLatestClosedPositions) {
@@ -767,6 +749,10 @@
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
+            emaEnabled: Boolean(ids.emaEnabled?.checked),
+            emaSignalEnabled: Boolean(ids.emaSignalEnabled?.checked),
+            emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
+            emaPeriod: parseNumberInput(ids.emaPeriod, 20),
             tradingViewEmaEnabled: Boolean(ids.tradingViewEmaEnabled?.checked),
             tradingViewEmaSide: String(ids.tradingViewEmaSide?.value || "both"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
@@ -869,6 +855,10 @@
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
+        setFieldValue("emaEnabled", uiState.emaEnabled ?? false);
+        setFieldValue("emaSignalEnabled", uiState.emaSignalEnabled ?? false);
+        setFieldValue("emaTimeframe", uiState.emaTimeframe ?? "1m");
+        setFieldValue("emaPeriod", uiState.emaPeriod ?? 20);
         setFieldValue("tradingViewEmaEnabled", uiState.tradingViewEmaEnabled ?? false);
         setFieldValue("tradingViewEmaSide", uiState.tradingViewEmaSide ?? "both");
         setFieldValue("demoBalance", uiState.demoBalance);
@@ -927,6 +917,14 @@
         const tradingViewEmaSide = tradingViewEmaSideRaw === "UP" || tradingViewEmaSideRaw === "DOWN" ? tradingViewEmaSideRaw : "BOTH";
         const tradingViewEmaTrendRaw = String(runtimeState?.state?.tradingViewEmaTrend || "FLAT").trim().toUpperCase();
         const tradingViewEmaTrend = tradingViewEmaTrendRaw === "UP" || tradingViewEmaTrendRaw === "DOWN" ? tradingViewEmaTrendRaw : "FLAT";
+        const emaEnabled = Boolean(runtimeState?.state?.emaEnabled ?? ids.emaEnabled?.checked);
+        const emaSignalEnabled = Boolean(runtimeState?.state?.emaSignalEnabled ?? ids.emaSignalEnabled?.checked);
+        const emaTimeframe = String(runtimeState?.state?.emaTimeframe || ids.emaTimeframe?.value || "1m");
+        const emaPeriod = Number(runtimeState?.state?.emaPeriod || ids.emaPeriod?.value || 20);
+        const emaValue = Number(runtimeState?.state?.emaValue);
+        const emaTrendRaw = String(runtimeState?.state?.emaTrend || "FLAT").trim().toUpperCase();
+        const emaTrend = emaTrendRaw === "UP" || emaTrendRaw === "DOWN" ? emaTrendRaw : "FLAT";
+        const emaError = String(runtimeState?.state?.emaError || "").trim();
         if (ids.engineStatus) {
             ids.engineStatus.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
         }
@@ -953,6 +951,20 @@
             ids.tradingViewEmaTrend.classList.toggle("success", tradingViewEmaEnabled && tradingViewEmaTrend === "UP");
             ids.tradingViewEmaTrend.classList.toggle("danger", tradingViewEmaEnabled && tradingViewEmaTrend === "DOWN");
             ids.tradingViewEmaTrend.classList.toggle("secondary", !tradingViewEmaEnabled || tradingViewEmaTrend === "FLAT");
+        }
+
+        if (ids.emaIndicator) {
+            ids.emaIndicator.textContent = emaEnabled
+                ? (Number.isFinite(emaValue)
+                    ? `EMA ${emaPeriod} ${emaTimeframe}: ${emaTrend} ${formatNumericValue(emaValue, 2)}`
+                    : (emaError ? `EMA: ${emaError}` : `EMA ${emaPeriod} ${emaTimeframe}: WAIT`))
+                : "EMA: OFF";
+            if (emaEnabled && emaSignalEnabled && Number.isFinite(emaValue)) {
+                ids.emaIndicator.textContent += " / SIGNAL";
+            }
+            ids.emaIndicator.classList.toggle("success", emaEnabled && Number.isFinite(emaValue) && emaTrend === "UP");
+            ids.emaIndicator.classList.toggle("danger", emaEnabled && ((Number.isFinite(emaValue) && emaTrend === "DOWN") || (Boolean(emaError) && !Number.isFinite(emaValue))));
+            ids.emaIndicator.classList.toggle("secondary", !emaEnabled || (Number.isFinite(emaValue) && emaTrend === "FLAT") || (!Number.isFinite(emaValue) && !emaError));
         }
 
         updateOptionsPnlMetric(gLatestClosedPositions);
@@ -1657,6 +1669,17 @@
         renderEvents(Array.isArray(objPayload?.data) ? objPayload.data : []);
     }
 
+    async function refreshEmaIndicator() {
+        if (!ids.emaEnabled?.checked) {
+            return loadStatus();
+        }
+        await flushProfileSave();
+        const objResult = await postJson(`${apiBase}/ema/refresh`, {});
+        const objRuntimeState = objResult?.data || {};
+        applyRuntimeStatus(objRuntimeState);
+        return objRuntimeState;
+    }
+
     async function loadServerPanels() {
         await Promise.all([
             loadStatus(),
@@ -2090,6 +2113,10 @@
         ids.greenSlPct,
         ids.renkoFeedPts,
         ids.renkoFeedPriceSrc,
+        ids.emaEnabled,
+        ids.emaSignalEnabled,
+        ids.emaTimeframe,
+        ids.emaPeriod,
         ids.tradingViewEmaEnabled,
         ids.tradingViewEmaSide,
         ids.demoBalance,
@@ -2198,6 +2225,15 @@
             setStatus(objError instanceof Error ? objError.message : "Unable to refresh Rolling Options data.", "danger");
         });
     }, gStatusRefreshMs);
+
+    setInterval(function () {
+        if (document.visibilityState !== "visible") {
+            return;
+        }
+        void refreshEmaIndicator().catch(function (objError) {
+            console.error(objError);
+        });
+    }, gEmaRefreshMs);
 
     setInterval(function () {
         if (!hasTrackedOpenPositions()) {

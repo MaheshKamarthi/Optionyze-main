@@ -29,6 +29,7 @@ import { logRollingOptionsPtDeEvent } from "./event-logger";
 import {
     ensureLiveTickerSymbols,
     findBestLiveOptionContract,
+    getCandleEma,
     getLiveMarketSnapshot,
     getCachedOptionTicker,
     getFreshWebSocketMarketSnapshot,
@@ -37,6 +38,7 @@ import {
 import { syncOptionsPnlWithClosedPositions } from "./options-pnl";
 import type {
     RollingOptionsPtDeConfig,
+    RollingOptionsPtDeEmaTimeframe,
     RollingOptionsPtDeEngineState,
     RollingOptionsPtDeMarketSnapshot
 } from "../rolling-options-pt-de/types";
@@ -47,6 +49,19 @@ const RENKO_MAX_WEBSOCKET_TICK_AGE_MS = 3000;
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
     return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe {
+    const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "5m" || vValue === "15m" || vValue === "1h") {
+        return vValue;
+    }
+    return "1m";
+}
+
+function normalizeEmaPeriod(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.min(500, Math.max(1, vValue)) : 20;
 }
 
 function getLotSizeForSymbol(pSymbol: string): number {
@@ -350,6 +365,10 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "spot_price",
+        emaEnabled: false,
+        emaSignalEnabled: false,
+        emaTimeframe: "1m",
+        emaPeriod: 20,
         tradingViewEmaEnabled: false,
         tradingViewEmaSide: "both",
         demoBalance: 10000,
@@ -492,6 +511,10 @@ export class RollingOptionsStrangleService {
             trailRedSl2Enabled: true,
             renkoFeedPts: 10,
             renkoFeedPriceSrc: "spot_price",
+            emaEnabled: false,
+            emaSignalEnabled: false,
+            emaTimeframe: "1m",
+            emaPeriod: 20,
             tradingViewEmaEnabled: false,
             tradingViewEmaSide: "both",
             action2: "none",
@@ -572,6 +595,18 @@ export class RollingOptionsStrangleService {
             lastError: "",
             lastCycleAt: null,
             tradingViewEmaTrend: "FLAT",
+            ema: {
+                enabled: false,
+                timeframe: "1m",
+                period: 20,
+                trend: "FLAT",
+                signalTrend: "FLAT",
+                value: null,
+                close: null,
+                candleCount: 0,
+                calculatedAt: "",
+                error: ""
+            },
             renko: {
                 anchor: null,
                 lastDir: 0,
@@ -610,6 +645,18 @@ export class RollingOptionsStrangleService {
             objState.lastError = String(objRuntime.lastError || "");
             objState.lastCycleAt = objRuntime.lastCycleAt || null;
             objState.tradingViewEmaTrend = normalizeTradingViewEmaTrend(objRuntime.state?.tradingViewEmaTrend);
+            objState.ema = {
+                enabled: Boolean(objRuntime.state?.emaEnabled),
+                timeframe: normalizeEmaTimeframe(objRuntime.state?.emaTimeframe),
+                period: normalizeEmaPeriod(objRuntime.state?.emaPeriod),
+                trend: normalizeTradingViewEmaTrend(objRuntime.state?.emaTrend),
+                signalTrend: normalizeTradingViewEmaTrend(objRuntime.state?.emaSignalTrend),
+                value: Number.isFinite(Number(objRuntime.state?.emaValue)) ? Number(objRuntime.state?.emaValue) : null,
+                close: Number.isFinite(Number(objRuntime.state?.emaClose)) ? Number(objRuntime.state?.emaClose) : null,
+                candleCount: Math.max(0, Math.floor(Number(objRuntime.state?.emaCandleCount || 0))),
+                calculatedAt: String(objRuntime.state?.emaCalculatedAt || ""),
+                error: String(objRuntime.state?.emaError || "")
+            };
             objState.renko.anchor = Number.isFinite(Number(objRuntime.state?.renkoAnchor))
                 ? Number(objRuntime.state?.renkoAnchor)
                 : null;
@@ -950,6 +997,17 @@ export class RollingOptionsStrangleService {
                 tradingViewEmaEnabled: Boolean(((pConfig as any).__uiState || {}).tradingViewEmaEnabled),
                 tradingViewEmaSide: normalizeTradingViewEmaSide(((pConfig as any).__uiState || {}).tradingViewEmaSide),
                 tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
+                emaEnabled: pState.ema.enabled,
+                emaSignalEnabled: Boolean(((pConfig as any).__uiState || {}).emaSignalEnabled),
+                emaTimeframe: pState.ema.timeframe,
+                emaPeriod: pState.ema.period,
+                emaTrend: pState.ema.trend,
+                emaSignalTrend: pState.ema.signalTrend,
+                emaValue: pState.ema.value,
+                emaClose: pState.ema.close,
+                emaCandleCount: pState.ema.candleCount,
+                emaCalculatedAt: pState.ema.calculatedAt,
+                emaError: pState.ema.error,
                 marketSource: pState.market.lastSource,
                 openPositions: objOpenPositions.length
             },
@@ -2605,6 +2663,206 @@ export class RollingOptionsStrangleService {
         };
     }
 
+    private async updateStandaloneEmaIndicator(
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>
+    ): Promise<void> {
+        const bEnabled = Boolean((pUiState as any).emaEnabled);
+        const vTimeframe = normalizeEmaTimeframe((pUiState as any).emaTimeframe);
+        const vPeriod = normalizeEmaPeriod((pUiState as any).emaPeriod);
+        pState.ema.enabled = bEnabled;
+        pState.ema.timeframe = vTimeframe;
+        pState.ema.period = vPeriod;
+
+        if (!bEnabled) {
+            pState.ema.value = null;
+            pState.ema.close = null;
+            pState.ema.trend = "FLAT";
+            pState.ema.signalTrend = "FLAT";
+            pState.ema.candleCount = 0;
+            pState.ema.calculatedAt = "";
+            pState.ema.error = "";
+            return;
+        }
+
+        try {
+            const objEma = await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
+            pState.ema.value = objEma.value;
+            pState.ema.close = objEma.close;
+            pState.ema.trend = objEma.value !== null && objEma.close !== null
+                ? (objEma.close > objEma.value ? "UP" : (objEma.close < objEma.value ? "DOWN" : "FLAT"))
+                : "FLAT";
+            pState.ema.candleCount = objEma.candleCount;
+            pState.ema.calculatedAt = objEma.calculatedAt;
+            pState.ema.error = objEma.value === null
+                ? `Need at least ${vPeriod} ${vTimeframe} candles.`
+                : "";
+        }
+        catch (objError) {
+            pState.ema.error = objError instanceof Error ? objError.message : String(objError);
+            pState.ema.calculatedAt = new Date().toISOString();
+        }
+    }
+
+    private getTargetOpenPnl(pUiState: Record<string, unknown>): number | null {
+        const vTarget = normalizeNumber((pUiState as any).targetOpenPnl, 0);
+        if (!Number.isFinite(vTarget) || vTarget === 0) {
+            return null;
+        }
+        return vTarget;
+    }
+
+    private async calculateCurrentOpenPnl(
+        pPositions: RollingOptionsPtDePositionRecord[],
+        pSnapshot: RollingOptionsPtDeMarketSnapshot
+    ): Promise<number> {
+        let vOpenPnl = 0;
+        for (const objPosition of pPositions) {
+            if (objPosition.status !== "OPEN") {
+                continue;
+            }
+
+            if (objPosition.instrumentType === "FUTURE") {
+                vOpenPnl += getPositionPnl(objPosition, pSnapshot.futuresPrice);
+                continue;
+            }
+
+            const vProductSymbol = String(objPosition.metadata?.productSymbol || "").trim();
+            let vMarkPrice = Number(objPosition.markPrice || objPosition.entryPrice || 0);
+            if (vProductSymbol) {
+                const objCachedTicker = getCachedOptionTicker(vProductSymbol);
+                const objLiveTicker = objCachedTicker || await getLiveOptionTicker(vProductSymbol).catch(() => null);
+                if (Number.isFinite(Number(objLiveTicker?.markPrice)) && Number(objLiveTicker?.markPrice) > 0) {
+                    vMarkPrice = Number(objLiveTicker?.markPrice);
+                }
+            }
+            vOpenPnl += getPositionPnl(objPosition, vMarkPrice);
+        }
+        return Number(vOpenPnl.toFixed(6));
+    }
+
+    private async handleTargetOpenPnlExit(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>,
+        pOpenPositions: RollingOptionsPtDePositionRecord[],
+        pSnapshot: RollingOptionsPtDeMarketSnapshot
+    ): Promise<{ triggered: boolean; message: string; }> {
+        const vTarget = this.getTargetOpenPnl(pUiState);
+        if (vTarget === null || pOpenPositions.length <= 0) {
+            return { triggered: false, message: "" };
+        }
+
+        const vOpenPnl = await this.calculateCurrentOpenPnl(pOpenPositions, pSnapshot);
+        const bHitTarget = vTarget > 0 ? vOpenPnl >= vTarget : vOpenPnl <= vTarget;
+        if (!bHitTarget) {
+            return { triggered: false, message: "" };
+        }
+
+        const vReason = `Target Open PnL hit (${vOpenPnl.toFixed(3)} / ${vTarget.toFixed(3)})`;
+        await this.closePositions(pOpenPositions, pConfig, vReason);
+        if (pState.timerRef) {
+            clearInterval(pState.timerRef);
+            pState.timerRef = null;
+        }
+        pState.running = false;
+        pState.lastError = "";
+        pState.lastCycleAt = new Date().toISOString();
+        await this.syncRuntime(pUserId, pConfig, pState, {
+            status: "stopped",
+            autoTraderEnabled: false,
+            lastSpotPrice: pSnapshot.spotPrice,
+            lastFuturesPrice: pSnapshot.futuresPrice,
+            lastSignal: "TARGET_OPEN_PNL_HIT",
+            lastCycleAt: pState.lastCycleAt,
+            lastError: ""
+        });
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: vTarget > 0 ? "success" : "warning",
+            title: "Target Open PnL Hit",
+            message: vReason,
+            payload: {
+                symbol: pConfig.symbol,
+                openPnl: vOpenPnl,
+                targetOpenPnl: vTarget,
+                reason: "target_open_pnl_hit"
+            }
+        });
+
+        return {
+            triggered: true,
+            message: `${vReason}. Closed all open positions and stopped auto trader.`
+        };
+    }
+
+    private async handleEmaSignalCondition(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>
+    ): Promise<void> {
+        const bSignalEnabled = Boolean((pUiState as any).emaSignalEnabled);
+        if (!bSignalEnabled || !pState.ema.enabled || pState.ema.error) {
+            return;
+        }
+
+        const vTrend = pState.ema.trend;
+        if (vTrend !== "UP" && vTrend !== "DOWN") {
+            return;
+        }
+        if (pState.ema.signalTrend === vTrend) {
+            return;
+        }
+
+        pState.ema.signalTrend = vTrend;
+        const vColorCode: "R" | "G" = vTrend === "UP" ? "G" : "R";
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "EMA Signal Detected",
+            message: `EMA ${vTrend} condition triggered ${vColorCode === "G" ? "GREEN" : "RED"} strategy flow.`,
+            payload: {
+                symbol: pConfig.symbol,
+                emaTrend: vTrend,
+                emaTimeframe: pState.ema.timeframe,
+                emaPeriod: pState.ema.period,
+                emaValue: pState.ema.value,
+                emaClose: pState.ema.close,
+                reason: "ema_signal_condition"
+            }
+        });
+
+        if (vColorCode === "G") {
+            await this.handleRenkoGreenFlow(pUserId, pConfig);
+            return;
+        }
+        await this.handleRenkoRedFlow(pUserId, pConfig);
+    }
+
+    public async refreshStandaloneEmaIndicator(pUserId: string): Promise<{ status: string; message: string; }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        const objState = this.getOrCreateState(pUserId);
+        await this.updateStandaloneEmaIndicator(objConfig, objState, objUiState);
+        await this.syncRuntime(pUserId, objConfig, objState, {
+            status: objState.running ? "running" : "stopped",
+            autoTraderEnabled: objState.running,
+            lastSignal: objState.ema.enabled ? "EMA_REFRESHED" : "EMA_OFF",
+            lastError: ""
+        });
+        return {
+            status: objState.ema.error ? "warning" : "success",
+            message: objState.ema.enabled
+                ? (objState.ema.error || "EMA refreshed.")
+                : "EMA is OFF."
+        };
+    }
+
     public async setTradingViewEmaTrend(
         pUserId: string,
         pTrend: "UP" | "DOWN" | "FLAT",
@@ -2695,6 +2953,24 @@ export class RollingOptionsStrangleService {
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
             const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+            await this.updateStandaloneEmaIndicator(objConfig, objState, objUiState);
+
+            const objTargetOpenPnlExit = await this.handleTargetOpenPnlExit(
+                pUserId,
+                objConfig,
+                objState,
+                objUiState,
+                objCurrentOpenPositions,
+                objSnapshot
+            );
+            if (objTargetOpenPnlExit.triggered) {
+                return { status: "success", message: objTargetOpenPnlExit.message };
+            }
+
+            if (objState.running) {
+                await this.handleEmaSignalCondition(pUserId, objConfig, objState, objUiState);
+                objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            }
 
             const objPayoffSlTrigger = await this.handlePayoffSlCheckpointTrigger(
                 pUserId,

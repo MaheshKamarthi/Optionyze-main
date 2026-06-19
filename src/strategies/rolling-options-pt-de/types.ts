@@ -60,6 +60,21 @@ export interface RollingOptionsPtDeMarketSnapshot {
     ts: string;
 }
 
+export type RollingOptionsPtDeEmaTimeframe = "1m" | "5m" | "15m" | "1h";
+
+export interface RollingOptionsPtDeEmaState {
+    enabled: boolean;
+    timeframe: RollingOptionsPtDeEmaTimeframe;
+    period: number;
+    trend: "UP" | "DOWN" | "FLAT";
+    signalTrend: "UP" | "DOWN" | "FLAT";
+    value: number | null;
+    close: number | null;
+    candleCount: number;
+    calculatedAt: string;
+    error: string;
+}
+
 export interface RollingOptionsPtDeEngineState {
     userId: string;
     running: boolean;
@@ -72,6 +87,7 @@ export interface RollingOptionsPtDeEngineState {
     manualCloseBlocksOptionEntry?: boolean;
     positionMismatchDetected?: boolean;
     tradingViewEmaTrend?: "UP" | "DOWN" | "FLAT";
+    ema: RollingOptionsPtDeEmaState;
     renko: RollingOptionsPtDeRenkoState;
     market: {
         lastSpotPrice: number | null;

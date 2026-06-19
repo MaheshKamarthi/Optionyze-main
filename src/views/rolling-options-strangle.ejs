@@ -656,7 +656,7 @@
                         <button class="rolling-demo-signal idle" type="button" id="rollingDemoLastSignal" title="Click to toggle manual Renko signal">
                             -
                         </button>
-                        <span class="rolling-demo-badge secondary" id="rollingDemoTradingViewEmaTrend">TV EMA: FLAT</span>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoEmaIndicator">EMA: OFF</span>
                     </div>
                     <div class="rolling-demo-card-tools">
                         <div class="rolling-demo-field">
@@ -673,19 +673,31 @@
                             </select>
                         </div>
                         <div class="rolling-demo-field">
-                            <label for="chkRollingDemoTradingViewEma">TV EMA</label>
+                            <label for="chkRollingDemoEma">EMA</label>
                             <label class="rolling-demo-check">
-                                <input type="checkbox" id="chkRollingDemoTradingViewEma" />
+                                <input type="checkbox" id="chkRollingDemoEma" />
                                 <span>ON</span>
                             </label>
                         </div>
                         <div class="rolling-demo-field">
-                            <label for="ddlRollingDemoTradingViewEmaSide">Side</label>
-                            <select id="ddlRollingDemoTradingViewEmaSide">
-                                <option value="both" selected>Both</option>
-                                <option value="up">UP</option>
-                                <option value="down">DOWN</option>
+                            <label for="chkRollingDemoEmaSignal">EMA Signal</label>
+                            <label class="rolling-demo-check">
+                                <input type="checkbox" id="chkRollingDemoEmaSignal" />
+                                <span>ON</span>
+                            </label>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="ddlRollingDemoEmaTimeframe">Timeframe</label>
+                            <select id="ddlRollingDemoEmaTimeframe">
+                                <option value="1m" selected>1 min</option>
+                                <option value="5m">5 min</option>
+                                <option value="15m">15 min</option>
+                                <option value="1h">1 hour</option>
                             </select>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="txtRollingDemoEmaPeriod">EMA Value</label>
+                            <input type="number" id="txtRollingDemoEmaPeriod" value="20" min="1" max="500" />
                         </div>
                     </div>
                 </div>

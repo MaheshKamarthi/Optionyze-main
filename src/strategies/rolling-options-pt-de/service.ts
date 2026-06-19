@@ -50,6 +50,18 @@ export class RollingOptionsPtDeService {
             consecutiveFailures: 0,
             lastError: "",
             lastCycleAt: null,
+            ema: {
+                enabled: false,
+                timeframe: "1m",
+                period: 20,
+                trend: "FLAT",
+                signalTrend: "FLAT",
+                value: null,
+                close: null,
+                candleCount: 0,
+                calculatedAt: "",
+                error: ""
+            },
             renko: {
                 anchor: null,
                 lastDir: 0,
