@@ -3058,7 +3058,7 @@ export class RollingOptionsStrangleService {
 
             const vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const objRenkoSnapshot = objConfig.renkoEnabled
-                ? getFreshWebSocketMarketSnapshot(objConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS)
+                ? (getFreshWebSocketMarketSnapshot(objConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS) || objSnapshot)
                 : null;
             const objRenkoSignals = objRenkoSnapshot
                 ? updateRenkoState(objState, objRenkoSnapshot, objConfig)
