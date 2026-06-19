@@ -2653,6 +2653,8 @@ export class RollingOptionsStrangleService {
             optionQty: vQty,
             newDelta: vTargetDelta,
             reDelta: vTargetDelta,
+            greenReDelta: vTargetDelta,
+            redReDelta: vTargetDelta,
             deltaTakeProfit: vTakeProfitMove,
             deltaStopLoss: vStopLossMove,
             redDeltaTakeProfit: vTakeProfitMove,
@@ -2664,6 +2666,12 @@ export class RollingOptionsStrangleService {
             greenTakeProfitPct: vTakeProfitPct,
             greenStopLossPct: vStopLossPct
         };
+        Object.assign(objSupportConfig, {
+            ruleSetGreenTpPct: vTakeProfitPct,
+            ruleSetGreenSlPct: vStopLossPct,
+            ruleSetRedTpPct: vTakeProfitPct,
+            ruleSetRedSlPct: vStopLossPct
+        });
         const arrOpenedSupports = await this.openOptionPositions(
             pUserId,
             objSupportConfig,
