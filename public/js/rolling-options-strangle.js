@@ -60,6 +60,7 @@
         emaSignalEnabled: document.getElementById("chkRollingDemoEmaSignal"),
         emaRenkoConfirmEnabled: document.getElementById("chkRollingDemoEmaRenkoConfirm"),
         emaTimeframe: document.getElementById("ddlRollingDemoEmaTimeframe"),
+        emaSource: document.getElementById("ddlRollingDemoEmaSource"),
         emaPeriod: document.getElementById("txtRollingDemoEmaPeriod"),
         emaIndicator: document.getElementById("rollingDemoEmaIndicator"),
         tradingViewEmaEnabled: document.getElementById("chkRollingDemoTradingViewEma"),
@@ -777,6 +778,7 @@
             emaSignalEnabled: Boolean(ids.emaSignalEnabled?.checked),
             emaRenkoConfirmEnabled: Boolean(ids.emaRenkoConfirmEnabled?.checked),
             emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
+            emaSource: String(ids.emaSource?.value || "candles"),
             emaPeriod: parseNumberInput(ids.emaPeriod, 20),
             tradingViewEmaEnabled: Boolean(ids.tradingViewEmaEnabled?.checked),
             tradingViewEmaSide: String(ids.tradingViewEmaSide?.value || "both"),
@@ -885,6 +887,7 @@
         setFieldValue("emaSignalEnabled", uiState.emaSignalEnabled ?? false);
         setFieldValue("emaRenkoConfirmEnabled", uiState.emaRenkoConfirmEnabled ?? false);
         setFieldValue("emaTimeframe", uiState.emaTimeframe ?? "1m");
+        setFieldValue("emaSource", uiState.emaSource ?? "candles");
         setFieldValue("emaPeriod", uiState.emaPeriod ?? 20);
         setFieldValue("tradingViewEmaEnabled", uiState.tradingViewEmaEnabled ?? false);
         setFieldValue("tradingViewEmaSide", uiState.tradingViewEmaSide ?? "both");
@@ -948,6 +951,8 @@
         const emaSignalEnabled = Boolean(runtimeState?.state?.emaSignalEnabled ?? ids.emaSignalEnabled?.checked);
         const emaRenkoConfirmEnabled = Boolean(runtimeState?.state?.emaRenkoConfirmEnabled ?? ids.emaRenkoConfirmEnabled?.checked);
         const emaTimeframe = String(runtimeState?.state?.emaTimeframe || ids.emaTimeframe?.value || "1m");
+        const emaSourceRaw = String(runtimeState?.state?.emaSource || ids.emaSource?.value || "candles").trim().toLowerCase();
+        const emaSourceLabel = emaSourceRaw === "renko" ? "Renko" : emaTimeframe;
         const emaPeriod = Number(runtimeState?.state?.emaPeriod || ids.emaPeriod?.value || 20);
         const emaValue = Number(runtimeState?.state?.emaValue);
         const emaTrendRaw = String(runtimeState?.state?.emaTrend || "FLAT").trim().toUpperCase();
@@ -984,8 +989,8 @@
         if (ids.emaIndicator) {
             ids.emaIndicator.textContent = emaEnabled
                 ? (Number.isFinite(emaValue)
-                    ? `EMA ${emaPeriod} ${emaTimeframe}: ${emaTrend} ${formatNumericValue(emaValue, 2)}`
-                    : (emaError ? `EMA: ${emaError}` : `EMA ${emaPeriod} ${emaTimeframe}: WAIT`))
+                    ? `EMA ${emaPeriod} ${emaSourceLabel}: ${emaTrend} ${formatNumericValue(emaValue, 2)}`
+                    : (emaError ? `EMA: ${emaError}` : `EMA ${emaPeriod} ${emaSourceLabel}: WAIT`))
                 : "EMA: OFF";
             if (emaEnabled && emaSignalEnabled && Number.isFinite(emaValue)) {
                 ids.emaIndicator.textContent += " / SIGNAL";
@@ -2161,6 +2166,7 @@
         ids.emaSignalEnabled,
         ids.emaRenkoConfirmEnabled,
         ids.emaTimeframe,
+        ids.emaSource,
         ids.emaPeriod,
         ids.tradingViewEmaEnabled,
         ids.tradingViewEmaSide,

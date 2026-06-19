@@ -18,6 +18,7 @@ import {
 import { runWithPostgresAdvisoryLock } from "../../storage/postgres";
 import {
     buildConfigFromUiState,
+    buildRenkoBrickClosesFromPrices,
     estimatePositionCharges,
     getOpenPositionsSummary,
     getPositionPnl,
@@ -28,6 +29,7 @@ import {
 import { logRollingOptionsPtDeEvent } from "./event-logger";
 import {
     ensureLiveTickerSymbols,
+    calculateEmaFromCloses,
     findBestLiveOptionContract,
     getCandleEma,
     getHistoricalCandleCloses,
@@ -55,6 +57,9 @@ function normalizeNumber(pValue: unknown, pFallback: number): number {
 
 function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe {
     const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "5s") {
+        return "5s";
+    }
     if (vValue === "5m" || vValue === "15m" || vValue === "1h") {
         return vValue;
     }
@@ -67,6 +72,10 @@ function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimefr
         return "5s";
     }
     return normalizeEmaTimeframe(vValue);
+}
+
+function normalizeEmaSource(pValue: unknown): "candles" | "renko" {
+    return String(pValue || "").trim().toLowerCase() === "renko" ? "renko" : "candles";
 }
 
 function normalizeEmaPeriod(pValue: unknown): number {
@@ -377,6 +386,7 @@ function getDefaultUiState(): Record<string, unknown> {
         renkoFeedTimeframe: "1m",
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
+        emaSource: "candles",
         emaSignalEnabled: false,
         emaRenkoConfirmEnabled: false,
         emaTimeframe: "1m",
@@ -525,6 +535,7 @@ export class RollingOptionsStrangleService {
             renkoFeedTimeframe: "1m",
             renkoFeedPriceSrc: "spot_price",
             emaEnabled: false,
+            emaSource: "candles",
             emaSignalEnabled: false,
             emaRenkoConfirmEnabled: false,
             emaTimeframe: "1m",
@@ -612,6 +623,7 @@ export class RollingOptionsStrangleService {
             tradingViewEmaTrend: "FLAT",
             ema: {
                 enabled: false,
+                source: "candles",
                 timeframe: "1m",
                 period: 20,
                 trend: "FLAT",
@@ -662,6 +674,7 @@ export class RollingOptionsStrangleService {
             objState.tradingViewEmaTrend = normalizeTradingViewEmaTrend(objRuntime.state?.tradingViewEmaTrend);
             objState.ema = {
                 enabled: Boolean(objRuntime.state?.emaEnabled),
+                source: normalizeEmaSource(objRuntime.state?.emaSource),
                 timeframe: normalizeEmaTimeframe(objRuntime.state?.emaTimeframe),
                 period: normalizeEmaPeriod(objRuntime.state?.emaPeriod),
                 trend: normalizeTradingViewEmaTrend(objRuntime.state?.emaTrend),
@@ -1020,6 +1033,7 @@ export class RollingOptionsStrangleService {
                 tradingViewEmaSide: normalizeTradingViewEmaSide(((pConfig as any).__uiState || {}).tradingViewEmaSide),
                 tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
                 emaEnabled: pState.ema.enabled,
+                emaSource: pState.ema.source,
                 emaSignalEnabled: Boolean(((pConfig as any).__uiState || {}).emaSignalEnabled),
                 emaRenkoConfirmEnabled: Boolean(((pConfig as any).__uiState || {}).emaRenkoConfirmEnabled),
                 emaTimeframe: pState.ema.timeframe,
@@ -2738,9 +2752,11 @@ export class RollingOptionsStrangleService {
         pUiState: Record<string, unknown>
     ): Promise<void> {
         const bEnabled = Boolean((pUiState as any).emaEnabled);
+        const vSource = normalizeEmaSource((pUiState as any).emaSource);
         const vTimeframe = normalizeEmaTimeframe((pUiState as any).emaTimeframe);
         const vPeriod = normalizeEmaPeriod((pUiState as any).emaPeriod);
         pState.ema.enabled = bEnabled;
+        pState.ema.source = vSource;
         pState.ema.timeframe = vTimeframe;
         pState.ema.period = vPeriod;
 
@@ -2756,7 +2772,9 @@ export class RollingOptionsStrangleService {
         }
 
         try {
-            const objEma = await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
+            const objEma = vSource === "renko"
+                ? await this.getRenkoBrickEma(pConfig, vPeriod)
+                : await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
             pState.ema.value = objEma.value;
             pState.ema.close = objEma.close;
             pState.ema.trend = objEma.value !== null && objEma.close !== null
@@ -2765,13 +2783,32 @@ export class RollingOptionsStrangleService {
             pState.ema.candleCount = objEma.candleCount;
             pState.ema.calculatedAt = objEma.calculatedAt;
             pState.ema.error = objEma.value === null
-                ? `Need at least ${vPeriod} ${vTimeframe} candles.`
+                ? `Need at least ${vPeriod} ${vSource === "renko" ? "Renko bricks" : `${vTimeframe} candles`}.`
                 : "";
         }
         catch (objError) {
             pState.ema.error = objError instanceof Error ? objError.message : String(objError);
             pState.ema.calculatedAt = new Date().toISOString();
         }
+    }
+
+    private async getRenkoBrickEma(
+        pConfig: RollingOptionsPtDeConfig,
+        pPeriod: number
+    ): Promise<{ value: number | null; close: number | null; candleCount: number; calculatedAt: string; }> {
+        const objHistory = await getHistoricalCandleCloses(
+            pConfig.contractName,
+            pConfig.renkoTimeframe || "1m",
+            Math.max(700, pPeriod * 20)
+        );
+        const objBricks = buildRenkoBrickClosesFromPrices(objHistory.closes, pConfig.renkoStepPoints);
+        const vValue = calculateEmaFromCloses(objBricks.closes, pPeriod);
+        return {
+            value: vValue,
+            close: objBricks.closes.length > 0 ? objBricks.closes[objBricks.closes.length - 1] : null,
+            candleCount: objBricks.closes.length,
+            calculatedAt: objHistory.fetchedAt
+        };
     }
 
     private getRenkoHistoryKey(pConfig: RollingOptionsPtDeConfig): string {

@@ -1223,6 +1223,7 @@ export class RollingOptionsStrangleLiveService {
             manualCloseBlocksOptionEntry: false,
             ema: {
                 enabled: false,
+                source: "candles",
                 timeframe: "1m",
                 period: 20,
                 trend: "FLAT",

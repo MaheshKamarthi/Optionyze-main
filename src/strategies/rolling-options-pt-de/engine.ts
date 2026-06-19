@@ -144,6 +144,41 @@ function getStandardBricks(
     return { bricks: objBricks, anchor: vAnchor, lastDir: vLastDir };
 }
 
+export function buildRenkoBrickClosesFromPrices(
+    pPrices: number[],
+    pStep: number
+): { closes: number[]; anchor: number | null; lastDir: -1 | 0 | 1; lastColor: "" | "R" | "G"; } {
+    const arrPrices = (Array.isArray(pPrices) ? pPrices : [])
+        .map((pPrice) => Number(pPrice))
+        .filter((pPrice) => Number.isFinite(pPrice) && pPrice > 0);
+    const vStep = Math.max(1, Number(pStep || 10));
+    const objCloses: number[] = [];
+    let vAnchor: number | null = null;
+    let vLastDir: -1 | 0 | 1 = 0;
+    let vLastColor: "" | "R" | "G" = "";
+
+    for (const vPrice of arrPrices) {
+        if (vAnchor === null || !Number.isFinite(vAnchor)) {
+            vAnchor = Math.floor(vPrice / vStep) * vStep;
+            continue;
+        }
+        const objBuild = getStandardBricks(vPrice, vStep, vAnchor, vLastDir, 250);
+        vAnchor = objBuild.anchor;
+        vLastDir = objBuild.lastDir;
+        for (const objBrick of objBuild.bricks) {
+            objCloses.push(objBrick.close);
+            vLastColor = objBrick.close > objBrick.open ? "G" : "R";
+        }
+    }
+
+    return {
+        closes: objCloses,
+        anchor: vAnchor,
+        lastDir: vLastDir,
+        lastColor: vLastColor
+    };
+}
+
 export function updateRenkoState(
     pEngineState: RollingOptionsPtDeEngineState,
     pSnapshot: RollingOptionsPtDeMarketSnapshot,

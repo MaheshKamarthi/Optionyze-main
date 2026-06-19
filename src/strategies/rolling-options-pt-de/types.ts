@@ -64,11 +64,12 @@ export interface RollingOptionsPtDeMarketSnapshot {
     ts: string;
 }
 
-export type RollingOptionsPtDeEmaTimeframe = "1m" | "5m" | "15m" | "1h";
-export type RollingOptionsPtDeRenkoTimeframe = "5s" | RollingOptionsPtDeEmaTimeframe;
+export type RollingOptionsPtDeEmaTimeframe = "5s" | "1m" | "5m" | "15m" | "1h";
+export type RollingOptionsPtDeRenkoTimeframe = RollingOptionsPtDeEmaTimeframe;
 
 export interface RollingOptionsPtDeEmaState {
     enabled: boolean;
+    source: "candles" | "renko";
     timeframe: RollingOptionsPtDeEmaTimeframe;
     period: number;
     trend: "UP" | "DOWN" | "FLAT";
