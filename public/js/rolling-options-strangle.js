@@ -67,6 +67,7 @@
         targetOpenPnl: document.getElementById("txtRollingDemoTargetOpenPnl"),
         optionsPnl: document.getElementById("txtRollingDemoOptionsPnl"),
         totalPnl: document.getElementById("txtRollingDemoTotalPnl"),
+        netTotalPnl: document.getElementById("txtRollingDemoNetTotalPnl"),
         totalCharges: document.getElementById("txtRollingDemoTotalCharges"),
         closedFromDate: document.getElementById("txtClsFromDate"),
         closedToDate: document.getElementById("txtClsToDate"),
@@ -470,11 +471,28 @@
         if (!ids.totalPnl) {
             return;
         }
+        void rows;
         const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
         const vGross = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0);
         const vCharges = parseNumberInput(ids.totalCharges, 0);
         const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
         ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+    }
+
+    function updateNetTotalPnlMetric(rows = gLatestOpenPositions) {
+        if (!ids.netTotalPnl) {
+            return;
+        }
+        const openRows = Array.isArray(rows) ? rows : [];
+        const vClosedNetPnl = parseNumberInput(ids.totalPnl, 0);
+        const vOpenPnl = sumNumeric(openRows, "pnl");
+        const vOpenCharges = sumCharges(openRows);
+        const vNet = (Number.isFinite(vClosedNetPnl) ? vClosedNetPnl : 0)
+            + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0)
+            + ((Number.isFinite(vOpenCharges) ? -Math.abs(vOpenCharges) : 0) * 2);
+        ids.netTotalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+        ids.netTotalPnl.classList.toggle("pnl-positive", Number.isFinite(vNet) && vNet > 0);
+        ids.netTotalPnl.classList.toggle("pnl-negative", Number.isFinite(vNet) && vNet < 0);
     }
 
     function updateOptionsPnlMetric(rows = gLatestClosedPositions) {
@@ -486,9 +504,12 @@
     }
 
     function getNetTotalPnlValue() {
-        const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
-        const vCharges = parseNumberInput(ids.totalCharges, 0);
-        const vNet = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0) + (Number.isFinite(vCharges) ? vCharges : 0);
+        const vClosedNetPnl = parseNumberInput(ids.totalPnl, 0);
+        const vOpenPnl = sumNumeric(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : [], "pnl");
+        const vOpenCharges = sumCharges(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : []);
+        const vNet = (Number.isFinite(vClosedNetPnl) ? vClosedNetPnl : 0)
+            + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0)
+            + ((Number.isFinite(vOpenCharges) ? -Math.abs(vOpenCharges) : 0) * 2);
         return Number.isFinite(vNet) ? vNet : 0;
     }
 
@@ -970,6 +991,7 @@
         updateOptionsPnlMetric(gLatestClosedPositions);
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(gLatestOpenPositions);
+        updateNetTotalPnlMetric(gLatestOpenPositions);
         updateOpenPnlMetric(gLatestOpenPositions, openCount);
 
         updateOneLotMetric(runtimeState);
@@ -1319,6 +1341,7 @@
             updateBalanceMetrics([]);
             updateTotalChargesMetric(gLatestClosedPositions);
             updateTotalPnlMetric([]);
+            updateNetTotalPnlMetric([]);
             updateOpenPnlMetric([], 0);
             renderPayoffGraph([]);
             return;
@@ -1427,6 +1450,7 @@
         updateBalanceMetrics(rows);
         updateTotalChargesMetric(gLatestClosedPositions);
         updateTotalPnlMetric(rows);
+        updateNetTotalPnlMetric(rows);
         updateOpenPnlMetric(rows, rows.length);
         renderPayoffGraph(displayRows);
     }
@@ -1442,6 +1466,7 @@
             updateOptionsPnlMetric([]);
             updateTotalChargesMetric([]);
             updateTotalPnlMetric(gLatestOpenPositions);
+            updateNetTotalPnlMetric(gLatestOpenPositions);
             updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
             return;
         }
@@ -1483,6 +1508,7 @@
         updateOptionsPnlMetric(rows);
         updateTotalChargesMetric(rows);
         updateTotalPnlMetric(gLatestOpenPositions);
+        updateNetTotalPnlMetric(gLatestOpenPositions);
         updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
     }
 

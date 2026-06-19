@@ -344,6 +344,14 @@
     font-weight:700;
 }
 
+.rolling-demo-metric-input.pnl-positive {
+    color:var(--app-good);
+}
+
+.rolling-demo-metric-input.pnl-negative {
+    color:#ffb5b5;
+}
+
 .rolling-demo-feed {
     min-height:220px;
     max-height:280px;
