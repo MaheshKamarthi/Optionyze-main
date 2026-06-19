@@ -54,6 +54,7 @@
         positivePnlAdverseRenkoCloseEnabled: document.getElementById("chkRollingDemoPositivePnlAdverseRenkoClose"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
+        renkoFeedTimeframe: document.getElementById("ddlRenkoFeedTimeframe"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
         emaEnabled: document.getElementById("chkRollingDemoEma"),
         emaSignalEnabled: document.getElementById("chkRollingDemoEmaSignal"),
@@ -770,6 +771,7 @@
             trailRedSl1Enabled: Boolean(ids.trailRedSl1Enabled?.checked),
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
+            renkoFeedTimeframe: String(ids.renkoFeedTimeframe?.value || "1m"),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             emaEnabled: Boolean(ids.emaEnabled?.checked),
             emaSignalEnabled: Boolean(ids.emaSignalEnabled?.checked),
@@ -877,6 +879,7 @@
         setFieldValue("trailRedSl1Enabled", uiState.trailRedSl1Enabled ?? true);
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
+        setFieldValue("renkoFeedTimeframe", uiState.renkoFeedTimeframe ?? "1m");
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("emaEnabled", uiState.emaEnabled ?? false);
         setFieldValue("emaSignalEnabled", uiState.emaSignalEnabled ?? false);
@@ -1914,6 +1917,11 @@
             return loadLivePanels();
         }).catch(function () { return undefined; });
     });
+    ids.renkoFeedTimeframe?.addEventListener("change", function () {
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadLivePanels();
+        }).catch(function () { return undefined; });
+    });
     ids.renkoFeedPriceSrc?.addEventListener("change", function () {
         void kickRenkoCycleIfNeeded().then(function () {
             return loadLivePanels();
@@ -2147,6 +2155,7 @@
         ids.greenTpPct,
         ids.greenSlPct,
         ids.renkoFeedPts,
+        ids.renkoFeedTimeframe,
         ids.renkoFeedPriceSrc,
         ids.emaEnabled,
         ids.emaSignalEnabled,

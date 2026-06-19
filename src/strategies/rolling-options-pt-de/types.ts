@@ -33,6 +33,7 @@ export interface RollingOptionsPtDeConfig {
     addOneLotFuture: boolean;
     renkoEnabled: boolean;
     renkoStepPoints: number;
+    renkoTimeframe?: RollingOptionsPtDeRenkoTimeframe;
     renkoPriceSource: "mark_price" | "spot_price" | "best_bid" | "best_ask";
     loopSeconds: number;
 }
@@ -47,6 +48,9 @@ export interface RollingOptionsPtDeRenkoState {
     anchor: number | null;
     lastDir: -1 | 0 | 1;
     lastColor: "" | "R" | "G";
+    historyKey?: string;
+    historySyncedAt?: string;
+    historyCandleCount?: number;
 }
 
 export interface RollingOptionsPtDeMarketSnapshot {
@@ -61,6 +65,7 @@ export interface RollingOptionsPtDeMarketSnapshot {
 }
 
 export type RollingOptionsPtDeEmaTimeframe = "1m" | "5m" | "15m" | "1h";
+export type RollingOptionsPtDeRenkoTimeframe = "5s" | RollingOptionsPtDeEmaTimeframe;
 
 export interface RollingOptionsPtDeEmaState {
     enabled: boolean;

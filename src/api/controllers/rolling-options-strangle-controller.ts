@@ -92,6 +92,7 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
+        renkoFeedTimeframe: "1m",
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
         emaSignalEnabled: false,
@@ -153,6 +154,14 @@ function normalizeEmaTimeframe(pValue: unknown): "1m" | "5m" | "15m" | "1h" {
         return vValue;
     }
     return "1m";
+}
+
+function normalizeRenkoTimeframe(pValue: unknown): "5s" | "1m" | "5m" | "15m" | "1h" {
+    const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "5s") {
+        return "5s";
+    }
+    return normalizeEmaTimeframe(vValue);
 }
 
 function normalizeEmaPeriod(pValue: unknown): number {
@@ -271,6 +280,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.emaEnabled = Boolean((objUiState as any).emaEnabled);
     objUiState.emaSignalEnabled = Boolean((objUiState as any).emaSignalEnabled);
     objUiState.emaRenkoConfirmEnabled = Boolean((objUiState as any).emaRenkoConfirmEnabled);
+    objUiState.renkoFeedTimeframe = normalizeRenkoTimeframe((objUiState as any).renkoFeedTimeframe);
     objUiState.emaTimeframe = normalizeEmaTimeframe((objUiState as any).emaTimeframe);
     objUiState.emaPeriod = normalizeEmaPeriod((objUiState as any).emaPeriod);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
@@ -308,6 +318,10 @@ async function getDefaultRuntimeState(pUserId: string): Promise<RollingOptionsPt
             tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
             tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
             tradingViewEmaTrend: "FLAT",
+            renkoTimeframe: normalizeRenkoTimeframe(objUiState.renkoFeedTimeframe),
+            renkoHistoryKey: "",
+            renkoHistorySyncedAt: "",
+            renkoHistoryCandleCount: 0,
             emaEnabled: Boolean(objUiState.emaEnabled),
             emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
             emaRenkoConfirmEnabled: Boolean(objUiState.emaRenkoConfirmEnabled),
@@ -745,6 +759,10 @@ async function updateRuntimeFromUiState(
             tradingViewEmaEnabled: Boolean(objUiState.tradingViewEmaEnabled),
             tradingViewEmaSide: normalizeTradingViewEmaSide(objUiState.tradingViewEmaSide),
             tradingViewEmaTrend: normalizeTradingViewEmaTrend((objRuntime.state as any)?.tradingViewEmaTrend),
+            renkoTimeframe: normalizeRenkoTimeframe(objUiState.renkoFeedTimeframe),
+            renkoHistoryKey: String((objRuntime.state as any)?.renkoHistoryKey || ""),
+            renkoHistorySyncedAt: String((objRuntime.state as any)?.renkoHistorySyncedAt || ""),
+            renkoHistoryCandleCount: Math.max(0, Math.floor(Number((objRuntime.state as any)?.renkoHistoryCandleCount || 0))),
             emaEnabled: Boolean(objUiState.emaEnabled),
             emaSignalEnabled: Boolean(objUiState.emaSignalEnabled),
             emaRenkoConfirmEnabled: Boolean(objUiState.emaRenkoConfirmEnabled),

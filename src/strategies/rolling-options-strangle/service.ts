@@ -30,6 +30,7 @@ import {
     ensureLiveTickerSymbols,
     findBestLiveOptionContract,
     getCandleEma,
+    getHistoricalCandleCloses,
     getLiveMarketSnapshot,
     getCachedOptionTicker,
     getFreshWebSocketMarketSnapshot,
@@ -40,7 +41,8 @@ import type {
     RollingOptionsPtDeConfig,
     RollingOptionsPtDeEmaTimeframe,
     RollingOptionsPtDeEngineState,
-    RollingOptionsPtDeMarketSnapshot
+    RollingOptionsPtDeMarketSnapshot,
+    RollingOptionsPtDeRenkoTimeframe
 } from "../rolling-options-pt-de/types";
 
 const RE_DELTA_TOLERANCE = 0.05;
@@ -57,6 +59,14 @@ function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe 
         return vValue;
     }
     return "1m";
+}
+
+function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimeframe {
+    const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "5s") {
+        return "5s";
+    }
+    return normalizeEmaTimeframe(vValue);
 }
 
 function normalizeEmaPeriod(pValue: unknown): number {
@@ -364,6 +374,7 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
+        renkoFeedTimeframe: "1m",
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
         emaSignalEnabled: false,
@@ -511,6 +522,7 @@ export class RollingOptionsStrangleService {
             trailRedTp2Enabled: true,
             trailRedSl2Enabled: true,
             renkoFeedPts: 10,
+            renkoFeedTimeframe: "1m",
             renkoFeedPriceSrc: "spot_price",
             emaEnabled: false,
             emaSignalEnabled: false,
@@ -574,6 +586,7 @@ export class RollingOptionsStrangleService {
         }
 
         const objConfig = buildConfigFromUiState(objState);
+        objConfig.renkoTimeframe = normalizeRenkoTimeframe((pUiState as any).renkoFeedTimeframe);
         (objConfig as any).futuresEnabled = Boolean((pUiState as any).futuresEnabled ?? true);
         (objConfig as any).ruleSet = pRuleSet;
         if (pRuleSet === 2) {
@@ -664,6 +677,9 @@ export class RollingOptionsStrangleService {
                 : null;
             objState.renko.lastDir = Number(objRuntime.state?.renkoLastDir || 0) as -1 | 0 | 1;
             objState.renko.lastColor = String(objRuntime.state?.renkoLastColor || "") as "" | "R" | "G";
+            objState.renko.historyKey = String(objRuntime.state?.renkoHistoryKey || "");
+            objState.renko.historySyncedAt = String(objRuntime.state?.renkoHistorySyncedAt || "");
+            objState.renko.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.renkoHistoryCandleCount || 0)));
             objState.market.lastSpotPrice = objRuntime.lastSpotPrice;
             objState.market.lastFuturesPrice = objRuntime.lastFuturesPrice;
             objState.market.lastSource = String(objRuntime.state?.marketSource || "simulated") === "public" ? "public" : "simulated";
@@ -996,6 +1012,10 @@ export class RollingOptionsStrangleService {
                 renkoAnchor: pState.renko.anchor,
                 renkoLastDir: pState.renko.lastDir,
                 renkoLastColor: pState.renko.lastColor,
+                renkoTimeframe: pConfig.renkoTimeframe || "1m",
+                renkoHistoryKey: pState.renko.historyKey || "",
+                renkoHistorySyncedAt: pState.renko.historySyncedAt || "",
+                renkoHistoryCandleCount: pState.renko.historyCandleCount || 0,
                 tradingViewEmaEnabled: Boolean(((pConfig as any).__uiState || {}).tradingViewEmaEnabled),
                 tradingViewEmaSide: normalizeTradingViewEmaSide(((pConfig as any).__uiState || {}).tradingViewEmaSide),
                 tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
@@ -2754,6 +2774,58 @@ export class RollingOptionsStrangleService {
         }
     }
 
+    private getRenkoHistoryKey(pConfig: RollingOptionsPtDeConfig): string {
+        return [
+            pConfig.contractName,
+            pConfig.renkoStepPoints,
+            pConfig.renkoTimeframe || "1m",
+            pConfig.renkoPriceSource
+        ].join("|");
+    }
+
+    private async syncRenkoFromHistoricalCandles(
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState
+    ): Promise<void> {
+        if (!pConfig.renkoEnabled) {
+            return;
+        }
+
+        const vHistoryKey = this.getRenkoHistoryKey(pConfig);
+        if (pState.renko.historyKey === vHistoryKey && pState.renko.anchor !== null) {
+            return;
+        }
+
+        const objHistory = await getHistoricalCandleCloses(
+            pConfig.contractName,
+            pConfig.renkoTimeframe || "1m",
+            700
+        );
+        if (objHistory.closes.length <= 0) {
+            return;
+        }
+
+        pState.renko.anchor = null;
+        pState.renko.lastDir = 0;
+        pState.renko.lastColor = "";
+        pState.renko.historyKey = vHistoryKey;
+        pState.renko.historySyncedAt = objHistory.fetchedAt;
+        pState.renko.historyCandleCount = objHistory.candleCount;
+
+        for (const vClose of objHistory.closes) {
+            updateRenkoState(pState, {
+                symbol: pConfig.symbol,
+                contractName: pConfig.contractName,
+                spotPrice: vClose,
+                futuresPrice: vClose,
+                bestBidPrice: vClose,
+                bestAskPrice: vClose,
+                priceSource: "public",
+                ts: objHistory.fetchedAt
+            }, pConfig);
+        }
+    }
+
     private getTargetOpenPnl(pUiState: Record<string, unknown>): number | null {
         const vTarget = normalizeNumber((pUiState as any).targetOpenPnl, 0);
         if (!Number.isFinite(vTarget) || vTarget === 0) {
@@ -3056,6 +3128,7 @@ export class RollingOptionsStrangleService {
                 return vRuleColor === "G" ? bTrailGreenTp1Enabled : (vRuleColor === "R" ? bTrailRedTp1Enabled : false);
             };
 
+            await this.syncRenkoFromHistoricalCandles(objConfig, objState);
             const vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const objRenkoSnapshot = objConfig.renkoEnabled
                 ? (getFreshWebSocketMarketSnapshot(objConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS) || objSnapshot)
@@ -3366,6 +3439,9 @@ export class RollingOptionsStrangleService {
         objState.renko.anchor = null;
         objState.renko.lastDir = 0;
         objState.renko.lastColor = "";
+        objState.renko.historyKey = "";
+        objState.renko.historySyncedAt = "";
+        objState.renko.historyCandleCount = 0;
         objState.sourcePositiveCycleCountByPositionId.clear();
         await this.syncRuntime(pUserId, objConfig, objState, {
             status: "stopped",

@@ -1,6 +1,7 @@
 import type {
     RollingOptionsPtDeConfig,
     RollingOptionsPtDeEmaTimeframe,
+    RollingOptionsPtDeRenkoTimeframe,
     RollingOptionsPtDeMarketSnapshot
 } from "./types";
 import WebSocket from "ws";
@@ -64,7 +65,10 @@ function getPublicSocketUrl(): string {
     return "wss://socket.india.delta.exchange";
 }
 
-function getSecondsForEmaTimeframe(pTimeframe: RollingOptionsPtDeEmaTimeframe): number {
+function getSecondsForCandleTimeframe(pTimeframe: RollingOptionsPtDeRenkoTimeframe): number {
+    if (pTimeframe === "5s") {
+        return 5;
+    }
     if (pTimeframe === "1h") {
         return 60 * 60;
     }
@@ -139,7 +143,7 @@ export async function getCandleEma(
     const vPeriod = Math.max(1, Math.floor(Number(pPeriod || 0)));
     const vResolution = pTimeframe;
     const vNowSeconds = Math.floor(Date.now() / 1000);
-    const vLookbackSeconds = getSecondsForEmaTimeframe(pTimeframe) * Math.max(vPeriod + 50, vPeriod * 4);
+    const vLookbackSeconds = getSecondsForCandleTimeframe(pTimeframe) * Math.max(vPeriod + 50, vPeriod * 4);
     const objParams = new URLSearchParams({
         symbol: vSymbol,
         resolution: vResolution,
@@ -160,6 +164,36 @@ export async function getCandleEma(
         close: vClose,
         candleCount: arrCloses.length,
         calculatedAt: new Date().toISOString()
+    };
+}
+
+export async function getHistoricalCandleCloses(
+    pSymbol: string,
+    pTimeframe: RollingOptionsPtDeRenkoTimeframe,
+    pLookbackBars: number
+): Promise<{ closes: number[]; candleCount: number; fetchedAt: string; }> {
+    const vSymbol = String(pSymbol || "").trim().toUpperCase();
+    const vLookbackBars = Math.max(50, Math.min(2000, Math.floor(Number(pLookbackBars || 500))));
+    const vNowSeconds = Math.floor(Date.now() / 1000);
+    const vLookbackSeconds = getSecondsForCandleTimeframe(pTimeframe) * (vLookbackBars + 10);
+    const objParams = new URLSearchParams({
+        symbol: vSymbol,
+        resolution: pTimeframe,
+        start: String(vNowSeconds - vLookbackSeconds),
+        end: String(vNowSeconds)
+    });
+    const objPayload = await fetchJson<DeltaApiResponse<DeltaCandleRow[]>>("/history/candles", objParams);
+    const arrRows = Array.isArray(objPayload.result) ? objPayload.result : [];
+    const arrCloses = arrRows
+        .slice()
+        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0))
+        .map((pRow) => parseNumber(pRow.close, NaN))
+        .filter((pClose) => Number.isFinite(pClose) && pClose > 0)
+        .slice(-vLookbackBars);
+    return {
+        closes: arrCloses,
+        candleCount: arrCloses.length,
+        fetchedAt: new Date().toISOString()
     };
 }
 
