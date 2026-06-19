@@ -1337,7 +1337,9 @@ export class RollingOptionsStrangleService {
         const objRuleValues = this.getRuleValues(pConfig, pColorCode);
         const vAction = pConfig.action === "buy" ? "BUY" : "SELL";
         const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-        const vTargetDelta = pUseReEntryDelta ? objRuleValues.reDelta : pConfig.newDelta;
+        const vTargetDelta = Number.isFinite(objRuleValues.reDelta) && objRuleValues.reDelta > 0
+            ? objRuleValues.reDelta
+            : pConfig.newDelta;
         const vStrike = Math.round(objSnapshot.spotPrice / 100) * 100;
         const objSaved: RollingOptionsPtDePositionRecord[] = [];
 

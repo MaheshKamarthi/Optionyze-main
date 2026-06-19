@@ -431,7 +431,7 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         redOptionQty: vRedOptionQty,
         greenOptionQtyPct: vGreenOptionQtyPct,
         greenOptionQty: vGreenOptionQty,
-        newDelta: Number(pUiState.newDelta1 || 0.53),
+        newDelta: Number(pUiState.newDelta1 ?? pUiState.reRedDelta ?? pUiState.reDelta1 ?? 0.53),
         redReDelta: Number(pUiState.reRedDelta ?? pUiState.reDelta1 ?? 0.53),
         redDeltaTakeProfit: vRedDeltaTakeProfit,
         redDeltaStopLoss: vRedDeltaStopLoss,
