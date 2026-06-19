@@ -1477,8 +1477,10 @@
             const currentDelta = String(row.instrumentType || "").toUpperCase() === "OPTION"
                 ? (row.exitDelta ?? row.entryDelta)
                 : null;
+            const rowMetadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+            const rowClass = rowMetadata.positivePnlSupport ? " class=\"rolling-demo-support-leg-row\"" : "";
             return `
-                <tr>
+                <tr${rowClass}>
                     <td>${escapeHtml(formatNumericValue(row.entryDelta, 2))}</td>
                     <td>${escapeHtml(formatNumericValue(currentDelta, 2))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
