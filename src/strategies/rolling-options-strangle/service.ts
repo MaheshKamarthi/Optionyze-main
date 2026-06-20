@@ -432,6 +432,31 @@ function isPositivePnlSupportLeg(pPosition: RollingOptionsPtDePositionRecord): b
     return Boolean(objMetadata.positivePnlSupport);
 }
 
+function getLocalDateKey(pDate = new Date()): string {
+    const vYear = pDate.getFullYear();
+    const vMonth = String(pDate.getMonth() + 1).padStart(2, "0");
+    const vDay = String(pDate.getDate()).padStart(2, "0");
+    return `${vYear}-${vMonth}-${vDay}`;
+}
+
+function shouldCloseDailySupportAtExpiryMidnight(pPosition: RollingOptionsPtDePositionRecord, pNow = new Date()): boolean {
+    if (!isPositivePnlSupportLeg(pPosition)) {
+        return false;
+    }
+
+    const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
+    if (String(objMetadata.expiryMode || "").trim() !== "1") {
+        return false;
+    }
+
+    const vExpiryDate = String(pPosition.expiryDate || objMetadata.resolvedExpiryDate || objMetadata.requestedExpiryDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vExpiryDate)) {
+        return false;
+    }
+
+    return getLocalDateKey(pNow) >= vExpiryDate;
+}
+
 function normalizeTradingViewEmaTrend(pValue: unknown): "UP" | "DOWN" | "FLAT" {
     const vValue = String(pValue || "").trim().toUpperCase();
     if (vValue === "UP" || vValue === "EMA_UP" || vValue === "BUY" || vValue === "LONG") {
@@ -2064,6 +2089,11 @@ export class RollingOptionsStrangleService {
     public async executeStrategy(pUserId: string): Promise<{ status: string; message: string; }> {
         const objState = this.getOrCreateState(pUserId);
         const objConfig = await this.loadConfig(pUserId);
+        if (!objState.running) {
+            objState.running = true;
+            objState.lastError = "";
+            this.armTimer(objState, objConfig.loopSeconds);
+        }
         const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
         const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
         const bAction1Enabled = String(objUiState.action1 || "sell").trim().toLowerCase() !== "none";
@@ -2097,9 +2127,16 @@ export class RollingOptionsStrangleService {
                         skipRenkoEntryNoOpenOptions: true
                     }
                 });
+                await this.syncRuntime(pUserId, objConfig, objState, {
+                    status: "running",
+                    autoTraderEnabled: true,
+                    lastSignal: "STRATEGY_EXECUTED",
+                    lastCycleAt: new Date().toISOString(),
+                    lastError: ""
+                });
                 return {
                     status: "success",
-                    message: "Skipped strategy initial option entry because Skip entry (0 open opts) is enabled."
+                    message: "Skipped strategy initial option entry because Skip entry (0 open opts) is enabled. Auto trader is running server-side for re-entry."
                 };
             }
             const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
@@ -2172,7 +2209,8 @@ export class RollingOptionsStrangleService {
         }
 
         await this.syncRuntime(pUserId, objConfig, objState, {
-            status: objState.running ? "running" : "stopped",
+            status: "running",
+            autoTraderEnabled: true,
             lastSignal: "STRATEGY_EXECUTED",
             lastCycleAt: new Date().toISOString(),
             lastError: ""
@@ -2189,7 +2227,7 @@ export class RollingOptionsStrangleService {
             }
         });
 
-        return { status: "success", message: "Strategy executed." };
+        return { status: "success", message: "Strategy executed. Auto trader is running server-side for re-entry." };
     }
 
     public async start(pUserId: string): Promise<{ status: string; message: string; }> {
@@ -2512,15 +2550,24 @@ export class RollingOptionsStrangleService {
             return !isPositivePnlSupportLeg(objPosition)
                 && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
         });
-        if (arrSupportPositions.length > 0) {
+        const arrExpiredDailySupports = arrSupportPositions.filter((objPosition) => {
+            return shouldCloseDailySupportAtExpiryMidnight(objPosition);
+        });
+        if (arrExpiredDailySupports.length > 0) {
+            await this.closePositions(arrExpiredDailySupports, pBaseConfig, "Support closed at expiry-day midnight");
+        }
+        const objExpiredDailySupportIds = new Set(arrExpiredDailySupports.map((objPosition) => objPosition.positionId));
+        const arrRemainingSupportPositions = arrSupportPositions.filter((objPosition) => !objExpiredDailySupportIds.has(objPosition.positionId));
+
+        if (arrRemainingSupportPositions.length > 0) {
             if (arrSourceOptions.length <= 0) {
-                await this.closePositions(arrSupportPositions, pBaseConfig, "Support closed because no source option legs are running");
+                await this.closePositions(arrRemainingSupportPositions, pBaseConfig, "Support closed because no source option legs are running");
                 return;
             }
         }
         const arrNegativeSourceOptions = arrSourceOptions.filter((objPosition) => Number(objPosition.pnl || 0) <= vTriggerAmount);
         const objSourceById = new Map(arrSourceOptions.map((objPosition) => [objPosition.positionId, objPosition]));
-        const arrSupportsToClose = arrSupportPositions.filter((objSupport) => {
+        const arrSupportsToClose = arrRemainingSupportPositions.filter((objSupport) => {
             const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
             const objSource = objSourceById.get(vSourcePositionId);
             return !objSource;
@@ -2530,7 +2577,7 @@ export class RollingOptionsStrangleService {
         }
 
         const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
-        const arrActiveSupports = arrSupportPositions.filter((objPosition) => !objClosedSupportIds.has(objPosition.positionId));
+        const arrActiveSupports = arrRemainingSupportPositions.filter((objPosition) => !objClosedSupportIds.has(objPosition.positionId));
         const objActiveSupportSourceIds = new Set(arrActiveSupports
             .map((objPosition) => String((objPosition.metadata as any)?.sourcePositionId || "").trim())
             .filter(Boolean));

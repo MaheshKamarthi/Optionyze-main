@@ -781,6 +781,11 @@ export class RollingOptionsPtDeService {
     public async executeStrategy(pUserId: string): Promise<{ status: string; message: string; }> {
         const objState = this.getOrCreateState(pUserId);
         const objConfig = await this.loadConfig(pUserId);
+        if (!objState.running) {
+            objState.running = true;
+            objState.lastError = "";
+            this.armTimer(objState, objConfig.loopSeconds);
+        }
         const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
 
         if (objSummary.futureQty <= 0) {
@@ -811,7 +816,8 @@ export class RollingOptionsPtDeService {
         }
 
         await this.syncRuntime(pUserId, objConfig, objState, {
-            status: objState.running ? "running" : "stopped",
+            status: "running",
+            autoTraderEnabled: true,
             lastSignal: "STRATEGY_EXECUTED",
             lastCycleAt: new Date().toISOString(),
             lastError: ""
@@ -828,7 +834,7 @@ export class RollingOptionsPtDeService {
             }
         });
 
-        return { status: "success", message: "Strategy executed." };
+        return { status: "success", message: "Strategy executed. Auto trader is running server-side for re-entry." };
     }
 
     public async start(pUserId: string): Promise<{ status: string; message: string; }> {
