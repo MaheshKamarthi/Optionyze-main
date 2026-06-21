@@ -6,7 +6,10 @@ import {
     saveRollingOptionsPtDePosition,
     type RollingOptionsPtDePositionRecord
 } from "../../storage/rolling-options-strangle-position-store";
-import { saveRollingOptionsStrangleTempClosedPositions } from "../../storage/rolling-options-strangle-temp-closed-store";
+import {
+    clearRollingOptionsStrangleTempClosedPositions,
+    saveRollingOptionsStrangleTempClosedPositions
+} from "../../storage/rolling-options-strangle-temp-closed-store";
 import {
     loadRollingOptionsPtDeProfile,
     patchRollingOptionsPtDeProfileUiState
@@ -1962,6 +1965,9 @@ export class RollingOptionsStrangleService {
         }
 
         await this.closeOrphanReplacementOptionPositions(pUserId, this.buildRuleSetConfig(objUiState, 1));
+        if (arrCreatedPositions.length > 0) {
+            await clearRollingOptionsStrangleTempClosedPositions(pUserId);
+        }
         return arrCreatedPositions;
     }
 
@@ -2167,6 +2173,7 @@ export class RollingOptionsStrangleService {
             }
             const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
             const vRuleColor: "R" | "G" = objConfig.renkoEnabled && vCurrentRenkoColor === "G" ? "G" : "R";
+            let vOpenedOptionCount = 0;
 
             const readRuleSetQty = (pRuleSet: 1 | 2): number => {
                 if (pRuleSet !== 2) {
@@ -2200,7 +2207,7 @@ export class RollingOptionsStrangleService {
             if (bAction1Enabled && !bHasRuleSet1) {
                 const vQty1 = computeQty(objConfig, 1);
                 if (vQty1 > 0) {
-                    await this.openOptionPositions(
+                    const arrOpened = await this.openOptionPositions(
                         pUserId,
                         objConfig,
                         vQty1,
@@ -2212,13 +2219,14 @@ export class RollingOptionsStrangleService {
                         {},
                         false
                     );
+                    vOpenedOptionCount += arrOpened.length;
                 }
             }
 
             if (bAction2Enabled && !bHasRuleSet2) {
                 const vQty2 = computeQty(objConfig2, 2);
                 if (vQty2 > 0) {
-                    await this.openOptionPositions(
+                    const arrOpened = await this.openOptionPositions(
                         pUserId,
                         objConfig2,
                         vQty2,
@@ -2230,7 +2238,12 @@ export class RollingOptionsStrangleService {
                         {},
                         false
                     );
+                    vOpenedOptionCount += arrOpened.length;
                 }
+            }
+
+            if (vOpenedOptionCount > 0) {
+                await clearRollingOptionsStrangleTempClosedPositions(pUserId);
             }
         }
 
