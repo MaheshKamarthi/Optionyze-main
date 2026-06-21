@@ -439,6 +439,19 @@ function getLocalDateKey(pDate = new Date()): string {
     return `${vYear}-${vMonth}-${vDay}`;
 }
 
+function getIstMidnightUtcTime(pDateKey: string): number | null {
+    const objMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(pDateKey || "").trim());
+    if (!objMatch) {
+        return null;
+    }
+
+    const vYear = Number(objMatch[1]);
+    const vMonthIndex = Number(objMatch[2]) - 1;
+    const vDay = Number(objMatch[3]);
+    const vUtcTime = Date.UTC(vYear, vMonthIndex, vDay, 0, 0, 0) - (5.5 * 60 * 60 * 1000);
+    return Number.isFinite(vUtcTime) ? vUtcTime : null;
+}
+
 function shouldCloseDailySupportAtExpiryMidnight(pPosition: RollingOptionsPtDePositionRecord, pNow = new Date()): boolean {
     if (!isPositivePnlSupportLeg(pPosition)) {
         return false;
@@ -454,7 +467,12 @@ function shouldCloseDailySupportAtExpiryMidnight(pPosition: RollingOptionsPtDePo
         return false;
     }
 
-    return getLocalDateKey(pNow) >= vExpiryDate;
+    const vExpiryMidnightIstUtcTime = getIstMidnightUtcTime(vExpiryDate);
+    if (vExpiryMidnightIstUtcTime === null) {
+        return false;
+    }
+
+    return pNow.getTime() >= vExpiryMidnightIstUtcTime;
 }
 
 function normalizeTradingViewEmaTrend(pValue: unknown): "UP" | "DOWN" | "FLAT" {
