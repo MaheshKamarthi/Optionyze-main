@@ -865,6 +865,10 @@ async function closeOpenPositionsByInstrument(
     if (objClosedPositions.length > 0) {
         await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
         await saveRollingOptionsStrangleTempClosedPositions(objClosedPositions);
+        const objRemainingOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        if (objRemainingOpenPositions.length <= 0) {
+            await clearRollingOptionsStrangleTempClosedPositions(pUserId);
+        }
     }
 
     return objClosedPositions;
@@ -924,6 +928,10 @@ async function closeOpenPositionsById(
     if (objClosedPositions.length > 0) {
         await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
         await saveRollingOptionsStrangleTempClosedPositions(objClosedPositions);
+        const objRemainingOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        if (objRemainingOpenPositions.length <= 0) {
+            await clearRollingOptionsStrangleTempClosedPositions(pUserId);
+        }
     }
     return objClosedPositions;
 }

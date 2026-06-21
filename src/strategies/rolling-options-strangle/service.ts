@@ -1787,6 +1787,10 @@ export class RollingOptionsStrangleService {
         if (objClosed.length > 0) {
             await syncOptionsPnlWithClosedPositions(objClosed[0].userId);
             await saveRollingOptionsStrangleTempClosedPositions(objClosed);
+            const objRemainingOpenPositions = await listRollingOptionsPtDeOpenPositions(objClosed[0].userId);
+            if (objRemainingOpenPositions.length <= 0) {
+                await clearRollingOptionsStrangleTempClosedPositions(objClosed[0].userId);
+            }
             await logRollingOptionsPtDeEvent({
                 userId: objClosed[0].userId,
                 eventType: pReason.toLowerCase().includes("sl")
