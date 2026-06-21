@@ -89,6 +89,7 @@
         lastSignal: document.getElementById("rollingDemoLastSignal"),
         openPositionsBody: document.getElementById("rollingDemoOpenPositionsBody"),
         payoffGraph: document.getElementById("rollingDemoOpenPayoffGraph"),
+        tempClosedPositionsBody: document.getElementById("rollingDemoTempClosedPositionsBody"),
         closedPositionsBody: document.getElementById("rollingDemoClosedPositionsBody"),
         refreshOpenPositionsButton: document.getElementById("btnRollingDemoRefreshOpenPositions"),
         clearClosedFiltersButton: document.getElementById("btnRollingDemoClearClosedFilters"),
@@ -108,6 +109,7 @@
         killSwitchButton: document.getElementById("btnRollingDemoKillSwitch"),
         closeAllLegsOnAnyClose: document.getElementById("chkRollingDemoCloseAllLegsOnAnyClose"),
         skipRenkoEntryNoOpenOptions: document.getElementById("chkRollingDemoSkipRenkoEntryNoOpenOptions"),
+        clearTempClosedPositionsButton: document.getElementById("btnRollingDemoClearTempClosedPositions"),
         clearClosedPositionsButton: document.getElementById("btnRollingDemoClearClosedPositions"),
         telegramAlertsEnabled: document.getElementById("chkRollingDemoTelegramAlertsEnabled"),
         telegramEventCheckboxes: Array.from(document.querySelectorAll(".rolling-demo-telegram-event")),
@@ -135,6 +137,7 @@
     let gPreviousOpenPositionLtps = new Map();
     let gLatestRuntimeState = null;
     let gLatestOpenPositions = [];
+    let gLatestTempClosedPositions = [];
     let gLatestClosedPositions = [];
     let gHasLoadedProfile = false;
     let gNegativePnlAdjustmentOrderInFlight = false;
@@ -470,29 +473,25 @@
             : "-";
     }
 
-    function updateTotalPnlMetric(rows = gLatestOpenPositions) {
+    function updateTotalPnlMetric() {
         if (!ids.totalPnl) {
             return;
         }
-        void rows;
-        const vOptionsPnl = parseNumberInput(ids.optionsPnl, 0);
-        const vGross = (Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0);
-        const vCharges = parseNumberInput(ids.totalCharges, 0);
-        const vNet = vGross + (Number.isFinite(vCharges) ? vCharges : 0);
-        ids.totalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
+        const vOpenPnl = sumNumeric(gLatestOpenPositions, "pnl");
+        const vClosedPnl = sumNumeric(gLatestClosedPositions, "pnl");
+        const vTotalPnl = (Number.isFinite(vOpenPnl) ? vOpenPnl : 0)
+            + (Number.isFinite(vClosedPnl) ? vClosedPnl : 0);
+        ids.totalPnl.value = Number.isFinite(vTotalPnl) ? vTotalPnl.toFixed(3) : "0.000";
     }
 
-    function updateNetTotalPnlMetric(rows = gLatestOpenPositions) {
+    function updateNetTotalPnlMetric() {
         if (!ids.netTotalPnl) {
             return;
         }
-        const openRows = Array.isArray(rows) ? rows : [];
-        const vClosedNetPnl = parseNumberInput(ids.totalPnl, 0);
-        const vOpenPnl = sumNumeric(openRows, "pnl");
-        const vOpenCharges = sumCharges(openRows);
-        const vNet = (Number.isFinite(vClosedNetPnl) ? vClosedNetPnl : 0)
-            + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0)
-            + ((Number.isFinite(vOpenCharges) ? -Math.abs(vOpenCharges) : 0) * 2);
+        const vTotalPnl = parseNumberInput(ids.totalPnl, 0);
+        const vTotalCharges = parseNumberInput(ids.totalCharges, 0);
+        const vNet = (Number.isFinite(vTotalPnl) ? vTotalPnl : 0)
+            + (Number.isFinite(vTotalCharges) ? vTotalCharges : 0);
         ids.netTotalPnl.value = Number.isFinite(vNet) ? vNet.toFixed(3) : "0.000";
         ids.netTotalPnl.classList.toggle("pnl-positive", Number.isFinite(vNet) && vNet > 0);
         ids.netTotalPnl.classList.toggle("pnl-negative", Number.isFinite(vNet) && vNet < 0);
@@ -507,12 +506,10 @@
     }
 
     function getNetTotalPnlValue() {
-        const vClosedNetPnl = parseNumberInput(ids.totalPnl, 0);
-        const vOpenPnl = sumNumeric(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : [], "pnl");
-        const vOpenCharges = sumCharges(Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions : []);
-        const vNet = (Number.isFinite(vClosedNetPnl) ? vClosedNetPnl : 0)
-            + (Number.isFinite(vOpenPnl) ? vOpenPnl : 0)
-            + ((Number.isFinite(vOpenCharges) ? -Math.abs(vOpenCharges) : 0) * 2);
+        const vTotalPnl = parseNumberInput(ids.totalPnl, 0);
+        const vTotalCharges = parseNumberInput(ids.totalCharges, 0);
+        const vNet = (Number.isFinite(vTotalPnl) ? vTotalPnl : 0)
+            + (Number.isFinite(vTotalCharges) ? vTotalCharges : 0);
         return Number.isFinite(vNet) ? vNet : 0;
     }
 
@@ -520,11 +517,18 @@
         const openRows = Array.isArray(rows) ? rows : [];
         const openCount = Number.isFinite(Number(openCountOverride)) ? Number(openCountOverride) : openRows.length;
         const vUnrealized = sumNumeric(openRows, "pnl");
-        const vOpenPnl = Number.isFinite(vUnrealized) ? vUnrealized : 0;
+        const vOpenPositionsPnl = Number.isFinite(vUnrealized) ? vUnrealized : 0;
+        const vTempClosedPnl = sumNumeric(gLatestTempClosedPositions, "pnl");
+        const vOpenCharges = sumCharges(openRows);
+        const vTempClosedCharges = sumCharges(gLatestTempClosedPositions);
+        const vOpenPnl = vOpenPositionsPnl
+            + (Number.isFinite(vTempClosedPnl) ? vTempClosedPnl : 0)
+            - ((Number.isFinite(vOpenCharges) ? vOpenCharges : 0) * 2)
+            - (Number.isFinite(vTempClosedCharges) ? vTempClosedCharges : 0);
         if (ids.openPnlValue) {
             ids.openPnlValue.textContent = formatNumericValue(vOpenPnl, 3);
         }
-        checkTargetOpenPnl(vOpenPnl, openCount);
+        checkTargetOpenPnl(vOpenPositionsPnl, openCount);
     }
 
     function getTargetOpenPnlValue() {
@@ -546,11 +550,13 @@
         gTargetOpenPnlTriggered = false;
     }
 
-    function updateTotalChargesMetric(rows = gLatestClosedPositions) {
+    function updateTotalChargesMetric() {
         if (!ids.totalCharges) {
             return;
         }
-        const vCharges = Array.isArray(rows) ? sumCharges(rows) : 0;
+        const vOpenCharges = sumCharges(gLatestOpenPositions);
+        const vClosedCharges = sumCharges(gLatestClosedPositions);
+        const vCharges = (vOpenCharges * 2) + vClosedCharges;
         ids.totalCharges.value = Number.isFinite(vCharges) ? (-Math.abs(vCharges)).toFixed(3) : "0.000";
     }
 
@@ -1004,9 +1010,9 @@
         }
 
         updateOptionsPnlMetric(gLatestClosedPositions);
-        updateTotalChargesMetric(gLatestClosedPositions);
-        updateTotalPnlMetric(gLatestOpenPositions);
-        updateNetTotalPnlMetric(gLatestOpenPositions);
+        updateTotalChargesMetric();
+        updateTotalPnlMetric();
+        updateNetTotalPnlMetric();
         updateOpenPnlMetric(gLatestOpenPositions, openCount);
 
         updateOneLotMetric(runtimeState);
@@ -1354,9 +1360,9 @@
             }
             updateTotalMarginMetric([]);
             updateBalanceMetrics([]);
-            updateTotalChargesMetric(gLatestClosedPositions);
-            updateTotalPnlMetric([]);
-            updateNetTotalPnlMetric([]);
+            updateTotalChargesMetric();
+            updateTotalPnlMetric();
+            updateNetTotalPnlMetric();
             updateOpenPnlMetric([], 0);
             renderPayoffGraph([]);
             return;
@@ -1463,30 +1469,22 @@
         gPreviousOpenPositionLtps = nextLtps;
         updateTotalMarginMetric(rows);
         updateBalanceMetrics(rows);
-        updateTotalChargesMetric(gLatestClosedPositions);
-        updateTotalPnlMetric(rows);
-        updateNetTotalPnlMetric(rows);
+        updateTotalChargesMetric();
+        updateTotalPnlMetric();
+        updateNetTotalPnlMetric();
         updateOpenPnlMetric(rows, rows.length);
         renderPayoffGraph(displayRows);
     }
 
-    function renderClosedPositions(rows) {
-        if (!ids.closedPositionsBody) {
-            return;
+    function renderClosedPositionRows(pBody, rows, pEmptyText) {
+        if (!pBody) {
+            return { totalCharges: 0, totalPnl: 0 };
         }
-
         if (!Array.isArray(rows) || rows.length === 0) {
-            gLatestClosedPositions = [];
-            ids.closedPositionsBody.innerHTML = "<tr><td colspan=\"13\" class=\"rolling-demo-empty\">No closed paper positions found for this user.</td></tr>";
-            updateOptionsPnlMetric([]);
-            updateTotalChargesMetric([]);
-            updateTotalPnlMetric(gLatestOpenPositions);
-            updateNetTotalPnlMetric(gLatestOpenPositions);
-            updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
-            return;
+            pBody.innerHTML = `<tr><td colspan="13" class="rolling-demo-empty">${escapeHtml(pEmptyText)}</td></tr>`;
+            return { totalCharges: 0, totalPnl: 0 };
         }
 
-        gLatestClosedPositions = rows;
         const closedRowsHtml = rows.map(function (row) {
             const tradeType = String(row.action || "-");
             const currentDelta = String(row.instrumentType || "").toUpperCase() === "OPTION"
@@ -1514,7 +1512,7 @@
         }).join("");
         const totalCharges = sumCharges(rows);
         const totalPnl = sumNumeric(rows, "pnl");
-        ids.closedPositionsBody.innerHTML = `${closedRowsHtml}
+        pBody.innerHTML = `${closedRowsHtml}
             <tr class="rolling-demo-total-row">
                 <td colspan="10">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatChargeNegative(totalCharges, 3))}</td>
@@ -1522,10 +1520,25 @@
                 <td>-</td>
             </tr>
         `;
-        updateOptionsPnlMetric(rows);
-        updateTotalChargesMetric(rows);
-        updateTotalPnlMetric(gLatestOpenPositions);
-        updateNetTotalPnlMetric(gLatestOpenPositions);
+        return { totalCharges, totalPnl };
+    }
+
+    function renderTempClosedPositions(rows) {
+        gLatestTempClosedPositions = Array.isArray(rows) ? rows : [];
+        renderClosedPositionRows(ids.tempClosedPositionsBody, gLatestTempClosedPositions, "No temp closed paper positions found for this user.");
+    }
+
+    function renderClosedPositions(rows) {
+        if (!ids.closedPositionsBody) {
+            return;
+        }
+
+        gLatestClosedPositions = Array.isArray(rows) ? rows : [];
+        renderClosedPositionRows(ids.closedPositionsBody, gLatestClosedPositions, "No closed paper positions found for this user.");
+        updateOptionsPnlMetric(gLatestClosedPositions);
+        updateTotalChargesMetric();
+        updateTotalPnlMetric();
+        updateNetTotalPnlMetric();
         updateOpenPnlMetric(gLatestOpenPositions, Array.isArray(gLatestOpenPositions) ? gLatestOpenPositions.length : 0);
     }
 
@@ -1700,6 +1713,27 @@
         renderClosedPositions(Array.isArray(objPayload?.data) ? objPayload.data : []);
     }
 
+    async function loadTempClosedPositions() {
+        const objSearch = new URLSearchParams();
+        if (ids.closedFromDate?.value) {
+            objSearch.set("fromDate", ids.closedFromDate.value);
+        }
+        if (ids.closedToDate?.value) {
+            objSearch.set("toDate", ids.closedToDate.value);
+        }
+
+        const vQueryString = objSearch.toString();
+        const objResponse = await fetch(`${apiBase}/temp-closed-positions${vQueryString ? `?${vQueryString}` : ""}`, {
+            credentials: "same-origin"
+        });
+        if (!objResponse.ok) {
+            throw new Error("Unable to load temp closed paper positions.");
+        }
+
+        const objPayload = await objResponse.json().catch(() => ({}));
+        renderTempClosedPositions(Array.isArray(objPayload?.data) ? objPayload.data : []);
+    }
+
     async function loadEvents() {
         const objResponse = await fetch(`${apiBase}/events`, {
             credentials: "same-origin"
@@ -1727,6 +1761,7 @@
         await Promise.all([
             loadStatus(),
             loadOpenPositions(),
+            loadTempClosedPositions(),
             loadClosedPositions(),
             loadEvents()
         ]);
@@ -1750,7 +1785,7 @@
     }
 
     function canAutoRefreshClosedPositions() {
-        return Boolean(ids.closedPositionsBody)
+        return Boolean(ids.tempClosedPositionsBody || ids.closedPositionsBody)
             && gIsClosedPositionsVisible
             && document.visibilityState === "visible";
     }
@@ -2120,7 +2155,11 @@
             ids.closedToDate.value = "";
         }
         queueProfileSave();
-        void loadClosedPositions();
+        void Promise.all([loadTempClosedPositions(), loadClosedPositions()]);
+    });
+
+    ids.clearTempClosedPositionsButton?.addEventListener("click", function () {
+        void runServerAction(`${apiBase}/temp-closed-positions/clear`);
     });
 
     ids.clearClosedPositionsButton?.addEventListener("click", function () {
@@ -2196,15 +2235,15 @@
     });
 
     ids.closedFromDate?.addEventListener("change", function () {
-        void loadClosedPositions().catch(function (objError) {
+        void Promise.all([loadTempClosedPositions(), loadClosedPositions()]).catch(function (objError) {
             console.error(objError);
-            setStatus(objError instanceof Error ? objError.message : "Unable to load closed positions.", "danger");
+            setStatus(objError instanceof Error ? objError.message : "Unable to load closed-position tables.", "danger");
         });
     });
     ids.closedToDate?.addEventListener("change", function () {
-        void loadClosedPositions().catch(function (objError) {
+        void Promise.all([loadTempClosedPositions(), loadClosedPositions()]).catch(function (objError) {
             console.error(objError);
-            setStatus(objError instanceof Error ? objError.message : "Unable to load closed positions.", "danger");
+            setStatus(objError instanceof Error ? objError.message : "Unable to load closed-position tables.", "danger");
         });
     });
 
@@ -2240,7 +2279,7 @@
         }
     }
 
-    if (ids.closedPositionsBody) {
+    if (ids.tempClosedPositionsBody || ids.closedPositionsBody) {
         if ("IntersectionObserver" in window) {
             const objClosedObserver = new IntersectionObserver(function (entries) {
                 const bVisible = entries.some(function (entry) {
@@ -2249,12 +2288,17 @@
                 const bBecameVisible = bVisible && !gIsClosedPositionsVisible;
                 gIsClosedPositionsVisible = bVisible;
                 if (bBecameVisible && document.visibilityState === "visible") {
-                    void loadClosedPositions().catch(function () { return undefined; });
+                    void Promise.all([loadTempClosedPositions(), loadClosedPositions()]).catch(function () { return undefined; });
                 }
             }, {
                 threshold: 0.1
             });
-            objClosedObserver.observe(ids.closedPositionsBody);
+            if (ids.tempClosedPositionsBody) {
+                objClosedObserver.observe(ids.tempClosedPositionsBody);
+            }
+            if (ids.closedPositionsBody) {
+                objClosedObserver.observe(ids.closedPositionsBody);
+            }
         }
         else {
             gIsClosedPositionsVisible = true;
@@ -2310,9 +2354,9 @@
         if (!canAutoRefreshClosedPositions()) {
             return;
         }
-        void loadClosedPositions().catch(function (objError) {
+        void Promise.all([loadTempClosedPositions(), loadClosedPositions()]).catch(function (objError) {
             console.error(objError);
-            setStatus(objError instanceof Error ? objError.message : "Unable to refresh closed positions.", "danger");
+            setStatus(objError instanceof Error ? objError.message : "Unable to refresh closed-position tables.", "danger");
         });
     }, gClosedPositionsRefreshMs);
 })();

@@ -445,7 +445,7 @@
                 <div class="rolling-demo-card-head">
                     <h2>Positive PnL Option Leg</h2>
                 </div>
-                <div class="rolling-demo-grid options">
+                <div class="rolling-demo-grid options rolling-demo-positive-pnl-grid">
                     <div class="rolling-demo-field">
                         <label for="chkRollingDemoPositivePnlSupportEnabled">Enable</label>
                         <div class="rolling-demo-check-wrap">
@@ -505,7 +505,7 @@
                             </label>
                         </div>
                     </div>
-                    <div class="rolling-demo-field">
+                    <div class="rolling-demo-field rolling-demo-positive-pnl-actions-field">
                         <label>&nbsp;</label>
                         <div class="rolling-demo-btn-row rolling-demo-btn-row-two rolling-demo-positive-pnl-actions">
                             <button class="rolling-demo-btn buy" type="button" id="btnRollingDemoOpenPositivePnl">OPEN</button>
@@ -585,6 +585,57 @@
                 </div>
                 <div class="rolling-demo-payoff rolling-strangle-demo-payoff" id="rollingDemoOpenPayoffGraph">
                     <div class="rolling-demo-payoff-empty">Payoff graph appears when open legs are available.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <h2>Temp Closed Positions</h2>
+                    <div class="rolling-demo-card-tools">
+                        <div class="rolling-demo-filters">
+                            <div class="rolling-demo-field">
+                                <div class="rolling-demo-check-wrap">
+                                    <button class="rolling-demo-icon-btn warn" type="button" id="btnRollingDemoClearTempClosedPositions" title="Clear temp closed paper positions" aria-label="Clear temp closed paper positions">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M3 6h18" />
+                                            <path d="M8 6V4h8v2" />
+                                            <path d="M19 6l-1 14H6L5 6" />
+                                            <path d="M10 11v6" />
+                                            <path d="M14 11v6" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="rolling-demo-table-wrap">
+                    <table class="rolling-demo-table rolling-demo-table-closed">
+                        <thead>
+                            <tr>
+                                <th>Delta</th>
+                                <th>C Delta</th>
+                                <th>Start DT</th>
+                                <th>End DT</th>
+                                <th>Symbol</th>
+                                <th>Tr Type</th>
+                                <th>Lot Sz</th>
+                                <th>Qty</th>
+                                <th>Buy Price</th>
+                                <th>Sell Price</th>
+                                <th>Charges</th>
+                                <th>P &amp; L</th>
+                                <th>Comment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rollingDemoTempClosedPositionsBody">
+                            <tr>
+                                <td colspan="13" class="rolling-demo-empty">No temp closed paper positions yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>

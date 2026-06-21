@@ -172,6 +172,14 @@
     grid-template-columns:repeat(10, minmax(0, 1fr));
 }
 
+.rolling-demo-positive-pnl-grid {
+    grid-template-columns:repeat(6, minmax(0, 1fr));
+}
+
+.rolling-demo-positive-pnl-actions-field {
+    grid-column:span 2;
+}
+
 .rolling-demo-grid.metrics {
     grid-template-columns:repeat(7, minmax(0, 1fr));
 }
@@ -196,16 +204,23 @@
 }
 
 .rolling-demo-check-wrap {
+    width:40px;
     min-height:44px;
     display:flex;
     align-items:center;
 }
 
 .rolling-demo-check {
-    display:inline-flex;
+    display:flex;
+    flex-wrap:wrap;
     align-items:center;
     gap:10px;
     color:var(--app-text);
+    width:103px;
+}
+
+.rolling-demo-field label.rolling-demo-check {
+    display:flex;
 }
 
 .rolling-demo-check input {
@@ -682,6 +697,7 @@
 }
 
 .rolling-demo-filters .rolling-demo-check-wrap {
+    width:auto;
     justify-content:flex-end;
 }
 
@@ -1463,6 +1479,10 @@
     .rolling-demo-filters,
     .rolling-demo-btn-row {
         grid-template-columns:1fr;
+    }
+
+    .rolling-demo-positive-pnl-actions-field {
+        grid-column:auto;
     }
 
     .rolling-demo-card-head {

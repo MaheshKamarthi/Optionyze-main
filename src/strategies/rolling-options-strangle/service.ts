@@ -6,6 +6,7 @@ import {
     saveRollingOptionsPtDePosition,
     type RollingOptionsPtDePositionRecord
 } from "../../storage/rolling-options-strangle-position-store";
+import { saveRollingOptionsStrangleTempClosedPositions } from "../../storage/rolling-options-strangle-temp-closed-store";
 import {
     loadRollingOptionsPtDeProfile,
     patchRollingOptionsPtDeProfileUiState
@@ -49,6 +50,11 @@ import type {
 
 const RE_DELTA_TOLERANCE = 0.05;
 const RENKO_MAX_WEBSOCKET_TICK_AGE_MS = 3000;
+const RE_ENTRY_DELAY_MS = 15000;
+
+function delayMs(pMs: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, pMs)));
+}
 
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
@@ -1777,6 +1783,7 @@ export class RollingOptionsStrangleService {
 
         if (objClosed.length > 0) {
             await syncOptionsPnlWithClosedPositions(objClosed[0].userId);
+            await saveRollingOptionsStrangleTempClosedPositions(objClosed);
             await logRollingOptionsPtDeEvent({
                 userId: objClosed[0].userId,
                 eventType: pReason.toLowerCase().includes("sl")
@@ -1933,6 +1940,7 @@ export class RollingOptionsStrangleService {
                 continue;
             }
 
+            await delayMs(RE_ENTRY_DELAY_MS);
             const arrOpened = await this.openOptionPositions(
                 pUserId,
                 objConfig,
@@ -2996,16 +3004,11 @@ export class RollingOptionsStrangleService {
 
         const vReason = `Target Open PnL hit (${vOpenPnl.toFixed(3)} / ${vTarget.toFixed(3)})`;
         await this.closePositions(pOpenPositions, pConfig, vReason);
-        if (pState.timerRef) {
-            clearInterval(pState.timerRef);
-            pState.timerRef = null;
-        }
-        pState.running = false;
         pState.lastError = "";
         pState.lastCycleAt = new Date().toISOString();
         await this.syncRuntime(pUserId, pConfig, pState, {
-            status: "stopped",
-            autoTraderEnabled: false,
+            status: "running",
+            autoTraderEnabled: true,
             lastSpotPrice: pSnapshot.spotPrice,
             lastFuturesPrice: pSnapshot.futuresPrice,
             lastSignal: "TARGET_OPEN_PNL_HIT",
@@ -3028,7 +3031,7 @@ export class RollingOptionsStrangleService {
 
         return {
             triggered: true,
-            message: `${vReason}. Closed all open positions and stopped auto trader.`
+            message: `${vReason}. Closed all open positions and kept auto trader running.`
         };
     }
 

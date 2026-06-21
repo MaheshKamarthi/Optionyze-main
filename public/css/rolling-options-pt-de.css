@@ -196,16 +196,23 @@
 }
 
 .rolling-demo-check-wrap {
+    width:40px;
     min-height:44px;
     display:flex;
     align-items:center;
 }
 
 .rolling-demo-check {
-    display:inline-flex;
+    display:flex;
+    flex-wrap:wrap;
     align-items:center;
     gap:10px;
     color:var(--app-text);
+    width:103px;
+}
+
+.rolling-demo-field label.rolling-demo-check {
+    display:flex;
 }
 
 .rolling-demo-check input {
@@ -560,6 +567,7 @@
 }
 
 .rolling-demo-filters .rolling-demo-check-wrap {
+    width:auto;
     justify-content:flex-end;
 }
 

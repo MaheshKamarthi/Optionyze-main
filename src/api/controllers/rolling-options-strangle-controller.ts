@@ -21,6 +21,11 @@ import {
     saveRollingOptionsPtDePosition,
     type RollingOptionsPtDePositionRecord
 } from "../../storage/rolling-options-strangle-position-store";
+import {
+    clearRollingOptionsStrangleTempClosedPositions,
+    listRollingOptionsStrangleTempClosedPositions,
+    saveRollingOptionsStrangleTempClosedPositions
+} from "../../storage/rolling-options-strangle-temp-closed-store";
 import { clearRollingOptionsEventsByStrategy, listRollingOptionsEventsByStrategy } from "../../storage/rolling-options-pt-de-event-store";
 import {
     loadRollingOptionsPtDeProfile,
@@ -859,6 +864,7 @@ async function closeOpenPositionsByInstrument(
 
     if (objClosedPositions.length > 0) {
         await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
+        await saveRollingOptionsStrangleTempClosedPositions(objClosedPositions);
     }
 
     return objClosedPositions;
@@ -915,7 +921,10 @@ async function closeOpenPositionsById(
         }));
     }
 
-    await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
+    if (objClosedPositions.length > 0) {
+        await applyClosedOptionPnlToProfile(pUserId, objClosedPositions);
+        await saveRollingOptionsStrangleTempClosedPositions(objClosedPositions);
+    }
     return objClosedPositions;
 }
 
@@ -1204,6 +1213,21 @@ export async function getRollingOptionsStrangleClosedPositions(req: Request, res
     const vFromDate = String(req.query?.fromDate || "").trim();
     const vToDate = String(req.query?.toDate || "").trim();
     const objRows = await listRollingOptionsPtDeClosedPositions(vUserId, {
+        fromDate: vFromDate,
+        toDate: vToDate
+    });
+
+    res.json({
+        status: "success",
+        data: objRows
+    });
+}
+
+export async function getRollingOptionsStrangleTempClosedPositions(req: Request, res: Response): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vFromDate = String(req.query?.fromDate || "").trim();
+    const vToDate = String(req.query?.toDate || "").trim();
+    const objRows = await listRollingOptionsStrangleTempClosedPositions(vUserId, {
         fromDate: vFromDate,
         toDate: vToDate
     });
@@ -2278,6 +2302,29 @@ export async function clearRollingOptionsStrangleClosedPositionsController(req: 
     res.json({
         status: "success",
         message: `Cleared ${vDeletedCount} closed paper position(s).`,
+        data: {
+            deletedCount: vDeletedCount
+        }
+    });
+}
+
+export async function clearRollingOptionsStrangleTempClosedPositionsController(req: Request, res: Response): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vDeletedCount = await clearRollingOptionsStrangleTempClosedPositions(vUserId);
+    await logRollingOptionsPtDeEvent({
+        userId: vUserId,
+        eventType: "manual_action",
+        severity: "info",
+        title: "Temp Closed Positions Cleared",
+        message: `Cleared ${vDeletedCount} temp closed paper position(s).`,
+        payload: {
+            qty: vDeletedCount,
+            reason: "clear_temp_closed_positions"
+        }
+    });
+    res.json({
+        status: "success",
+        message: `Cleared ${vDeletedCount} temp closed paper position(s).`,
         data: {
             deletedCount: vDeletedCount
         }

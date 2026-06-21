@@ -45,6 +45,7 @@ import {
     closeRollingOptionsStrangleOpenPositionController,
     clearRollingOptionsStrangleClosedPositionsController,
     clearRollingOptionsStrangleEventsController,
+    clearRollingOptionsStrangleTempClosedPositionsController,
     deleteRollingOptionsStrangleOpenPositionController,
     executeRollingOptionsStrangleManualFuture,
     executeRollingOptionsStrangleManualOption,
@@ -55,6 +56,7 @@ import {
     getRollingOptionsStrangleOpenPositions,
     getRollingOptionsStrangleProfile,
     getRollingOptionsStrangleStatus,
+    getRollingOptionsStrangleTempClosedPositions,
     openRollingOptionsStranglePositivePnlSupport,
     refreshRollingOptionsStrangleEmaIndicator,
     resetRollingOptionsStrangleStrategy,
@@ -367,6 +369,9 @@ export function createApiRouter(
     objRouter.get("/rollingoptions-strangle/closed-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await getRollingOptionsStrangleClosedPositions(req, res);
     });
+    objRouter.get("/rollingoptions-strangle/temp-closed-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await getRollingOptionsStrangleTempClosedPositions(req, res);
+    });
     objRouter.get("/rollingoptions-strangle/events", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await getRollingOptionsStrangleEvents(req, res);
     });
@@ -418,6 +423,9 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle/closed-positions/clear", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await clearRollingOptionsStrangleClosedPositionsController(req, res);
+    });
+    objRouter.post("/rollingoptions-strangle/temp-closed-positions/clear", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await clearRollingOptionsStrangleTempClosedPositionsController(req, res);
     });
     objRouter.post("/rollingoptions-strangle/events/clear", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await clearRollingOptionsStrangleEventsController(req, res);
