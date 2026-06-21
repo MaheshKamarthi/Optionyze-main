@@ -1401,6 +1401,10 @@
             const positionId = String(row.positionId || "");
             const ltpBlinkClass = getLtpBlinkClass(positionId, row.markPrice);
             const currentLtp = Number(row.markPrice);
+            const vRowPnl = Number(row.pnl || 0);
+            const pnlClass = Number.isFinite(vRowPnl) && vRowPnl > 0
+                ? "rolling-demo-pnl-positive"
+                : (Number.isFinite(vRowPnl) && vRowPnl < 0 ? "rolling-demo-pnl-negative" : "");
             const rowMetadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
             const rowClasses = [];
             if (isPreviewLeg) {
@@ -1429,7 +1433,7 @@
                     <td>${escapeHtml(formatNumericValue(sellPrice, 2))}</td>
                     <td class="${ltpBlinkClass}">${escapeHtml(formatNumericValue(row.markPrice, 2))}</td>
                     <td>${escapeHtml(formatChargeNegative(row.charges, 3))}</td>
-                    <td>${escapeHtml(formatNumericValue(row.pnl, 3))}</td>
+                    <td${pnlClass ? ` class="${pnlClass}"` : ""}>${escapeHtml(formatNumericValue(row.pnl, 3))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.closedAt))}</td>
                     <td>${escapeHtml(row.status || "-")}</td>
@@ -1458,11 +1462,14 @@
         }).join("");
         const totalCharges = sumCharges(rows);
         const totalPnl = sumNumeric(rows, "pnl");
+        const totalPnlClass = Number.isFinite(totalPnl) && totalPnl > 0
+            ? " rolling-demo-pnl-positive"
+            : (Number.isFinite(totalPnl) && totalPnl < 0 ? " rolling-demo-pnl-negative" : "");
         ids.openPositionsBody.innerHTML = `${openRowsHtml}
             <tr class="rolling-demo-total-row">
                 <td colspan="11">Total</td>
                 <td class="rolling-demo-total-value">${escapeHtml(formatChargeNegative(totalCharges, 3))}</td>
-                <td class="rolling-demo-total-value">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
+                <td class="rolling-demo-total-value${totalPnlClass}">${escapeHtml(formatNumericValue(totalPnl, 3))}</td>
                 <td colspan="5">-</td>
             </tr>
         `;

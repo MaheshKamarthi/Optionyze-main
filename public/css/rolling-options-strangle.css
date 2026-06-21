@@ -489,6 +489,16 @@
     letter-spacing:.08em;
 }
 
+.rolling-demo-table .rolling-demo-pnl-positive {
+    color:#22c55e;
+    font-weight:800;
+}
+
+.rolling-demo-table .rolling-demo-pnl-negative {
+    color:#ef4444;
+    font-weight:800;
+}
+
 .rolling-demo-table-open thead th:nth-child(1),
 .rolling-demo-table-open thead th:nth-child(2),
 .rolling-demo-table-open thead th:nth-child(5),
