@@ -118,6 +118,8 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlTpPct: 15,
         positivePnlSlPct: 85,
         positivePnlExpiryMode: "1",
+        positivePnlExpiryDate: "",
+        positivePnlExpiryRefreshTime: "",
         positivePnlTargetDelta: 0.53,
         positivePnlAdverseRenkoCloseEnabled: false,
         optionsPnl: 0,
@@ -227,6 +229,8 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.positivePnlTpPct = getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15);
     objUiState.positivePnlSlPct = getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85);
     objUiState.positivePnlExpiryMode = getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1");
+    objUiState.positivePnlExpiryDate = String(objUiState.positivePnlExpiryDate || "").trim();
+    objUiState.positivePnlExpiryRefreshTime = String(objUiState.positivePnlExpiryRefreshTime || "").trim();
     objUiState.positivePnlTargetDelta = getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53);
     objUiState.positivePnlAdverseRenkoCloseEnabled = Boolean(getMigratedValue(
         "positivePnlAdverseRenkoCloseEnabled",
@@ -243,6 +247,12 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.positivePnlExpiryMode = ["source", "1", "2", "4", "5", "6", "7"].includes(vPositivePnlExpiryMode)
         ? vPositivePnlExpiryMode
         : "1";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(objUiState.positivePnlExpiryDate || ""))) {
+        objUiState.positivePnlExpiryDate = "";
+    }
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(objUiState.positivePnlExpiryRefreshTime || ""))) {
+        objUiState.positivePnlExpiryRefreshTime = "";
+    }
     if (!Number.isFinite(Number(objUiState.redOptQty))) {
         const vLegacyPct = Number(objUiState.redOptQtyPct ?? objUiState.autoOptQtyPct);
         const vBaseQty = Math.max(1, Math.floor(Number(objUiState.manualFutQty || 1)));

@@ -65,9 +65,11 @@
         return dateValue;
     }
 
-    function resolveExpiryDateByMode(expiryMode) {
+    function resolveExpiryDateByMode(expiryMode, referenceDate) {
         const modeValue = String(expiryMode || "").trim();
-        const currentDate = new Date();
+        const currentDate = referenceDate instanceof Date && !Number.isNaN(referenceDate.getTime())
+            ? new Date(referenceDate)
+            : new Date();
         const currentDayOfWeek = currentDate.getDay();
 
         if (modeValue === "1") {

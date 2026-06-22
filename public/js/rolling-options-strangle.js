@@ -48,6 +48,8 @@
         positivePnlMaxLegs: document.getElementById("txtRollingDemoPositivePnlMaxLegs"),
         positivePnlTriggerAmount: document.getElementById("txtRollingDemoPositivePnlTriggerAmount"),
         positivePnlExpiryMode: document.getElementById("ddlRollingDemoPositivePnlExpiryMode"),
+        positivePnlExpiryDate: document.getElementById("txtRollingDemoPositivePnlExpiryDate"),
+        positivePnlTestRefreshTime: document.getElementById("txtRollingDemoPositivePnlTestRefreshTime"),
         positivePnlTargetDelta: document.getElementById("txtRollingDemoPositivePnlTargetDelta"),
         positivePnlTpPct: document.getElementById("txtRollingDemoPositivePnlTp"),
         positivePnlSlPct: document.getElementById("txtRollingDemoPositivePnlSl"),
@@ -176,6 +178,7 @@
     let gIsClosedPositionsVisible = false;
     let gIsEventLogVisible = false;
     let gLastExpiryRefreshDay = formatDateInputValue(new Date());
+    let gLastPositivePnlTestRefreshKey = "";
     const gStatusRefreshMs = 45000;
     const gEmaRefreshMs = 30000;
     const gOpenPositionsRefreshMs = 30000;
@@ -231,9 +234,9 @@
             : "";
     }
 
-    function resolveExpiryDateByMode(expiryMode) {
+    function resolveExpiryDateByMode(expiryMode, referenceDate) {
         return typeof shared.resolveExpiryDateByMode === "function"
-            ? shared.resolveExpiryDateByMode(expiryMode)
+            ? shared.resolveExpiryDateByMode(expiryMode, referenceDate)
             : new Date();
     }
 
@@ -380,12 +383,80 @@
     }
 
     function refreshDailyExpiryDatesIfNeeded() {
-        const currentDay = formatDateInputValue(new Date());
+        const now = new Date();
+        refreshPositivePnlExpiryAtTestTime(now);
+        const currentDay = formatDateInputValue(now);
         if (!currentDay || currentDay === gLastExpiryRefreshDay) {
             return;
         }
         gLastExpiryRefreshDay = currentDay;
         applyExpiryModeDefaults(true);
+        if (applyPositivePnlExpiryModeDefault(true, true) && gHasLoadedProfile) {
+            queueProfileSave();
+        }
+    }
+
+    function refreshPositivePnlExpiryAtTestTime(now) {
+        if (!ids.positivePnlTestRefreshTime) {
+            return;
+        }
+
+        const testTime = String(ids.positivePnlTestRefreshTime.value || "").trim();
+        if (!/^\d{2}:\d{2}$/.test(testTime)) {
+            return;
+        }
+
+        const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        if (currentTime !== testTime) {
+            return;
+        }
+
+        const currentDay = formatDateInputValue(now);
+        const triggerKey = `${currentDay} ${testTime}`;
+        if (!currentDay || triggerKey === gLastPositivePnlTestRefreshKey) {
+            return;
+        }
+
+        gLastPositivePnlTestRefreshKey = triggerKey;
+        const simulatedNextDay = new Date(now);
+        simulatedNextDay.setDate(simulatedNextDay.getDate() + 1);
+        if (applyPositivePnlExpiryModeDefault(true, true, simulatedNextDay) && gHasLoadedProfile) {
+            queueProfileSave();
+        }
+    }
+
+    function applyPositivePnlExpiryModeDefault(force, dailyOnly, referenceDate) {
+        if (!ids.positivePnlExpiryMode || !ids.positivePnlExpiryDate) {
+            return false;
+        }
+
+        const modeValue = String(ids.positivePnlExpiryMode.value || "").trim();
+        if (dailyOnly && modeValue !== "1" && modeValue !== "2") {
+            return false;
+        }
+
+        if (modeValue === "source") {
+            const wasChanged = ids.positivePnlExpiryDate.value !== "" || !ids.positivePnlExpiryDate.disabled;
+            ids.positivePnlExpiryDate.value = "";
+            ids.positivePnlExpiryDate.disabled = true;
+            return wasChanged;
+        }
+
+        const wasDisabled = ids.positivePnlExpiryDate.disabled;
+        ids.positivePnlExpiryDate.disabled = false;
+        if (!force && String(ids.positivePnlExpiryDate.value || "").trim()) {
+            return wasDisabled;
+        }
+
+        const resolvedDate = resolveExpiryDateByMode(modeValue, referenceDate);
+        const formattedDate = formatDateInputValue(resolvedDate);
+        if (!formattedDate) {
+            return wasDisabled;
+        }
+
+        const wasChanged = ids.positivePnlExpiryDate.value !== formattedDate || wasDisabled;
+        ids.positivePnlExpiryDate.value = formattedDate;
+        return wasChanged;
     }
 
     function updateRenkoFeedVisualState() {
@@ -814,6 +885,8 @@
             positivePnlMaxLegs: parseNumberInput(ids.positivePnlMaxLegs, 1),
             positivePnlTriggerAmount: Math.min(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
             positivePnlExpiryMode: String(ids.positivePnlExpiryMode?.value || "1"),
+            positivePnlExpiryDate: String(ids.positivePnlExpiryDate?.value || ""),
+            positivePnlExpiryRefreshTime: String(ids.positivePnlTestRefreshTime?.value || ""),
             positivePnlTargetDelta: parseNumberInput(ids.positivePnlTargetDelta, 0.53),
             positivePnlTpPct: parseNumberInput(ids.positivePnlTpPct, 15),
             positivePnlSlPct: parseNumberInput(ids.positivePnlSlPct, 85),
@@ -913,6 +986,8 @@
         setFieldValue("positivePnlMaxLegs", uiState.positivePnlMaxLegs ?? uiState.negativePnlMaxLegs ?? 1);
         setFieldValue("positivePnlTriggerAmount", uiState.positivePnlTriggerAmount ?? 0);
         setFieldValue("positivePnlExpiryMode", uiState.positivePnlExpiryMode ?? uiState.negativePnlHedgeExpiryMode ?? "1");
+        setFieldValue("positivePnlExpiryDate", uiState.positivePnlExpiryDate ?? "");
+        setFieldValue("positivePnlTestRefreshTime", uiState.positivePnlExpiryRefreshTime ?? "");
         setFieldValue("positivePnlTargetDelta", uiState.positivePnlTargetDelta ?? uiState.negativePnlHedgeDelta ?? 0.53);
         setFieldValue("positivePnlTpPct", uiState.positivePnlTpPct ?? uiState.negativePnlTpPct ?? 15);
         setFieldValue("positivePnlSlPct", uiState.positivePnlSlPct ?? uiState.negativePnlSlPct ?? 85);
@@ -928,6 +1003,7 @@
 
         applySymbolDefaults();
         applyExpiryModeDefaults(true);
+        applyPositivePnlExpiryModeDefault(false);
         updateRenkoFeedVisualState();
         updateFuturesEnabledVisualState();
 
@@ -2229,10 +2305,17 @@
         }
     });
 
-    [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTriggerAmount, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
+    [ids.positivePnlSupportQty, ids.positivePnlMaxLegs, ids.positivePnlTriggerAmount, ids.positivePnlExpiryDate, ids.positivePnlTargetDelta, ids.positivePnlTpPct, ids.positivePnlSlPct].forEach(function (objField) {
         objField?.addEventListener("input", refreshPositivePnlSupportSettings);
     });
-    [ids.positivePnlSupportEnabled, ids.positivePnlSupportAction, ids.positivePnlExpiryMode, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
+    ids.positivePnlExpiryMode?.addEventListener("change", function () {
+        applyPositivePnlExpiryModeDefault(true);
+    });
+    ids.positivePnlTestRefreshTime?.addEventListener("input", function () {
+        gLastPositivePnlTestRefreshKey = "";
+        refreshPositivePnlSupportSettings();
+    });
+    [ids.positivePnlSupportEnabled, ids.positivePnlSupportAction, ids.positivePnlExpiryMode, ids.positivePnlExpiryDate, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
         objField?.addEventListener("change", refreshPositivePnlSupportSettings);
     });
 
@@ -2262,6 +2345,7 @@
         setStatus(objError instanceof Error ? objError.message : "Unable to load Rolling Options profile.", "danger");
         applySymbolDefaults();
         applyExpiryModeDefaults();
+        applyPositivePnlExpiryModeDefault(false);
         updateRenkoFeedVisualState();
     });
 

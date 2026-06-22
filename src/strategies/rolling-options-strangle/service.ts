@@ -413,6 +413,8 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlTpPct: 15,
         positivePnlSlPct: 85,
         positivePnlExpiryMode: "1",
+        positivePnlExpiryDate: "",
+        positivePnlExpiryRefreshTime: "",
         positivePnlTargetDelta: 0.53,
         positivePnlAdverseRenkoCloseEnabled: false,
         optionsPnl: 0,
@@ -439,49 +441,6 @@ function isPositivePnlSupportPosition(pPosition: RollingOptionsPtDePositionRecor
 function isPositivePnlSupportLeg(pPosition: RollingOptionsPtDePositionRecord): boolean {
     const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
     return Boolean(objMetadata.positivePnlSupport);
-}
-
-function getLocalDateKey(pDate = new Date()): string {
-    const vYear = pDate.getFullYear();
-    const vMonth = String(pDate.getMonth() + 1).padStart(2, "0");
-    const vDay = String(pDate.getDate()).padStart(2, "0");
-    return `${vYear}-${vMonth}-${vDay}`;
-}
-
-function getIstMidnightUtcTime(pDateKey: string): number | null {
-    const objMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(pDateKey || "").trim());
-    if (!objMatch) {
-        return null;
-    }
-
-    const vYear = Number(objMatch[1]);
-    const vMonthIndex = Number(objMatch[2]) - 1;
-    const vDay = Number(objMatch[3]);
-    const vUtcTime = Date.UTC(vYear, vMonthIndex, vDay, 0, 0, 0) - (5.5 * 60 * 60 * 1000);
-    return Number.isFinite(vUtcTime) ? vUtcTime : null;
-}
-
-function shouldCloseDailySupportAtExpiryMidnight(pPosition: RollingOptionsPtDePositionRecord, pNow = new Date()): boolean {
-    if (!isPositivePnlSupportLeg(pPosition)) {
-        return false;
-    }
-
-    const objMetadata = (pPosition.metadata || {}) as Record<string, unknown>;
-    if (String(objMetadata.expiryMode || "").trim() !== "1") {
-        return false;
-    }
-
-    const vExpiryDate = String(pPosition.expiryDate || objMetadata.resolvedExpiryDate || objMetadata.requestedExpiryDate || "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(vExpiryDate)) {
-        return false;
-    }
-
-    const vExpiryMidnightIstUtcTime = getIstMidnightUtcTime(vExpiryDate);
-    if (vExpiryMidnightIstUtcTime === null) {
-        return false;
-    }
-
-    return pNow.getTime() >= vExpiryMidnightIstUtcTime;
 }
 
 function normalizeTradingViewEmaTrend(pValue: unknown): "UP" | "DOWN" | "FLAT" {
@@ -520,7 +479,7 @@ function migratePositivePnlSettings(
         }
         return pUiState[pPositiveKey] ?? pFallback;
     };
-    return {
+    const objUiState = {
         ...pUiState,
         positivePnlSupportEnabled: Boolean(getMigratedValue("positivePnlSupportEnabled", "negativePnlHedgeEnabled", true)),
         positivePnlSupportAction: String(getMigratedValue("positivePnlSupportAction", "negativePnlAction3", "buy")).trim().toLowerCase() === "sell" ? "sell" : "buy",
@@ -530,6 +489,8 @@ function migratePositivePnlSettings(
         positivePnlTpPct: getMigratedValue("positivePnlTpPct", "negativePnlTpPct", 15),
         positivePnlSlPct: getMigratedValue("positivePnlSlPct", "negativePnlSlPct", 85),
         positivePnlExpiryMode: getMigratedValue("positivePnlExpiryMode", "negativePnlHedgeExpiryMode", "1"),
+        positivePnlExpiryDate: String(pUiState.positivePnlExpiryDate || "").trim(),
+        positivePnlExpiryRefreshTime: String(pUiState.positivePnlExpiryRefreshTime || "").trim(),
         positivePnlTargetDelta: getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53),
         positivePnlAdverseRenkoCloseEnabled: Boolean(getMigratedValue(
             "positivePnlAdverseRenkoCloseEnabled",
@@ -537,6 +498,13 @@ function migratePositivePnlSettings(
             false
         ))
     };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(objUiState.positivePnlExpiryDate || ""))) {
+        objUiState.positivePnlExpiryDate = "";
+    }
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(objUiState.positivePnlExpiryRefreshTime || ""))) {
+        objUiState.positivePnlExpiryRefreshTime = "";
+    }
+    return objUiState;
 }
 
 export class RollingOptionsStrangleService {
@@ -616,6 +584,8 @@ export class RollingOptionsStrangleService {
             positivePnlTpPct: 15,
             positivePnlSlPct: 85,
             positivePnlExpiryMode: "1",
+            positivePnlExpiryDate: "",
+            positivePnlExpiryRefreshTime: "",
             positivePnlTargetDelta: 0.53,
             positivePnlAdverseRenkoCloseEnabled: false,
             ...objSavedUiState
@@ -2593,14 +2563,26 @@ export class RollingOptionsStrangleService {
             return !isPositivePnlSupportLeg(objPosition)
                 && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
         });
-        const arrExpiredDailySupports = arrSupportPositions.filter((objPosition) => {
-            return shouldCloseDailySupportAtExpiryMidnight(objPosition);
-        });
-        if (arrExpiredDailySupports.length > 0) {
-            await this.closePositions(arrExpiredDailySupports, pBaseConfig, "Support closed at expiry-day midnight");
+        const vConfiguredSupportExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
+        const arrExpiryChangedSupports = /^\d{4}-\d{2}-\d{2}$/.test(vConfiguredSupportExpiryDate)
+            ? arrSupportPositions.filter((objSupport) => {
+                const objMetadata = (objSupport.metadata || {}) as Record<string, unknown>;
+                const vSupportExpiryDate = String(
+                    objSupport.expiryDate
+                    || objMetadata.resolvedExpiryDate
+                    || objMetadata.requestedExpiryDate
+                    || objMetadata.positivePnlExpiryDate
+                    || ""
+                ).trim();
+                return Boolean(vSupportExpiryDate) && vSupportExpiryDate !== vConfiguredSupportExpiryDate;
+            })
+            : [];
+        if (arrExpiryChangedSupports.length > 0) {
+            await this.closePositions(arrExpiryChangedSupports, pBaseConfig, "Support closed because Positive PnL expiry date changed");
         }
-        const objExpiredDailySupportIds = new Set(arrExpiredDailySupports.map((objPosition) => objPosition.positionId));
-        const arrRemainingSupportPositions = arrSupportPositions.filter((objPosition) => !objExpiredDailySupportIds.has(objPosition.positionId));
+        const objExpiryChangedSupportIds = new Set(arrExpiryChangedSupports.map((objPosition) => objPosition.positionId));
+        const arrSupportPositionsAfterExpiryChange = arrSupportPositions.filter((objPosition) => !objExpiryChangedSupportIds.has(objPosition.positionId));
+        const arrRemainingSupportPositions = arrSupportPositionsAfterExpiryChange;
 
         if (arrRemainingSupportPositions.length > 0) {
             if (arrSourceOptions.length <= 0) {
@@ -2726,9 +2708,10 @@ export class RollingOptionsStrangleService {
         const vExpiryMode = ["1", "2", "4", "5", "6", "7"].includes(vExpiryModeRaw)
             ? vExpiryModeRaw as RollingOptionsPtDeConfig["expiryMode"]
             : (String((objSource.metadata as any)?.expiryMode || objRuleConfig.expiryMode || "1") as RollingOptionsPtDeConfig["expiryMode"]);
+        const vSelectedExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
         const vExpiryDate = vExpiryModeRaw === "source"
             ? String(objSource.expiryDate || objRuleConfig.expiryDate || "")
-            : resolveExpiryDateByMode(vExpiryMode);
+            : (vSelectedExpiryDate || resolveExpiryDateByMode(vExpiryMode));
         const vTargetDelta = Math.max(0, normalizeNumber((pUiState as any).positivePnlTargetDelta, 0.53));
         const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlTpPct, 15)));
         const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlSlPct, 85)));
@@ -2785,6 +2768,7 @@ export class RollingOptionsStrangleService {
                 maxHedgeQty: vQty,
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
+                positivePnlExpiryDate: vSelectedExpiryDate,
                 positivePnlTriggerAmount: vTriggerAmount,
                 triggeredByNegativeSourceLeg: true,
                 reason: "positive_pnl_support"
