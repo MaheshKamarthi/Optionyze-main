@@ -2583,26 +2583,9 @@ export class RollingOptionsStrangleService {
         const objExpiryChangedSupportIds = new Set(arrExpiryChangedSupports.map((objPosition) => objPosition.positionId));
         const arrSupportPositionsAfterExpiryChange = arrSupportPositions.filter((objPosition) => !objExpiryChangedSupportIds.has(objPosition.positionId));
         const arrRemainingSupportPositions = arrSupportPositionsAfterExpiryChange;
-
-        if (arrRemainingSupportPositions.length > 0) {
-            if (arrSourceOptions.length <= 0) {
-                await this.closePositions(arrRemainingSupportPositions, pBaseConfig, "Support closed because no source option legs are running");
-                return;
-            }
-        }
         const arrNegativeSourceOptions = arrSourceOptions.filter((objPosition) => Number(objPosition.pnl || 0) <= vTriggerAmount);
         const objSourceById = new Map(arrSourceOptions.map((objPosition) => [objPosition.positionId, objPosition]));
-        const arrSupportsToClose = arrRemainingSupportPositions.filter((objSupport) => {
-            const vSourcePositionId = String((objSupport.metadata as any)?.sourcePositionId || "").trim();
-            const objSource = objSourceById.get(vSourcePositionId);
-            return !objSource;
-        });
-        if (arrSupportsToClose.length > 0) {
-            await this.closePositions(arrSupportsToClose, pBaseConfig, "Support source option leg is closed");
-        }
-
-        const objClosedSupportIds = new Set(arrSupportsToClose.map((objPosition) => objPosition.positionId));
-        const arrActiveSupports = arrRemainingSupportPositions.filter((objPosition) => !objClosedSupportIds.has(objPosition.positionId));
+        const arrActiveSupports = arrRemainingSupportPositions;
         const objActiveSupportSourceIds = new Set(arrActiveSupports
             .map((objPosition) => String((objPosition.metadata as any)?.sourcePositionId || "").trim())
             .filter(Boolean));
@@ -3271,9 +3254,7 @@ export class RollingOptionsStrangleService {
 
                 if ((vPreviousRenkoColor === "R" || vPreviousRenkoColor === "G")
                     && vPreviousRenkoColor !== vLast) {
-                    const bAdverseRenkoCloseEnabled = Boolean((objUiState as any).positivePnlAdverseRenkoCloseEnabled ?? false);
-
-                    let arrOpenOptionPositions = objCurrentOpenPositions.filter((objRow) => {
+                    const arrOpenOptionPositions = objCurrentOpenPositions.filter((objRow) => {
                         const objMeta = (objRow.metadata || {}) as Record<string, unknown>;
                         const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
                         const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
@@ -3283,21 +3264,6 @@ export class RollingOptionsStrangleService {
                             && vRuleColor === vPreviousRenkoColor
                             && isRenkoColorTrailTpEnabled(vRuleColor, vRuleSet);
                     });
-
-                    if (bAdverseRenkoCloseEnabled) {
-                        const arrAdverseSupportPositions = objCurrentOpenPositions.filter((objRow) => {
-                            const vSupportSide = this.getOptionSide(objRow);
-                            return objRow.status === "OPEN"
-                                && objRow.instrumentType === "OPTION"
-                                && isPositivePnlSupportPosition(objRow)
-                                && ((vSupportSide === "CE" && vLast === "R") || (vSupportSide === "PE" && vLast === "G"));
-                        });
-                        const objPositionsById = new Map(
-                            [...arrOpenOptionPositions, ...arrAdverseSupportPositions]
-                                .map((objPosition) => [objPosition.positionId, objPosition])
-                        );
-                        arrOpenOptionPositions = Array.from(objPositionsById.values());
-                    }
 
                     if (arrOpenOptionPositions.length > 0) {
                         const objClosedPositions = await this.closePositions(
