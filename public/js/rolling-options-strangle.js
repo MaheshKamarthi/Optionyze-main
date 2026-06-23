@@ -1749,6 +1749,40 @@
         return objUiState;
     }
 
+    async function syncExpiryDatesFromProfile() {
+        if (gConfirmedProfileRevision < gProfileRevision) {
+            return;
+        }
+        const arrSyncedFields = [
+            { dateField: ids.expiryDate1, modeField: ids.expiryMode1, stateKey: "expiryDate1" },
+            { dateField: ids.expiryDate2, modeField: ids.expiryMode2, stateKey: "expiryDate2" },
+            { dateField: ids.positivePnlExpiryDate, modeField: ids.positivePnlExpiryMode, stateKey: "positivePnlExpiryDate" }
+        ];
+        if (arrSyncedFields.some(function (objField) {
+            return document.activeElement === objField.dateField || document.activeElement === objField.modeField;
+        })) {
+            return;
+        }
+
+        const objResponse = await fetch(`${apiBase}/profile`, {
+            credentials: "same-origin"
+        });
+        if (!objResponse.ok) {
+            throw new Error("Unable to refresh expiry dates.");
+        }
+
+        const objPayload = await objResponse.json().catch(() => ({}));
+        const objUiState = objPayload && objPayload.data && objPayload.data.uiState
+            ? objPayload.data.uiState
+            : {};
+        arrSyncedFields.forEach(function (objField) {
+            const serverExpiryDate = String(objUiState[objField.stateKey] || "").trim();
+            if (objField.dateField && /^\d{4}-\d{2}-\d{2}$/.test(serverExpiryDate) && objField.dateField.value !== serverExpiryDate) {
+                objField.dateField.value = serverExpiryDate;
+            }
+        });
+    }
+
     async function loadStatus() {
         const objResponse = await fetch(`${apiBase}/status`, {
             credentials: "same-origin"
@@ -2310,6 +2344,7 @@
     });
     ids.positivePnlExpiryMode?.addEventListener("change", function () {
         applyPositivePnlExpiryModeDefault(true);
+        refreshPositivePnlSupportSettings();
     });
     ids.positivePnlTestRefreshTime?.addEventListener("input", function () {
         gLastPositivePnlTestRefreshKey = "";
@@ -2399,6 +2434,8 @@
     setInterval(function () {
         refreshDailyExpiryDatesIfNeeded();
         void kickRenkoCycleIfNeeded().then(function () {
+            return syncExpiryDatesFromProfile();
+        }).then(function () {
             return loadStatus();
         }).then(function (objRuntimeState) {
             const vOpenCount = Number(objRuntimeState?.counts?.openPositions || 0);

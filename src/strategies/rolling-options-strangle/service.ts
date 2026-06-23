@@ -83,6 +83,43 @@ function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimefr
     return normalizeEmaTimeframe(vValue);
 }
 
+function getTimeMinutes(pTimeValue: string): number | null {
+    const objMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(pTimeValue || "").trim());
+    if (!objMatch) {
+        return null;
+    }
+    return (Number(objMatch[1]) * 60) + Number(objMatch[2]);
+}
+
+function shouldRefreshPositivePnlExpiryNow(
+    pUiState: Record<string, unknown>,
+    pNow = new Date()
+): { shouldRefresh: boolean; nextExpiryDate: string; } {
+    const vMode = String((pUiState as any).positivePnlExpiryMode || "1").trim();
+    if (vMode !== "1" && vMode !== "2") {
+        return { shouldRefresh: false, nextExpiryDate: "" };
+    }
+
+    const vRefreshMinutes = getTimeMinutes(String((pUiState as any).positivePnlExpiryRefreshTime || ""));
+    if (vRefreshMinutes === null) {
+        return { shouldRefresh: false, nextExpiryDate: "" };
+    }
+
+    const vCurrentMinutes = (pNow.getHours() * 60) + pNow.getMinutes();
+    if (vCurrentMinutes < vRefreshMinutes) {
+        return { shouldRefresh: false, nextExpiryDate: "" };
+    }
+
+    const objReferenceDate = new Date(pNow);
+    objReferenceDate.setDate(objReferenceDate.getDate() + 1);
+    const vNextExpiryDate = resolveExpiryDateByMode(vMode, objReferenceDate);
+    const vCurrentExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
+    return {
+        shouldRefresh: Boolean(vNextExpiryDate) && vCurrentExpiryDate !== vNextExpiryDate,
+        nextExpiryDate: vNextExpiryDate
+    };
+}
+
 function normalizeEmaSource(pValue: unknown): "candles" | "renko" {
     return String(pValue || "").trim().toLowerCase() === "renko" ? "renko" : "candles";
 }
@@ -734,6 +771,13 @@ export class RollingOptionsStrangleService {
 
     private async loadConfig(pUserId: string): Promise<RollingOptionsPtDeConfig> {
         const objUiState = await this.loadUiState(pUserId);
+        const objRefreshDecision = shouldRefreshPositivePnlExpiryNow(objUiState);
+        if (objRefreshDecision.shouldRefresh) {
+            objUiState.positivePnlExpiryDate = objRefreshDecision.nextExpiryDate;
+            await patchRollingOptionsPtDeProfileUiState(pUserId, {
+                positivePnlExpiryDate: objRefreshDecision.nextExpiryDate
+            });
+        }
         const objConfig = this.buildRuleSetConfig(objUiState, 1);
         (objConfig as any).__uiState = objUiState;
         return objConfig;
