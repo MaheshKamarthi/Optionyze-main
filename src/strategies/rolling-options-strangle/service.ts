@@ -439,6 +439,7 @@ function getDefaultUiState(): Record<string, unknown> {
         tradingViewEmaSide: "both",
         demoBalance: 10000,
         closeAllLegsOnAnyClose: false,
+        closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
         positivePnlSupportEnabled: true,
         positivePnlSupportAction: "buy",
@@ -609,6 +610,7 @@ export class RollingOptionsStrangleService {
             redSlPct: 85,
             targetOpenPnl: 0,
             closeAllLegsOnAnyClose: false,
+            closeSupportLegOnSourceClose: false,
             skipRenkoEntryNoOpenOptions: false,
             trailGreenTp1Enabled: true,
             trailGreenSl1Enabled: true,
@@ -1861,9 +1863,68 @@ export class RollingOptionsStrangleService {
                 }
             });
             await this.reArmPositivePnlSupportSourcesAfterClose(objClosed, pConfig);
+            await this.closePositivePnlSupportsForClosedSourceLegs(objClosed, pConfig);
         }
 
         return objClosed;
+    }
+
+    private async closePositivePnlSupportsForClosedSourceLegs(
+        pClosedPositions: RollingOptionsPtDePositionRecord[],
+        pConfig: RollingOptionsPtDeConfig
+    ): Promise<void> {
+        const arrClosedSourceLegs = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
+            .filter((objPosition) => objPosition?.instrumentType === "OPTION")
+            .filter((objPosition) => !isPositivePnlSupportPosition(objPosition));
+        if (arrClosedSourceLegs.length <= 0) {
+            return;
+        }
+
+        const vUserId = String(arrClosedSourceLegs[0]?.userId || "").trim();
+        if (!vUserId) {
+            return;
+        }
+
+        const objUiState = await this.loadUiState(vUserId);
+        if (!Boolean((objUiState as any).closeSupportLegOnSourceClose)) {
+            return;
+        }
+
+        const objSourceIds = new Set<string>();
+        for (const objClosed of arrClosedSourceLegs) {
+            const objMetadata = (objClosed.metadata || {}) as Record<string, unknown>;
+            [
+                objClosed.positionId,
+                objMetadata.sourcePositionId,
+                objMetadata.sourceClosedPositionId
+            ].forEach((pValue) => {
+                const vPositionId = String(pValue || "").trim();
+                if (vPositionId) {
+                    objSourceIds.add(vPositionId);
+                }
+            });
+        }
+        if (objSourceIds.size <= 0) {
+            return;
+        }
+
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
+        const arrSupportPositions = arrOpenPositions.filter((objPosition) => {
+            const vSourcePositionId = String((objPosition.metadata as any)?.sourcePositionId || "").trim();
+            return objPosition.status === "OPEN"
+                && objPosition.instrumentType === "OPTION"
+                && isPositivePnlSupportLeg(objPosition)
+                && objSourceIds.has(vSourcePositionId);
+        });
+        if (arrSupportPositions.length <= 0) {
+            return;
+        }
+
+        await this.closePositions(
+            arrSupportPositions,
+            pConfig,
+            "Support closed because linked original/replacement leg closed"
+        );
     }
 
     private async reArmPositivePnlSupportSourcesAfterClose(

@@ -11,6 +11,7 @@
         replacementCloseOrphanEnabled: document.getElementById("chkRollingDemoReplacementCloseOrphan"),
         replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingDemoReplacementCloseOriginalPositive"),
         replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
+        closeSupportLegOnSourceClose: document.getElementById("chkRollingDemoCloseSupportOnSourceClose"),
         replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
         replacementUseEmaTrendEnabled: document.getElementById("chkRollingDemoReplacementUseEmaTrend"),
         action1: document.getElementById("ddlActionCoveredCall1"),
@@ -861,6 +862,7 @@
             replacementCloseOrphanEnabled: ids.replacementCloseOrphanEnabled ? Boolean(ids.replacementCloseOrphanEnabled.checked) : true,
             replacementCloseWhenOriginalPositiveEnabled: ids.replacementCloseWhenOriginalPositiveEnabled ? Boolean(ids.replacementCloseWhenOriginalPositiveEnabled.checked) : true,
             replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
+            closeSupportLegOnSourceClose: ids.closeSupportLegOnSourceClose ? Boolean(ids.closeSupportLegOnSourceClose.checked) : false,
             replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
             replacementUseEmaTrendEnabled: ids.replacementUseEmaTrendEnabled ? Boolean(ids.replacementUseEmaTrendEnabled.checked) : true,
             action1: String(ids.action1?.value || "sell"),
@@ -979,6 +981,7 @@
         setFieldValue("replacementCloseOrphanEnabled", uiState.replacementCloseOrphanEnabled ?? true);
         setFieldValue("replacementCloseWhenOriginalPositiveEnabled", uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
         setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
+        setFieldValue("closeSupportLegOnSourceClose", uiState.closeSupportLegOnSourceClose ?? false);
         setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
         setFieldValue("replacementUseEmaTrendEnabled", uiState.replacementUseEmaTrendEnabled ?? true);
         setFieldValue("action1", uiState.action1);
@@ -2360,6 +2363,7 @@
         ids.replacementCloseOrphanEnabled,
         ids.replacementCloseWhenOriginalPositiveEnabled,
         ids.replacementCloseEmaMismatchEnabled,
+        ids.closeSupportLegOnSourceClose,
         ids.replacementUseRenkoColorEnabled,
         ids.replacementUseEmaTrendEnabled,
         ids.action1,

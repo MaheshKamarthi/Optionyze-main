@@ -109,6 +109,7 @@ function getDefaultUiState(): Record<string, unknown> {
         tradingViewEmaSide: "both",
         demoBalance: 10000,
         closeAllLegsOnAnyClose: false,
+        closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
         positivePnlSupportEnabled: true,
         positivePnlSupportAction: "buy",
