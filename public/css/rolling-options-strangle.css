@@ -184,6 +184,35 @@
     grid-template-columns:repeat(7, minmax(0, 1fr));
 }
 
+.rolling-demo-replacement-grid {
+    display:flex;
+    align-items:center;
+    gap:12px 18px;
+    flex-wrap:wrap;
+}
+
+.rolling-demo-replacement-grid .rolling-demo-field {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-height:44px;
+    flex:0 0 auto;
+}
+
+.rolling-demo-replacement-grid .rolling-demo-field label {
+    margin:0;
+    white-space:nowrap;
+}
+
+.rolling-demo-replacement-grid .rolling-demo-check-wrap {
+    width:auto;
+    min-height:auto;
+}
+
+.rolling-demo-replacement-grid .rolling-demo-check {
+    width:auto;
+}
+
 .rolling-demo-field label {
     display:block;
     margin-bottom:6px;

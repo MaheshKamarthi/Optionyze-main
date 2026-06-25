@@ -6,6 +6,13 @@
         manualFutOrderType: document.getElementById("ddlManualFutOrderType"),
         manualFutAction: document.getElementById("ddlManualFutAction"),
         futuresEnabled: document.getElementById("chkRollingDemoFuturesEnabled"),
+        replacementBlockSameLegEnabled: document.getElementById("chkRollingDemoReplacementBlockSameLeg"),
+        replacementImmediateTriggerGuardEnabled: document.getElementById("chkRollingDemoReplacementImmediateGuard"),
+        replacementCloseOrphanEnabled: document.getElementById("chkRollingDemoReplacementCloseOrphan"),
+        replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingDemoReplacementCloseOriginalPositive"),
+        replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
+        replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
+        replacementUseEmaTrendEnabled: document.getElementById("chkRollingDemoReplacementUseEmaTrend"),
         action1: document.getElementById("ddlActionCoveredCall1"),
         legSide1: document.getElementById("ddlLegSideCoveredCall1"),
         expiryMode1: document.getElementById("ddlExpiryModeCoveredCall1"),
@@ -406,8 +413,10 @@
             return;
         }
 
-        const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        if (currentTime !== testTime) {
+        const arrTimeParts = testTime.split(":").map(function (part) { return Number(part); });
+        const testMinutes = (arrTimeParts[0] * 60) + arrTimeParts[1];
+        const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+        if (currentMinutes < testMinutes) {
             return;
         }
 
@@ -815,6 +824,13 @@
             manualFutOrderType: String(ids.manualFutOrderType?.value || "market_order"),
             manualFutAction: String(ids.manualFutAction?.value || "SELL"),
             futuresEnabled: ids.futuresEnabled ? Boolean(ids.futuresEnabled.checked) : true,
+            replacementBlockSameLegEnabled: ids.replacementBlockSameLegEnabled ? Boolean(ids.replacementBlockSameLegEnabled.checked) : true,
+            replacementImmediateTriggerGuardEnabled: ids.replacementImmediateTriggerGuardEnabled ? Boolean(ids.replacementImmediateTriggerGuardEnabled.checked) : true,
+            replacementCloseOrphanEnabled: ids.replacementCloseOrphanEnabled ? Boolean(ids.replacementCloseOrphanEnabled.checked) : true,
+            replacementCloseWhenOriginalPositiveEnabled: ids.replacementCloseWhenOriginalPositiveEnabled ? Boolean(ids.replacementCloseWhenOriginalPositiveEnabled.checked) : true,
+            replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
+            replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
+            replacementUseEmaTrendEnabled: ids.replacementUseEmaTrendEnabled ? Boolean(ids.replacementUseEmaTrendEnabled.checked) : true,
             action1: String(ids.action1?.value || "sell"),
             legSide1: String(ids.legSide1?.value || "ce"),
             expiryMode1: String(ids.expiryMode1?.value || "1"),
@@ -926,6 +942,13 @@
         setFieldValue("manualFutOrderType", uiState.manualFutOrderType);
         setFieldValue("manualFutAction", uiState.manualFutAction);
         setFieldValue("futuresEnabled", uiState.futuresEnabled ?? true);
+        setFieldValue("replacementBlockSameLegEnabled", uiState.replacementBlockSameLegEnabled ?? true);
+        setFieldValue("replacementImmediateTriggerGuardEnabled", uiState.replacementImmediateTriggerGuardEnabled ?? true);
+        setFieldValue("replacementCloseOrphanEnabled", uiState.replacementCloseOrphanEnabled ?? true);
+        setFieldValue("replacementCloseWhenOriginalPositiveEnabled", uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
+        setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
+        setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
+        setFieldValue("replacementUseEmaTrendEnabled", uiState.replacementUseEmaTrendEnabled ?? true);
         setFieldValue("action1", uiState.action1);
         setFieldValue("legSide1", uiState.legSide1);
         setFieldValue("expiryMode1", uiState.expiryMode1);
@@ -2288,6 +2311,13 @@
         ids.manualFutOrderType,
         ids.manualFutAction,
         ids.futuresEnabled,
+        ids.replacementBlockSameLegEnabled,
+        ids.replacementImmediateTriggerGuardEnabled,
+        ids.replacementCloseOrphanEnabled,
+        ids.replacementCloseWhenOriginalPositiveEnabled,
+        ids.replacementCloseEmaMismatchEnabled,
+        ids.replacementUseRenkoColorEnabled,
+        ids.replacementUseEmaTrendEnabled,
         ids.action1,
         ids.legSide1,
         ids.expiryDate1,

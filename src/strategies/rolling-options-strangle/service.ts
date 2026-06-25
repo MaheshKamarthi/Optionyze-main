@@ -544,6 +544,32 @@ function migratePositivePnlSettings(
     return objUiState;
 }
 
+const REPLACEMENT_CONDITION_KEYS = [
+    "replacementBlockSameLegEnabled",
+    "replacementImmediateTriggerGuardEnabled",
+    "replacementCloseOrphanEnabled",
+    "replacementCloseWhenOriginalPositiveEnabled",
+    "replacementCloseEmaMismatchEnabled",
+    "replacementUseRenkoColorEnabled",
+    "replacementUseEmaTrendEnabled"
+] as const;
+
+function normalizeReplacementConditionSettings(pUiState: Record<string, unknown>): Record<string, unknown> {
+    const objUiState = { ...(pUiState || {}) };
+    for (const vKey of REPLACEMENT_CONDITION_KEYS) {
+        if (vKey === "replacementCloseEmaMismatchEnabled") {
+            objUiState[vKey] = (objUiState as any)[vKey] === true;
+            continue;
+        }
+        objUiState[vKey] = (objUiState as any)[vKey] !== false;
+    }
+    return objUiState;
+}
+
+function isReplacementConditionEnabled(pUiState: Record<string, unknown>, pKey: typeof REPLACEMENT_CONDITION_KEYS[number]): boolean {
+    return (pUiState as any)?.[pKey] !== false;
+}
+
 export class RollingOptionsStrangleService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
 
@@ -552,12 +578,19 @@ export class RollingOptionsStrangleService {
     private async loadUiState(pUserId: string): Promise<Record<string, unknown>> {
         const objProfile = await loadRollingOptionsPtDeProfile(pUserId);
         const objSavedUiState = (objProfile?.uiState || {}) as Record<string, unknown>;
-        const objUiState = migratePositivePnlSettings({
+        const objUiState = normalizeReplacementConditionSettings(migratePositivePnlSettings({
             symbol: "BTC",
             manualFutQty: 1,
             manualFutOrderType: "market_order",
             manualFutAction: "SELL",
             futuresEnabled: true,
+            replacementBlockSameLegEnabled: true,
+            replacementImmediateTriggerGuardEnabled: true,
+            replacementCloseOrphanEnabled: true,
+            replacementCloseWhenOriginalPositiveEnabled: true,
+            replacementCloseEmaMismatchEnabled: false,
+            replacementUseRenkoColorEnabled: true,
+            replacementUseEmaTrendEnabled: true,
             action1: "sell",
             legSide1: "ce",
             expiryMode1: "1",
@@ -626,7 +659,7 @@ export class RollingOptionsStrangleService {
             positivePnlTargetDelta: 0.53,
             positivePnlAdverseRenkoCloseEnabled: false,
             ...objSavedUiState
-        } as Record<string, unknown>, objSavedUiState);
+        } as Record<string, unknown>, objSavedUiState));
 
         (objUiState as any).addOneLotFuture = false;
         return objUiState;
@@ -659,6 +692,7 @@ export class RollingOptionsStrangleService {
         objConfig.renkoTimeframe = normalizeRenkoTimeframe((pUiState as any).renkoFeedTimeframe);
         (objConfig as any).futuresEnabled = Boolean((pUiState as any).futuresEnabled ?? true);
         (objConfig as any).ruleSet = pRuleSet;
+        (objConfig as any).__uiState = pUiState;
         if (pRuleSet === 2) {
             (objConfig as any).ruleSetGreenTpPct = Number((pUiState as any).greenTpPct2);
             (objConfig as any).ruleSetGreenSlPct = Number((pUiState as any).greenSlPct2);
@@ -1344,6 +1378,9 @@ export class RollingOptionsStrangleService {
         pMetadataOverrides: Record<string, unknown>
     ): Promise<boolean> {
         const objUiState = ((pConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!isReplacementConditionEnabled(objUiState, "replacementUseEmaTrendEnabled")) {
+            return true;
+        }
         if (!Boolean((objUiState as any).emaRenkoConfirmEnabled)) {
             return true;
         }
@@ -1507,7 +1544,11 @@ export class RollingOptionsStrangleService {
                 }
             }
 
-            if (!pUseReEntryDelta && this.wouldOptionTriggerImmediately({
+            const objUiState = ((pConfig as any).__uiState || {}) as Record<string, unknown>;
+            const bIsReplacementEntry = pReason.toLowerCase().includes("replacement") || pReason.toLowerCase().includes("re-entry") || pReason.toLowerCase().includes("reentry");
+            const bShouldGuardImmediateTrigger = !pUseReEntryDelta
+                || (bIsReplacementEntry && isReplacementConditionEnabled(objUiState, "replacementImmediateTriggerGuardEnabled"));
+            if (bShouldGuardImmediateTrigger && this.wouldOptionTriggerImmediately({
                 takeProfitDelta: vTakeProfitDelta,
                 stopLossDelta: vStopLossDelta
             }, vAction, vBaseDelta)) {
@@ -1948,12 +1989,13 @@ export class RollingOptionsStrangleService {
                     && Number((objPosition.metadata as any)?.ruleSet) === vRuleSet
                     && this.getOptionSide(objPosition) === vOptionSide;
             });
-            if (bSameLegAlreadyOpen) {
+            if (bSameLegAlreadyOpen && isReplacementConditionEnabled(objUiState, "replacementBlockSameLegEnabled")) {
                 continue;
             }
 
             const vStoredRuleColor = String((objClosedOption.metadata as any)?.ruleColor || "").trim().toUpperCase();
-            const vActiveRuleColor: "R" | "G" = objConfig.renkoEnabled
+            const bUseRenkoColor = isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled");
+            const vActiveRuleColor: "R" | "G" = objConfig.renkoEnabled && bUseRenkoColor
                 ? (vCurrentRenkoColor === "G" ? "G" : "R")
                 : (vStoredRuleColor === "G" ? "G" : "R");
             const vQty = Math.max(0, Math.floor(Number(objClosedOption.qty || objConfig.optionQty || 0)));
@@ -1982,7 +2024,9 @@ export class RollingOptionsStrangleService {
             arrCurrentPositions.push(...arrOpened);
         }
 
-        await this.closeOrphanReplacementOptionPositions(pUserId, this.buildRuleSetConfig(objUiState, 1));
+        if (isReplacementConditionEnabled(objUiState, "replacementCloseOrphanEnabled")) {
+            await this.closeOrphanReplacementOptionPositions(pUserId, this.buildRuleSetConfig(objUiState, 1));
+        }
         if (arrCreatedPositions.length > 0) {
             await clearRollingOptionsStrangleTempClosedPositions(pUserId);
         }
@@ -2019,6 +2063,10 @@ export class RollingOptionsStrangleService {
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig
     ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const objUiState = ((pConfig as any).__uiState || await this.loadUiState(pUserId)) as Record<string, unknown>;
+        if (!isReplacementConditionEnabled(objUiState, "replacementCloseWhenOriginalPositiveEnabled")) {
+            return [];
+        }
         const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const arrReplacementOptions = arrOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
         if (arrReplacementOptions.length <= 0) {
@@ -2052,6 +2100,42 @@ export class RollingOptionsStrangleService {
         }
 
         return arrClosed;
+    }
+
+    private async closeReplacementOnEmaMismatch(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const objUiState = ((pConfig as any).__uiState || await this.loadUiState(pUserId)) as Record<string, unknown>;
+        if (!isReplacementConditionEnabled(objUiState, "replacementCloseEmaMismatchEnabled")) {
+            return [];
+        }
+
+        const objState = this.getOrCreateState(pUserId);
+        await this.updateStandaloneEmaIndicator(pConfig, objState, objUiState);
+        const vEmaTrend = String(objState.ema.trend || "").trim().toUpperCase();
+        if (vEmaTrend !== "UP" && vEmaTrend !== "DOWN") {
+            return [];
+        }
+
+        const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const arrMismatchReplacementOptions = arrOpenPositions.filter((objPosition) => {
+            if (!this.isReplacementOptionPosition(objPosition)) {
+                return false;
+            }
+            const vRuleColor = String((objPosition.metadata as any)?.ruleColor || "").trim().toUpperCase();
+            return (vRuleColor === "G" && vEmaTrend === "DOWN")
+                || (vRuleColor === "R" && vEmaTrend === "UP");
+        });
+        if (arrMismatchReplacementOptions.length <= 0) {
+            return [];
+        }
+
+        return this.closePositions(
+            arrMismatchReplacementOptions,
+            pConfig,
+            `Replacement option closed because EMA trend is ${vEmaTrend}`
+        );
     }
 
     private getRenkoOptionQty(pFutureQty: number, pQtyPct: number): number {
@@ -3485,6 +3569,7 @@ export class RollingOptionsStrangleService {
 
             // Check and close replacement legs if original legs are both positive
             await this.closeReplacementWhenOriginalLegsPositive(pUserId, objConfig);
+            await this.closeReplacementOnEmaMismatch(pUserId, objConfig);
 
             objState.cycleCount += 1;
             objState.consecutiveFailures = 0;

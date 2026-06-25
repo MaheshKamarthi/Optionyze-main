@@ -34,6 +34,82 @@
             <div class="app-panel rolling-demo-card">
                 <div class="rolling-demo-card-head">
                     <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">Open Legs Conditions</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-replacement-grid">
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementBlockSameLeg">Block same leg</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementBlockSameLeg">
+                                <input type="checkbox" id="chkRollingDemoReplacementBlockSameLeg" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementImmediateGuard" title="Skips opening a replacement leg when its entry delta would immediately trigger its own TP or SL.">Skip instant TP/SL</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementImmediateGuard" title="Skips opening a replacement leg when its entry delta would immediately trigger its own TP or SL.">
+                                <input type="checkbox" id="chkRollingDemoReplacementImmediateGuard" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementUseRenkoColor">Open legs with Renko color</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementUseRenkoColor">
+                                <input type="checkbox" id="chkRollingDemoReplacementUseRenkoColor" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementUseEmaTrend">Open legs with EMA trend</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementUseEmaTrend">
+                                <input type="checkbox" id="chkRollingDemoReplacementUseEmaTrend" checked />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">Closed Legs Conditions</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-replacement-grid">
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementCloseOrphan" title="Closes replacement option legs when no original/main legs are still open.">Close orphan repl.</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementCloseOrphan" title="Closes replacement option legs when no original/main legs are still open.">
+                                <input type="checkbox" id="chkRollingDemoReplacementCloseOrphan" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementCloseOriginalPositive" title="Closes replacement option legs when all original/main legs in the same rule set are in positive PnL.">Close if originals +</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementCloseOriginalPositive" title="Closes replacement option legs when all original/main legs in the same rule set are in positive PnL.">
+                                <input type="checkbox" id="chkRollingDemoReplacementCloseOriginalPositive" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoReplacementCloseEmaMismatch" title="Closes replacement option legs when EMA trend is opposite to the replacement rule color.">Close repl. on EMA mismatch</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoReplacementCloseEmaMismatch" title="Closes replacement option legs when EMA trend is opposite to the replacement rule color.">
+                                <input type="checkbox" id="chkRollingDemoReplacementCloseEmaMismatch" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
                         <span class="rolling-demo-manual-title">Manual Trader 1</span>
                     </div>
                     <div class="rolling-demo-card-tools">
@@ -879,6 +955,6 @@
     </div>
     <script src="/js/open-position-payoff-graph.js"></script>
     <script src="/js/rolling-options-strangle-shared.js"></script>
-    <script src="/js/rolling-options-strangle.js?v=20260614-profile-sync-2"></script>
+    <script src="/js/rolling-options-strangle.js?v=20260625-positive-pnl-expiry-refresh"></script>
 </body>
 </html>
