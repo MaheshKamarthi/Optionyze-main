@@ -12,7 +12,6 @@
         replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingDemoReplacementCloseOriginalPositive"),
         replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
         replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
-        replacementDummySwitchEnabled: document.getElementById("chkRollingDemoReplacementDummySwitch"),
         replacementUseEmaTrendEnabled: document.getElementById("chkRollingDemoReplacementUseEmaTrend"),
         action1: document.getElementById("ddlActionCoveredCall1"),
         legSide1: document.getElementById("ddlLegSideCoveredCall1"),
@@ -863,7 +862,6 @@
             replacementCloseWhenOriginalPositiveEnabled: ids.replacementCloseWhenOriginalPositiveEnabled ? Boolean(ids.replacementCloseWhenOriginalPositiveEnabled.checked) : true,
             replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
             replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
-            replacementDummySwitchEnabled: ids.replacementDummySwitchEnabled ? Boolean(ids.replacementDummySwitchEnabled.checked) : false,
             replacementUseEmaTrendEnabled: ids.replacementUseEmaTrendEnabled ? Boolean(ids.replacementUseEmaTrendEnabled.checked) : true,
             action1: String(ids.action1?.value || "sell"),
             legSide1: String(ids.legSide1?.value || "ce"),
@@ -982,7 +980,6 @@
         setFieldValue("replacementCloseWhenOriginalPositiveEnabled", uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
         setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
         setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
-        setFieldValue("replacementDummySwitchEnabled", uiState.replacementDummySwitchEnabled ?? false);
         setFieldValue("replacementUseEmaTrendEnabled", uiState.replacementUseEmaTrendEnabled ?? true);
         setFieldValue("action1", uiState.action1);
         setFieldValue("legSide1", uiState.legSide1);
@@ -2364,7 +2361,6 @@
         ids.replacementCloseWhenOriginalPositiveEnabled,
         ids.replacementCloseEmaMismatchEnabled,
         ids.replacementUseRenkoColorEnabled,
-        ids.replacementDummySwitchEnabled,
         ids.replacementUseEmaTrendEnabled,
         ids.action1,
         ids.legSide1,
