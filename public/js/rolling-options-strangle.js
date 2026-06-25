@@ -54,6 +54,7 @@
         positivePnlSupportQty: document.getElementById("txtRollingDemoPositivePnlSupportQty"),
         positivePnlMaxLegs: document.getElementById("txtRollingDemoPositivePnlMaxLegs"),
         positivePnlTriggerAmount: document.getElementById("txtRollingDemoPositivePnlTriggerAmount"),
+        positivePnlMarketPrice: document.getElementById("txtRollingDemoPositivePnlMarketPrice"),
         positivePnlExpiryMode: document.getElementById("ddlRollingDemoPositivePnlExpiryMode"),
         positivePnlExpiryDate: document.getElementById("txtRollingDemoPositivePnlExpiryDate"),
         positivePnlTestRefreshTime: document.getElementById("txtRollingDemoPositivePnlTestRefreshTime"),
@@ -144,6 +145,7 @@
     let gConfirmedProfileRevision = 0;
     let gProfileSaveChain = Promise.resolve();
     let gPreviousOpenPositionLtps = new Map();
+    let gPreviousMarketPricesBySymbol = new Map();
     let gLatestRuntimeState = null;
     let gLatestOpenPositions = [];
     let gLatestTempClosedPositions = [];
@@ -520,6 +522,38 @@
         }
 
         ids.oneLotValue.textContent = formatNumericValue(referencePrice * selectedLotSize, 3);
+    }
+
+    function updatePositivePnlMarketPrice(runtimeState = gLatestRuntimeState) {
+        if (!ids.positivePnlMarketPrice) {
+            return;
+        }
+
+        const selectedSymbol = String(ids.symbol?.value || "BTC").trim().toUpperCase();
+        const runtimeSymbol = String(runtimeState?.currentSymbol || runtimeState?.symbol || selectedSymbol).trim().toUpperCase();
+        const marketPrice = runtimeSymbol === selectedSymbol
+            ? Number(runtimeState?.lastSpotPrice ?? runtimeState?.lastFuturesPrice ?? NaN)
+            : NaN;
+
+        ids.positivePnlMarketPrice.classList.remove("market-up", "market-down");
+        ids.positivePnlMarketPrice.value = Number.isFinite(marketPrice) && marketPrice > 0
+            ? formatNumericValue(marketPrice, 2)
+            : "-";
+
+        if (!Number.isFinite(marketPrice) || marketPrice <= 0) {
+            return;
+        }
+
+        const previousMarketPrice = Number(gPreviousMarketPricesBySymbol.get(selectedSymbol));
+        if (Number.isFinite(previousMarketPrice) && previousMarketPrice > 0) {
+            if (marketPrice > previousMarketPrice) {
+                ids.positivePnlMarketPrice.classList.add("market-up");
+            }
+            else if (marketPrice < previousMarketPrice) {
+                ids.positivePnlMarketPrice.classList.add("market-down");
+            }
+        }
+        gPreviousMarketPricesBySymbol.set(selectedSymbol, marketPrice);
     }
 
     function updateTotalMarginMetric(rows = gLatestOpenPositions) {
@@ -1113,6 +1147,7 @@
         updateOpenPnlMetric(gLatestOpenPositions, openCount);
 
         updateOneLotMetric(runtimeState);
+        updatePositivePnlMarketPrice(runtimeState);
         renderPayoffGraph(gLatestOpenPositions);
     }
 
@@ -1827,6 +1862,16 @@
         }
 
         const objPayload = await objResponse.json().catch(() => ({}));
+        const objMarket = objPayload?.market && typeof objPayload.market === "object"
+            ? objPayload.market
+            : null;
+        if (objMarket) {
+            updatePositivePnlMarketPrice({
+                currentSymbol: objMarket.symbol,
+                lastSpotPrice: objMarket.spotPrice,
+                lastFuturesPrice: objMarket.futuresPrice
+            });
+        }
         renderOpenPositions(Array.isArray(objPayload?.data) ? objPayload.data : []);
     }
 
@@ -2027,6 +2072,7 @@
     ids.symbol?.addEventListener("change", function () {
         applySymbolDefaults();
         updateOneLotMetric();
+        updatePositivePnlMarketPrice();
         queueProfileSave();
     });
 

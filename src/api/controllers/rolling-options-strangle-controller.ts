@@ -589,7 +589,15 @@ async function getLiveOrFallbackExitPrice(
 async function refreshOpenPositionMarks(
     pUserId: string,
     pPositions?: RollingOptionsPtDePositionRecord[],
-    pPersist = true
+    pPersist = true,
+    pSnapshot?: {
+        spotPrice: number;
+        futuresPrice: number;
+        bestBidPrice: number;
+        bestAskPrice: number;
+        ts: string;
+        priceSource: "public" | "simulated";
+    }
 ): Promise<RollingOptionsPtDePositionRecord[]> {
     const objOpenPositions = pPositions || await listRollingOptionsPtDeOpenPositions(pUserId);
     if (objOpenPositions.length === 0) {
@@ -597,7 +605,7 @@ async function refreshOpenPositionMarks(
     }
 
     const objUiState = await getMergedUiState(pUserId);
-    const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
+    const objSnapshot = pSnapshot || await getLiveOrFallbackMarketSnapshot(objUiState);
     const objUpdatedPositions: RollingOptionsPtDePositionRecord[] = [];
 
     for (const objPosition of objOpenPositions) {
@@ -1011,6 +1019,8 @@ export async function saveRollingOptionsStrangleProfileController(req: Request, 
 
 export async function getRollingOptionsStrangleStatus(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
+    const objUiState = await getMergedUiState(vUserId);
+    const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
     const objRuntime = await loadRollingOptionsPtDeRuntime(vUserId);
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     const objClosedPositions = await listRollingOptionsPtDeClosedPositions(vUserId);
@@ -1027,6 +1037,14 @@ export async function getRollingOptionsStrangleStatus(req: Request, res: Respons
         status: "success",
         data: {
             ...objStatus,
+            currentSymbol: String(objUiState.symbol || objStatus.currentSymbol || "BTC").trim().toUpperCase() || "BTC",
+            lastSpotPrice: objSnapshot.spotPrice,
+            lastFuturesPrice: objSnapshot.futuresPrice,
+            state: {
+                ...(objStatus.state || {}),
+                marketSource: objSnapshot.priceSource,
+                marketTs: objSnapshot.ts
+            },
             optionsPnl: Number((Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0).toFixed(3)),
             counts: {
                 openPositions: objOpenPositions.length,
@@ -1046,11 +1064,19 @@ export async function getRollingOptionsStrangleOpenPositions(req: Request, res: 
             await pService.ensureFutureForOpenOptions(vUserId, "Open Positions auto future");
         }
     }
-    const objRows = await refreshOpenPositionMarks(vUserId, undefined, false);
+    const objSnapshot = await getLiveOrFallbackMarketSnapshot(objUiState);
+    const objRows = await refreshOpenPositionMarks(vUserId, undefined, false, objSnapshot);
 
     res.json({
         status: "success",
-        data: objRows
+        data: objRows,
+        market: {
+            symbol: String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC",
+            spotPrice: objSnapshot.spotPrice,
+            futuresPrice: objSnapshot.futuresPrice,
+            priceSource: objSnapshot.priceSource,
+            ts: objSnapshot.ts
+        }
     });
 }
 

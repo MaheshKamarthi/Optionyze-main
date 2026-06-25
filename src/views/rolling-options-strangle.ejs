@@ -6,7 +6,7 @@
     <title><%= pageTitle %></title>
     <link rel="stylesheet" href="/css/app-shell.css" />
     <link rel="stylesheet" href="/css/account-menu.css" />
-    <link rel="stylesheet" href="/css/rolling-options-strangle.css" />
+    <link rel="stylesheet" href="/css/rolling-options-strangle.css?v=20260625-market-price-pill" />
 </head>
 <body class="app-page" data-rolling-api-base="/api/rollingoptions-strangle">
     <div class="app-layout rolling-demo-layout">
@@ -605,6 +605,10 @@
                 <div class="rolling-demo-card-head">
                     <h2>Open Positions</h2>
                     <div class="rolling-demo-card-tools">
+                        <div class="rolling-demo-market-price-readout">
+                            <label for="txtRollingDemoPositivePnlMarketPrice">Market Price</label>
+                            <input type="text" id="txtRollingDemoPositivePnlMarketPrice" value="-" readonly />
+                        </div>
                         <label class="rolling-demo-check" for="chkRollingDemoCloseAllLegsOnAnyClose" title="When enabled, closing a negative option leg will close all open legs">
                             <input type="checkbox" id="chkRollingDemoCloseAllLegsOnAnyClose" />
                             Close all on negative options
@@ -955,6 +959,6 @@
     </div>
     <script src="/js/open-position-payoff-graph.js"></script>
     <script src="/js/rolling-options-strangle-shared.js"></script>
-    <script src="/js/rolling-options-strangle.js?v=20260625-positive-pnl-expiry-refresh-fix"></script>
+    <script src="/js/rolling-options-strangle.js?v=20260625-market-price-color"></script>
 </body>
 </html>
