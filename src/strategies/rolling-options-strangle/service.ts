@@ -1968,6 +1968,7 @@ export class RollingOptionsStrangleService {
         const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
         const arrCreatedPositions: RollingOptionsPtDePositionRecord[] = [];
         const arrCurrentPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+        const objCurrentSummary = getOpenPositionsSummary(arrCurrentPositions);
 
         for (const objClosedOption of arrClosedOptions) {
             const vRuleSet: 1 | 2 = Number((objClosedOption.metadata as any)?.ruleSet) === 2 ? 2 : 1;
@@ -1994,9 +1995,18 @@ export class RollingOptionsStrangleService {
             const vStoredRuleColor = String((objClosedOption.metadata as any)?.ruleColor || "").trim().toUpperCase();
             const bUseRenkoColor = isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled");
             const vActiveRuleColor: "R" | "G" = objConfig.renkoEnabled && bUseRenkoColor
-                ? (vCurrentRenkoColor === "G" ? "G" : "R")
+                ? (vCurrentRenkoColor === "G" ? "G" : (vCurrentRenkoColor === "R" ? "R" : (vStoredRuleColor === "G" ? "G" : "R")))
                 : (vStoredRuleColor === "G" ? "G" : "R");
-            const vQty = Math.max(0, Math.floor(Number(objClosedOption.qty || objConfig.optionQty || 0)));
+            const vConfiguredQty = this.getConfiguredOptionQty(
+                objUiState,
+                objConfig,
+                vRuleSet,
+                vActiveRuleColor,
+                objCurrentSummary.futureQty
+            );
+            const vQty = vConfiguredQty > 0
+                ? vConfiguredQty
+                : Math.max(0, Math.floor(Number(objClosedOption.qty || objConfig.optionQty || 0)));
             if (!(vQty > 0)) {
                 continue;
             }
@@ -3387,7 +3397,8 @@ export class RollingOptionsStrangleService {
                         return objRow.status === "OPEN"
                             && objRow.instrumentType === "OPTION"
                             && !isPositivePnlSupportPosition(objRow)
-                            && vRuleColor === vPreviousRenkoColor
+                            && vRuleColor !== vLast
+                            && (vRuleColor === "R" || vRuleColor === "G")
                             && isRenkoColorTrailTpEnabled(vRuleColor, vRuleSet);
                     });
 
