@@ -110,9 +110,7 @@ function shouldRefreshPositivePnlExpiryNow(
         return { shouldRefresh: false, nextExpiryDate: "" };
     }
 
-    const objReferenceDate = new Date(pNow);
-    objReferenceDate.setDate(objReferenceDate.getDate() + 1);
-    const vNextExpiryDate = resolveExpiryDateByMode(vMode, objReferenceDate);
+    const vNextExpiryDate = resolveExpiryDateByMode(vMode, pNow);
     const vCurrentExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
     return {
         shouldRefresh: Boolean(vNextExpiryDate) && vCurrentExpiryDate !== vNextExpiryDate,

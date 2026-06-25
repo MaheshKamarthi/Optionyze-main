@@ -427,9 +427,7 @@
         }
 
         gLastPositivePnlTestRefreshKey = triggerKey;
-        const simulatedNextDay = new Date(now);
-        simulatedNextDay.setDate(simulatedNextDay.getDate() + 1);
-        if (applyPositivePnlExpiryModeDefault(true, true, simulatedNextDay) && gHasLoadedProfile) {
+        if (applyPositivePnlExpiryModeDefault(true, true, now) && gHasLoadedProfile) {
             queueProfileSave();
         }
     }
