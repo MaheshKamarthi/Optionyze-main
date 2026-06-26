@@ -36,6 +36,8 @@ interface DeltaCandleRow {
     time?: string | number;
 }
 
+const MARKET_DATA_FETCH_TIMEOUT_MS = 5000;
+
 export interface RollingOptionsPtDeLiveOptionContract {
     contractSymbol: string;
     optionSide: "CE" | "PE";
@@ -106,11 +108,29 @@ function addDaysToIsoDate(pDateValue: string, pDays: number): string {
 
 async function fetchJson<T>(pPath: string, pSearchParams?: URLSearchParams): Promise<T> {
     const vUrl = `${getApiBaseUrl()}${pPath}${pSearchParams ? `?${pSearchParams.toString()}` : ""}`;
-    const objResponse = await fetch(vUrl, {
-        headers: {
-            Accept: "application/json"
+    const objAbortController = new AbortController();
+    const objTimeout = setTimeout(() => {
+        objAbortController.abort();
+    }, MARKET_DATA_FETCH_TIMEOUT_MS);
+
+    let objResponse: Response;
+    try {
+        objResponse = await fetch(vUrl, {
+            headers: {
+                Accept: "application/json"
+            },
+            signal: objAbortController.signal
+        });
+    }
+    catch (objError) {
+        if (objAbortController.signal.aborted) {
+            throw new Error(`Delta public market-data request timed out after ${MARKET_DATA_FETCH_TIMEOUT_MS}ms.`);
         }
-    });
+        throw objError;
+    }
+    finally {
+        clearTimeout(objTimeout);
+    }
 
     if (!objResponse.ok) {
         throw new Error(`Delta public market-data request failed: ${objResponse.status}`);

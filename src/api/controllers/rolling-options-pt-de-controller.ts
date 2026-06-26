@@ -10,6 +10,7 @@ import { applyClosedOptionPnlToProfile } from "../../strategies/rolling-options-
 import {
     ensureLiveTickerSymbols,
     findBestLiveOptionContract,
+    getFreshWebSocketMarketSnapshot,
     getLiveMarketSnapshot,
     getLiveOptionTicker
 } from "../../strategies/rolling-options-pt-de/market-data";
@@ -607,6 +608,10 @@ export async function saveRollingOptionsPtDeProfileController(req: Request, res:
 
 export async function getRollingOptionsPtDeStatus(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
+    const objUiState = await getMergedUiState(vUserId);
+    const objConfig = buildConfigFromUiState(objUiState);
+    ensureLiveTickerSymbols([objConfig.contractName]);
+    const objMarketSnapshot = getFreshWebSocketMarketSnapshot(objConfig, 10000);
     const objRuntime = await loadRollingOptionsPtDeRuntime(vUserId);
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     const objClosedPositions = await listRollingOptionsPtDeClosedPositions(vUserId);
@@ -623,6 +628,15 @@ export async function getRollingOptionsPtDeStatus(req: Request, res: Response): 
         status: "success",
         data: {
             ...objStatus,
+            currentSymbol: objConfig.symbol,
+            currentContractName: objConfig.contractName,
+            lastSpotPrice: objMarketSnapshot?.spotPrice ?? objStatus.lastSpotPrice,
+            lastFuturesPrice: objMarketSnapshot?.futuresPrice ?? objStatus.lastFuturesPrice,
+            state: {
+                ...(objStatus.state || {}),
+                marketSource: objMarketSnapshot?.priceSource ?? objStatus.state?.marketSource,
+                marketTs: objMarketSnapshot?.ts ?? objStatus.state?.marketTs
+            },
             optionsPnl: Number((Number.isFinite(vOptionsPnl) ? vOptionsPnl : 0).toFixed(3)),
             counts: {
                 openPositions: objOpenPositions.length,

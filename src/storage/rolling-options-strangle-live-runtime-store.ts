@@ -80,7 +80,7 @@ export async function listRollingOptionsStrangleLiveRuntime(): Promise<RollingOp
             SELECT user_id, status, auto_trader_enabled, selected_api_profile_id, current_symbol, current_contract_name,
                    current_expiry_mode, current_expiry_date, renko_enabled, renko_points, renko_source,
                    last_spot_price, last_futures_price, last_signal, last_cycle_at, last_error, state_json, updated_at
-            FROM optionyze_rolling_options_lt_de_runtime
+            FROM optionyze_rolling_options_strangle_live_runtime
             ORDER BY updated_at DESC
         `);
         return objResult.rows.map(mapRow);
@@ -97,7 +97,7 @@ export async function loadRollingOptionsStrangleLiveRuntime(pUserId: string): Pr
             SELECT user_id, status, auto_trader_enabled, selected_api_profile_id, current_symbol, current_contract_name,
                    current_expiry_mode, current_expiry_date, renko_enabled, renko_points, renko_source,
                    last_spot_price, last_futures_price, last_signal, last_cycle_at, last_error, state_json, updated_at
-            FROM optionyze_rolling_options_lt_de_runtime
+            FROM optionyze_rolling_options_strangle_live_runtime
             WHERE user_id = $1
         `, [vUserId]);
 
@@ -133,7 +133,7 @@ export async function saveRollingOptionsStrangleLiveRuntime(
     if (isPostgresConfigured()) {
         const objPool = getPostgresPool();
         await objPool.query(`
-            INSERT INTO optionyze_rolling_options_lt_de_runtime (
+            INSERT INTO optionyze_rolling_options_strangle_live_runtime (
                 user_id,
                 status,
                 auto_trader_enabled,

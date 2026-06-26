@@ -26,7 +26,7 @@ import {
     listRollingOptionsEventsByStrategy
 } from "../../storage/rolling-options-pt-de-event-store";
 import { gRollingOptionsTelegramEventTypes, logRollingOptionsStrangleLiveEvent } from "../../strategies/rolling-options-strangle-live/event-logger";
-import { findBestLiveOptionContract, getLiveMarketSnapshot, getLiveOptionTicker } from "../../strategies/rolling-options-pt-de/market-data";
+import { ensureLiveTickerSymbols, findBestLiveOptionContract, getFreshWebSocketMarketSnapshot, getLiveMarketSnapshot, getLiveOptionTicker } from "../../strategies/rolling-options-pt-de/market-data";
 import { buildConfigFromUiState } from "../../strategies/rolling-options-pt-de/engine";
 
 const RE_DELTA_TOLERANCE = 0.05;
@@ -963,28 +963,44 @@ export async function getRollingOptionsStrangleLiveConnectionStatus(req: Request
 
 export async function getRollingOptionsStrangleLiveRuntimeStatus(req: Request, res: Response): Promise<void> {
     const vUserId = getAccountId(req);
+    const objProfile = await readLiveProfile(vUserId);
+    const objConfig = buildConfigFromUiState(getMergedLiveUiState(objProfile));
+    ensureLiveTickerSymbols([objConfig.contractName]);
+    const objMarketSnapshot = getFreshWebSocketMarketSnapshot(objConfig, 10000);
     const objRuntime = await loadRollingOptionsStrangleLiveRuntime(vUserId);
+    const objRuntimeStatus = objRuntime || {
+        userId: vUserId,
+        status: "idle",
+        autoTraderEnabled: false,
+        selectedApiProfileId: String(objProfile.selectedApiProfileId || "").trim(),
+        currentSymbol: "",
+        currentContractName: "",
+        currentExpiryMode: "",
+        currentExpiryDate: "",
+        renkoEnabled: false,
+        renkoPoints: 0,
+        renkoSource: "",
+        lastSpotPrice: null,
+        lastFuturesPrice: null,
+        lastSignal: "IDLE",
+        lastCycleAt: "",
+        lastError: "",
+        state: {},
+        updatedAt: ""
+    };
     res.json({
         status: "success",
-        data: objRuntime || {
-            userId: vUserId,
-            status: "idle",
-            autoTraderEnabled: false,
-            selectedApiProfileId: String((await readLiveProfile(vUserId)).selectedApiProfileId || "").trim(),
-            currentSymbol: "",
-            currentContractName: "",
-            currentExpiryMode: "",
-            currentExpiryDate: "",
-            renkoEnabled: false,
-            renkoPoints: 0,
-            renkoSource: "",
-            lastSpotPrice: null,
-            lastFuturesPrice: null,
-            lastSignal: "IDLE",
-            lastCycleAt: "",
-            lastError: "",
-            state: {},
-            updatedAt: ""
+        data: {
+            ...objRuntimeStatus,
+            currentSymbol: objConfig.symbol,
+            currentContractName: objConfig.contractName,
+            lastSpotPrice: objMarketSnapshot?.spotPrice ?? objRuntimeStatus.lastSpotPrice,
+            lastFuturesPrice: objMarketSnapshot?.futuresPrice ?? objRuntimeStatus.lastFuturesPrice,
+            state: {
+                ...(objRuntimeStatus.state || {}),
+                marketSource: objMarketSnapshot?.priceSource ?? objRuntimeStatus.state?.marketSource,
+                marketTs: objMarketSnapshot?.ts ?? objRuntimeStatus.state?.marketTs
+            }
         }
     });
 }

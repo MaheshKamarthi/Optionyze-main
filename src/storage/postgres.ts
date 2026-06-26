@@ -271,6 +271,29 @@ export async function ensurePostgresSchema(): Promise<void> {
     `);
 
     await objPool.query(`
+        CREATE TABLE IF NOT EXISTS optionyze_rolling_options_strangle_live_runtime (
+            user_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'idle',
+            auto_trader_enabled BOOLEAN NOT NULL DEFAULT false,
+            selected_api_profile_id TEXT NOT NULL DEFAULT '',
+            current_symbol TEXT NOT NULL DEFAULT '',
+            current_contract_name TEXT NOT NULL DEFAULT '',
+            current_expiry_mode TEXT NOT NULL DEFAULT '',
+            current_expiry_date TEXT NOT NULL DEFAULT '',
+            renko_enabled BOOLEAN NOT NULL DEFAULT false,
+            renko_points NUMERIC NOT NULL DEFAULT 0,
+            renko_source TEXT NOT NULL DEFAULT '',
+            last_spot_price NUMERIC NULL,
+            last_futures_price NUMERIC NULL,
+            last_signal TEXT NOT NULL DEFAULT '',
+            last_cycle_at TIMESTAMPTZ NULL,
+            last_error TEXT NOT NULL DEFAULT '',
+            state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    await objPool.query(`
         ALTER TABLE optionyze_rolling_options_lt_de_runtime
         ADD COLUMN IF NOT EXISTS current_symbol TEXT NOT NULL DEFAULT '';
     `);
