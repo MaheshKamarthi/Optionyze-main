@@ -1959,7 +1959,7 @@ export class RollingOptionsStrangleService {
             return objPosition.status === "OPEN"
                 && objPosition.instrumentType === "OPTION"
                 && !isPositivePnlSupportPosition(objPosition)
-                && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
+                && String(objPosition.action || "").trim().toUpperCase() === "SELL";
         });
         const arrNegativeSourcePositions = arrSourceOpenPositions.filter((objPosition) => Number(objPosition.pnl || 0) <= vTriggerAmount);
         if (arrNegativeSourcePositions.length <= 0) {
@@ -2758,7 +2758,7 @@ export class RollingOptionsStrangleService {
         const arrSupportPositions = arrOpenOptions.filter(isPositivePnlSupportLeg);
         const arrSourceOptions = arrOpenOptions.filter((objPosition) => {
             return !isPositivePnlSupportLeg(objPosition)
-                && (!bSellSupportMode || String(objPosition.action || "").trim().toUpperCase() === "SELL");
+                && String(objPosition.action || "").trim().toUpperCase() === "SELL";
         });
         const vConfiguredSupportExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
         const arrExpiryChangedSupports = /^\d{4}-\d{2}-\d{2}$/.test(vConfiguredSupportExpiryDate)
@@ -2861,10 +2861,10 @@ export class RollingOptionsStrangleService {
             objState.sourcePositiveCycleCountByPositionId.get(objSource.positionId)
                 ?? Number((objSource.metadata as any)?.positivePnlCycleCount || 0)
         );
-        const vPositiveCycleCount = pManualOpen ? 2 : Math.min(2, vPreviousCycleCount + 1);
+        const vPositiveCycleCount = pManualOpen ? 1 : Math.min(1, vPreviousCycleCount + 1);
         objState.sourcePositiveCycleCountByPositionId.set(objSource.positionId, vPositiveCycleCount);
         await saveSourceTriggerState(objSource, true, vPositiveCycleCount);
-        if (vPositiveCycleCount < 2) {
+        if (vPositiveCycleCount < 1) {
             return;
         }
 
@@ -2877,7 +2877,9 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        const vSupportSide: "CE" | "PE" = vSourceSide === "CE" ? "PE" : "CE";
+        const vSupportSide: "CE" | "PE" = bSellSupportMode
+            ? (vSourceSide === "CE" ? "PE" : "CE")
+            : vSourceSide;
         const vQty = Math.max(0, Math.floor(normalizeNumber((pUiState as any).positivePnlSupportQty, 10)));
         if (!(vQty > 0)) {
             return;
@@ -2962,7 +2964,7 @@ export class RollingOptionsStrangleService {
                 eventType: "manual_action",
                 severity: "success",
                 title: "Positive PnL Support Opened",
-                message: `Opened ${vSupportActionLabel} ${vSupportSide} support after source leg PnL stayed at or below ${vTriggerAmount} for two cycles.`,
+                message: `Opened ${vSupportActionLabel} ${vSupportSide} support after source leg PnL stayed at or below ${vTriggerAmount} for one cycle.`,
                 payload: {
                     symbol: pBaseConfig.symbol,
                     sourcePositionId: objSource.positionId,
