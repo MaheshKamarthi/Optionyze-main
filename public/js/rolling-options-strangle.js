@@ -62,6 +62,7 @@
         positivePnlTargetDelta: document.getElementById("txtRollingDemoPositivePnlTargetDelta"),
         positivePnlTpPct: document.getElementById("txtRollingDemoPositivePnlTp"),
         positivePnlSlPct: document.getElementById("txtRollingDemoPositivePnlSl"),
+        positivePnlTrailSlEnabled: document.getElementById("chkRollingDemoPositivePnlTrailSl"),
         positivePnlAdverseRenkoCloseEnabled: document.getElementById("chkRollingDemoPositivePnlAdverseRenkoClose"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
@@ -940,6 +941,7 @@
             positivePnlTargetDelta: parseNumberInput(ids.positivePnlTargetDelta, 0.53),
             positivePnlTpPct: parseNumberInput(ids.positivePnlTpPct, 15),
             positivePnlSlPct: parseNumberInput(ids.positivePnlSlPct, 85),
+            positivePnlTrailSlEnabled: Boolean(ids.positivePnlTrailSlEnabled?.checked),
             positivePnlAdverseRenkoCloseEnabled: Boolean(ids.positivePnlAdverseRenkoCloseEnabled?.checked),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
@@ -1049,6 +1051,7 @@
         setFieldValue("positivePnlTargetDelta", uiState.positivePnlTargetDelta ?? uiState.negativePnlHedgeDelta ?? 0.53);
         setFieldValue("positivePnlTpPct", uiState.positivePnlTpPct ?? uiState.negativePnlTpPct ?? 15);
         setFieldValue("positivePnlSlPct", uiState.positivePnlSlPct ?? uiState.negativePnlSlPct ?? 85);
+        setFieldValue("positivePnlTrailSlEnabled", uiState.positivePnlTrailSlEnabled ?? false);
         setFieldValue("positivePnlAdverseRenkoCloseEnabled", uiState.positivePnlAdverseRenkoCloseEnabled ?? uiState.negativePnlRenkoCloseOnly ?? false);
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
@@ -2428,7 +2431,7 @@
         gLastPositivePnlTestRefreshKey = "";
         refreshPositivePnlSupportSettings();
     });
-    [ids.positivePnlSupportEnabled, ids.positivePnlSupportAction, ids.positivePnlExpiryMode, ids.positivePnlExpiryDate, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
+    [ids.positivePnlSupportEnabled, ids.positivePnlSupportAction, ids.positivePnlExpiryMode, ids.positivePnlExpiryDate, ids.positivePnlTrailSlEnabled, ids.positivePnlAdverseRenkoCloseEnabled].forEach(function (objField) {
         objField?.addEventListener("change", refreshPositivePnlSupportSettings);
     });
 

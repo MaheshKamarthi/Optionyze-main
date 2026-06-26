@@ -452,6 +452,7 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlExpiryDate: "",
         positivePnlExpiryRefreshTime: "",
         positivePnlTargetDelta: 0.53,
+        positivePnlTrailSlEnabled: false,
         positivePnlAdverseRenkoCloseEnabled: false,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
@@ -528,6 +529,7 @@ function migratePositivePnlSettings(
         positivePnlExpiryDate: String(pUiState.positivePnlExpiryDate || "").trim(),
         positivePnlExpiryRefreshTime: String(pUiState.positivePnlExpiryRefreshTime || "").trim(),
         positivePnlTargetDelta: getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53),
+        positivePnlTrailSlEnabled: Boolean(pUiState.positivePnlTrailSlEnabled ?? false),
         positivePnlAdverseRenkoCloseEnabled: Boolean(getMigratedValue(
             "positivePnlAdverseRenkoCloseEnabled",
             "negativePnlRenkoCloseOnly",
@@ -657,6 +659,7 @@ export class RollingOptionsStrangleService {
             positivePnlExpiryDate: "",
             positivePnlExpiryRefreshTime: "",
             positivePnlTargetDelta: 0.53,
+            positivePnlTrailSlEnabled: false,
             positivePnlAdverseRenkoCloseEnabled: false,
             ...objSavedUiState
         } as Record<string, unknown>, objSavedUiState));
@@ -2897,6 +2900,7 @@ export class RollingOptionsStrangleService {
         const vTargetDelta = Math.max(0, normalizeNumber((pUiState as any).positivePnlTargetDelta, 0.53));
         const vTakeProfitPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlTpPct, 15)));
         const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((pUiState as any).positivePnlSlPct, 85)));
+        const bTrailSlEnabled = Boolean((pUiState as any).positivePnlTrailSlEnabled ?? false);
         const vTakeProfitMove = vTakeProfitPct / 100;
         const vStopLossMove = vStopLossPct / 100;
         const objSupportConfig: RollingOptionsPtDeConfig = {
@@ -2950,6 +2954,7 @@ export class RollingOptionsStrangleService {
                 maxHedgeQty: vQty,
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
+                positivePnlTrailSlEnabled: bTrailSlEnabled,
                 positivePnlExpiryDate: vSelectedExpiryDate,
                 positivePnlTriggerAmount: vTriggerAmount,
                 triggeredByNegativeSourceLeg: true,
@@ -3506,6 +3511,7 @@ export class RollingOptionsStrangleService {
             const bTrailRedSl1Enabled = Boolean((objUiState as any).trailRedSl1Enabled ?? true);
             const bTrailGreenSl2Enabled = Boolean((objUiState as any).trailGreenSl2Enabled ?? true);
             const bTrailRedSl2Enabled = Boolean((objUiState as any).trailRedSl2Enabled ?? true);
+            const bPositivePnlTrailSlEnabled = Boolean((objUiState as any).positivePnlTrailSlEnabled ?? false);
 
             for (const objPosition of objOpenFutures) {
                 const vNextPnl = getPositionPnl(objPosition, objSnapshot.futuresPrice);
@@ -3536,22 +3542,27 @@ export class RollingOptionsStrangleService {
                 const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
                 const objRuleConfig = vRuleSet === 2 ? objConfig2 : objConfig;
                 const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-                const vSlMove = vRuleColor === "R"
-                    ? clamp01(Number(objRuleConfig.redStopLossPct ?? 85) / 100)
-                    : clamp01(Number(objRuleConfig.greenStopLossPct ?? 85) / 100);
+                const vSlMove = bPositivePnlSupport
+                    ? clamp01(Number(objMeta.configuredStopLossPct ?? (objUiState as any).positivePnlSlPct ?? 85) / 100)
+                    : (vRuleColor === "R"
+                        ? clamp01(Number(objRuleConfig.redStopLossPct ?? 85) / 100)
+                        : clamp01(Number(objRuleConfig.greenStopLossPct ?? 85) / 100));
                 const vGreenTpMove = clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 15) / 100);
                 const vRedTpMove = clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
                 const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
                 let bMetaChanged = false;
 
-                if (!bPositivePnlSupport && (vRuleColor === "G" || vRuleColor === "R") && (vAction === "BUY" || vAction === "SELL")) {
-                    const bTrailSlEnabled = vRuleSet === 2
+                const bTrailPositivePnlSlEnabled = bPositivePnlSupport
+                    && Boolean(objMeta.positivePnlTrailSlEnabled ?? bPositivePnlTrailSlEnabled);
+                if (((!bPositivePnlSupport && (vRuleColor === "G" || vRuleColor === "R")) || bTrailPositivePnlSlEnabled)
+                    && (vAction === "BUY" || vAction === "SELL")) {
+                    const bTrailSlEnabled = bPositivePnlSupport ? bTrailPositivePnlSlEnabled : (vRuleSet === 2
                         ? (vRuleColor === "G" ? bTrailGreenSl2Enabled : (vRuleColor === "R" ? bTrailRedSl2Enabled : false))
-                        : (vRuleColor === "G" ? bTrailGreenSl1Enabled : (vRuleColor === "R" ? bTrailRedSl1Enabled : false));
-                    const bTrailTpEnabled = vRuleSet === 2
+                        : (vRuleColor === "G" ? bTrailGreenSl1Enabled : (vRuleColor === "R" ? bTrailRedSl1Enabled : false)));
+                    const bTrailTpEnabled = bPositivePnlSupport ? false : (vRuleSet === 2
                         ? (vRuleColor === "G" ? bTrailGreenTp2Enabled : (vRuleColor === "R" ? bTrailRedTp2Enabled : false))
-                        : (vRuleColor === "G" ? bTrailGreenTp1Enabled : (vRuleColor === "R" ? bTrailRedTp1Enabled : false));
+                        : (vRuleColor === "G" ? bTrailGreenTp1Enabled : (vRuleColor === "R" ? bTrailRedTp1Enabled : false)));
 
                     const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
 

@@ -122,6 +122,7 @@ function getDefaultUiState(): Record<string, unknown> {
         positivePnlExpiryDate: "",
         positivePnlExpiryRefreshTime: "",
         positivePnlTargetDelta: 0.53,
+        positivePnlTrailSlEnabled: false,
         positivePnlAdverseRenkoCloseEnabled: false,
         optionsPnl: 0,
         telegramAlertsEnabled: false,
@@ -233,6 +234,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.positivePnlExpiryDate = String(objUiState.positivePnlExpiryDate || "").trim();
     objUiState.positivePnlExpiryRefreshTime = String(objUiState.positivePnlExpiryRefreshTime || "").trim();
     objUiState.positivePnlTargetDelta = getMigratedValue("positivePnlTargetDelta", "negativePnlHedgeDelta", 0.53);
+    objUiState.positivePnlTrailSlEnabled = Boolean(objUiState.positivePnlTrailSlEnabled ?? false);
     objUiState.positivePnlAdverseRenkoCloseEnabled = Boolean(getMigratedValue(
         "positivePnlAdverseRenkoCloseEnabled",
         "negativePnlRenkoCloseOnly",
@@ -1981,6 +1983,7 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
     const vStopLossPct = Math.min(100, Math.max(0, normalizeNumber((objUiState as any).positivePnlSlPct, 85)));
     const vReEntryDelta = Math.max(0, normalizeNumber((objUiState as any).positivePnlTargetDelta, 0.53));
     const vTriggerAmount = Math.min(0, normalizeNumber((objUiState as any).positivePnlTriggerAmount, 0));
+    const bTrailSlEnabled = Boolean((objUiState as any).positivePnlTrailSlEnabled ?? false);
     const objOpenPositions = await listRollingOptionsPtDeOpenPositions(vUserId);
     let vUpdated = 0;
     let vLastTakeProfitDelta = 0;
@@ -2005,6 +2008,7 @@ export async function updateRollingOptionsStrangleNegativePnlSettings(req: Reque
                 stopLossDelta: objDeltaTargets.stopLossDelta,
                 configuredTakeProfitPct: vTakeProfitPct,
                 configuredStopLossPct: vStopLossPct,
+                positivePnlTrailSlEnabled: bTrailSlEnabled,
                 reEntryDelta: vReEntryDelta,
                 trailBestDelta: vEntryDelta,
                 trailTpPeakDelta: vEntryDelta
