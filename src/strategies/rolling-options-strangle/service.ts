@@ -2068,9 +2068,7 @@ export class RollingOptionsStrangleService {
                 vActiveRuleColor,
                 objCurrentSummary.futureQty
             );
-            const vQty = vConfiguredQty > 0
-                ? vConfiguredQty
-                : Math.max(0, Math.floor(Number(objClosedOption.qty || objConfig.optionQty || 0)));
+            const vQty = vConfiguredQty;
             if (!(vQty > 0)) {
                 continue;
             }
