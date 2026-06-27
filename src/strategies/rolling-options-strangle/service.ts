@@ -8,6 +8,7 @@ import {
 } from "../../storage/rolling-options-strangle-position-store";
 import {
     clearRollingOptionsStrangleTempClosedPositions,
+    listRollingOptionsStrangleTempClosedPositions,
     saveRollingOptionsStrangleTempClosedPositions
 } from "../../storage/rolling-options-strangle-temp-closed-store";
 import {
@@ -552,13 +553,14 @@ const REPLACEMENT_CONDITION_KEYS = [
     "replacementCloseWhenOriginalPositiveEnabled",
     "replacementCloseEmaMismatchEnabled",
     "replacementUseRenkoColorEnabled",
-    "replacementUseEmaTrendEnabled"
+    "replacementUseEmaTrendEnabled",
+    "replacementWaitForRenkoPointEnabled"
 ] as const;
 
 function normalizeReplacementConditionSettings(pUiState: Record<string, unknown>): Record<string, unknown> {
     const objUiState = { ...(pUiState || {}) };
     for (const vKey of REPLACEMENT_CONDITION_KEYS) {
-        if (vKey === "replacementCloseEmaMismatchEnabled") {
+        if (vKey === "replacementCloseEmaMismatchEnabled" || vKey === "replacementWaitForRenkoPointEnabled") {
             objUiState[vKey] = (objUiState as any)[vKey] === true;
             continue;
         }
@@ -592,6 +594,7 @@ export class RollingOptionsStrangleService {
             replacementCloseEmaMismatchEnabled: false,
             replacementUseRenkoColorEnabled: true,
             replacementUseEmaTrendEnabled: true,
+            replacementWaitForRenkoPointEnabled: false,
             action1: "sell",
             legSide1: "ce",
             expiryMode1: "1",
@@ -2017,7 +2020,8 @@ export class RollingOptionsStrangleService {
     public async reEnterClosedOptionPositions(
         pUserId: string,
         pClosedPositions: RollingOptionsPtDePositionRecord[],
-        pReason: string
+        pReason: string,
+        pRenkoSignal: "R" | "G" | null = null
     ): Promise<RollingOptionsPtDePositionRecord[]> {
         const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
             .filter((objPosition) => objPosition?.instrumentType === "OPTION")
@@ -2028,24 +2032,54 @@ export class RollingOptionsStrangleService {
             return [];
         }
 
-        const objUiState = await this.loadUiState(pUserId);
-        const vCurrentRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
+        const objQueueUiState = await this.loadUiState(pUserId);
+        if (!pRenkoSignal && isReplacementConditionEnabled(objQueueUiState, "replacementWaitForRenkoPointEnabled")) {
+            const arrPendingPositions = arrClosedOptions.map((objPosition) => ({
+                ...objPosition,
+                metadata: {
+                    ...(objPosition.metadata || {}),
+                    replacementPendingRenko: true,
+                    replacementPendingReason: pReason
+                }
+            }));
+            await saveRollingOptionsStrangleTempClosedPositions(arrPendingPositions);
+            await logRollingOptionsPtDeEvent({
+                userId: pUserId,
+                eventType: "manual_action",
+                severity: "info",
+                title: "Replacement Waiting for Renko",
+                message: `Queued ${arrPendingPositions.length} replacement leg(s) until the next Renko point.`,
+                payload: {
+                    reason: "replacement_waiting_for_new_renko_point",
+                    qty: arrPendingPositions.length
+                }
+            });
+            return [];
+        }
+
         const arrCreatedPositions: RollingOptionsPtDePositionRecord[] = [];
-        const arrCurrentPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
-        const objCurrentSummary = getOpenPositionsSummary(arrCurrentPositions);
 
         for (const objClosedOption of arrClosedOptions) {
             const vRuleSet: 1 | 2 = Number((objClosedOption.metadata as any)?.ruleSet) === 2 ? 2 : 1;
-            const objConfig = this.buildRuleSetConfig(objUiState, vRuleSet);
-            if (!Boolean(objConfig.reEnter)) {
-                continue;
-            }
-
             const vOptionSide = this.getOptionSide(objClosedOption);
             if (vOptionSide !== "CE" && vOptionSide !== "PE") {
                 continue;
             }
 
+            if (!pRenkoSignal) {
+                await delayMs(RE_ENTRY_DELAY_MS);
+            }
+
+            // Replacement legs must use the latest Action 1/2 configuration after
+            // the re-entry delay. The closed leg supplies only its rule set and side.
+            const objUiState = await this.loadUiState(pUserId);
+            const objConfig = this.buildRuleSetConfig(objUiState, vRuleSet);
+            if (!Boolean(objConfig.reEnter)) {
+                continue;
+            }
+
+            const arrCurrentPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const objCurrentSummary = getOpenPositionsSummary(arrCurrentPositions);
             const bSameLegAlreadyOpen = arrCurrentPositions.some((objPosition) => {
                 return objPosition.instrumentType === "OPTION"
                     && !isPositivePnlSupportPosition(objPosition)
@@ -2056,9 +2090,12 @@ export class RollingOptionsStrangleService {
                 continue;
             }
 
+            const vCurrentRenkoColor = String(pRenkoSignal || objState.renko.lastColor || "").trim().toUpperCase();
             const vStoredRuleColor = String((objClosedOption.metadata as any)?.ruleColor || "").trim().toUpperCase();
             const bUseRenkoColor = isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled");
-            const vActiveRuleColor: "R" | "G" = objConfig.renkoEnabled && bUseRenkoColor
+            const vActiveRuleColor: "R" | "G" = pRenkoSignal
+                ? pRenkoSignal
+                : objConfig.renkoEnabled && bUseRenkoColor
                 ? (vCurrentRenkoColor === "G" ? "G" : (vCurrentRenkoColor === "R" ? "R" : (vStoredRuleColor === "G" ? "G" : "R")))
                 : (vStoredRuleColor === "G" ? "G" : "R");
             const vConfiguredQty = this.getConfiguredOptionQty(
@@ -2073,7 +2110,6 @@ export class RollingOptionsStrangleService {
                 continue;
             }
 
-            await delayMs(RE_ENTRY_DELAY_MS);
             const arrOpened = await this.openOptionPositions(
                 pUserId,
                 objConfig,
@@ -2091,9 +2127,9 @@ export class RollingOptionsStrangleService {
                 true
             );
             arrCreatedPositions.push(...arrOpened);
-            arrCurrentPositions.push(...arrOpened);
         }
 
+        const objUiState = await this.loadUiState(pUserId);
         if (isReplacementConditionEnabled(objUiState, "replacementCloseOrphanEnabled")) {
             await this.closeOrphanReplacementOptionPositions(pUserId, this.buildRuleSetConfig(objUiState, 1));
         }
@@ -2103,8 +2139,28 @@ export class RollingOptionsStrangleService {
         return arrCreatedPositions;
     }
 
+    private async openPendingReplacementPositionsOnRenko(
+        pUserId: string,
+        pRenkoSignal: "R" | "G"
+    ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const arrTempClosedPositions = await listRollingOptionsStrangleTempClosedPositions(pUserId);
+        const arrPendingPositions = arrTempClosedPositions.filter((objPosition) => {
+            return (objPosition.metadata as any)?.replacementPendingRenko === true;
+        });
+        if (arrPendingPositions.length <= 0) {
+            return [];
+        }
+
+        return this.reEnterClosedOptionPositions(
+            pUserId,
+            arrPendingPositions,
+            `New ${pRenkoSignal === "G" ? "GREEN" : "RED"} Renko point`,
+            pRenkoSignal
+        );
+    }
+
     private isReplacementOptionPosition(pPosition: RollingOptionsPtDePositionRecord): boolean {
-        if (pPosition.status !== "OPEN" || pPosition.instrumentType !== "OPTION") {
+        if (pPosition.instrumentType !== "OPTION") {
             return false;
         }
         const objMeta = (pPosition.metadata || {}) as Record<string, unknown>;
@@ -3453,6 +3509,9 @@ export class RollingOptionsStrangleService {
                         bricks: objRenkoSignals.length
                     }
                 });
+
+                const vFirstNewRenkoSignal: "R" | "G" = objRenkoSignals[0] === "R" ? "R" : "G";
+                await this.openPendingReplacementPositionsOnRenko(pUserId, vFirstNewRenkoSignal);
 
                 if ((vPreviousRenkoColor === "R" || vPreviousRenkoColor === "G")
                     && vPreviousRenkoColor !== vLast) {

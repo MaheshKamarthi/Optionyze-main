@@ -13,6 +13,7 @@
         replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
         closeSupportLegOnSourceClose: document.getElementById("chkRollingDemoCloseSupportOnSourceClose"),
         replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
+        replacementWaitForRenkoPointEnabled: document.getElementById("chkRollingDemoReplacementWaitForRenkoPoint"),
         replacementUseEmaTrendEnabled: document.getElementById("chkRollingDemoReplacementUseEmaTrend"),
         action1: document.getElementById("ddlActionCoveredCall1"),
         legSide1: document.getElementById("ddlLegSideCoveredCall1"),
@@ -865,6 +866,7 @@
             replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
             closeSupportLegOnSourceClose: ids.closeSupportLegOnSourceClose ? Boolean(ids.closeSupportLegOnSourceClose.checked) : false,
             replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
+            replacementWaitForRenkoPointEnabled: ids.replacementWaitForRenkoPointEnabled ? Boolean(ids.replacementWaitForRenkoPointEnabled.checked) : false,
             replacementUseEmaTrendEnabled: ids.replacementUseEmaTrendEnabled ? Boolean(ids.replacementUseEmaTrendEnabled.checked) : true,
             action1: String(ids.action1?.value || "sell"),
             legSide1: String(ids.legSide1?.value || "ce"),
@@ -985,6 +987,7 @@
         setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
         setFieldValue("closeSupportLegOnSourceClose", uiState.closeSupportLegOnSourceClose ?? false);
         setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
+        setFieldValue("replacementWaitForRenkoPointEnabled", uiState.replacementWaitForRenkoPointEnabled ?? false);
         setFieldValue("replacementUseEmaTrendEnabled", uiState.replacementUseEmaTrendEnabled ?? true);
         setFieldValue("action1", uiState.action1);
         setFieldValue("legSide1", uiState.legSide1);
@@ -2368,6 +2371,7 @@
         ids.replacementCloseEmaMismatchEnabled,
         ids.closeSupportLegOnSourceClose,
         ids.replacementUseRenkoColorEnabled,
+        ids.replacementWaitForRenkoPointEnabled,
         ids.replacementUseEmaTrendEnabled,
         ids.action1,
         ids.legSide1,
