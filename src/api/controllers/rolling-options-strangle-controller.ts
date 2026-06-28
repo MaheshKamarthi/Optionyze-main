@@ -1028,7 +1028,7 @@ export async function saveRollingOptionsStrangleProfileController(req: Request, 
     const vRenkoMessage = [
         `Enabled: ${Boolean(objNormalizedUiState.renkoFeedEnabled) ? "Yes" : "No"}`,
         `Points: ${Number(objNormalizedUiState.renkoFeedPts || 10)}`,
-        `Manual Start Price: ${Number.isFinite(vManualPrice) && vManualPrice > 0 ? vManualPrice : "Historical anchor"}`,
+        `Manual Anchor Price: ${Number.isFinite(vManualPrice) && vManualPrice > 0 ? vManualPrice : "Historical anchor"}`,
         `Timeframe: ${normalizeRenkoTimeframe(objNormalizedUiState.renkoFeedTimeframe)}`,
         `Price Source: ${objRenkoSourceLabels[vRenkoSource] || vRenkoSource}`
     ].join(", ");

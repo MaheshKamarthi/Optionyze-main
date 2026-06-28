@@ -2232,7 +2232,10 @@
         gRenkoSaveNoticePending = true;
         queueProfileSave();
         try {
-            await kickRenkoCycleIfNeeded();
+            await flushProfileSave();
+            if (ids.renkoFeedEnabled?.checked) {
+                await postJson(`${apiBase}/strategy/cycle`, {});
+            }
             await loadLivePanels();
         }
         catch (objError) {
