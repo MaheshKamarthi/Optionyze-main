@@ -495,6 +495,19 @@
     border-radius:10px;
     border:1px solid rgba(134,239,172,.18);
     background:rgba(15,23,42,.34);
+    color:var(--app-text);
+    font-size:.86rem;
+    line-height:1.45;
+}
+
+.rolling-demo-rule-message-item.success {
+    border-color:rgba(134,239,172,.38);
+    color:#b7f7ca;
+}
+
+.rolling-demo-rule-message-item.danger {
+    border-color:rgba(255,101,101,.38);
+    color:#ffb5b5;
 }
 
 .rolling-demo-rule-message-time {

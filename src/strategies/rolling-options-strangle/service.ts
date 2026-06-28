@@ -428,6 +428,8 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
+        renkoFeedManualPrice: null,
+        renkoManualPriceResetToken: 0,
         renkoFeedTimeframe: "1m",
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
@@ -627,6 +629,8 @@ export class RollingOptionsStrangleService {
             trailRedTp2Enabled: true,
             trailRedSl2Enabled: true,
             renkoFeedPts: 10,
+            renkoFeedManualPrice: null,
+            renkoManualPriceResetToken: 0,
             renkoFeedTimeframe: "1m",
             renkoFeedPriceSrc: "spot_price",
             emaEnabled: false,
@@ -789,6 +793,11 @@ export class RollingOptionsStrangleService {
                 : null;
             objState.renko.lastDir = Number(objRuntime.state?.renkoLastDir || 0) as -1 | 0 | 1;
             objState.renko.lastColor = String(objRuntime.state?.renkoLastColor || "") as "" | "R" | "G";
+            objState.renko.lastPrice = objRuntime.state?.renkoCalculationPrice !== null
+                && objRuntime.state?.renkoCalculationPrice !== undefined
+                && Number.isFinite(Number(objRuntime.state.renkoCalculationPrice))
+                ? Number(objRuntime.state?.renkoCalculationPrice)
+                : null;
             objState.renko.historyKey = String(objRuntime.state?.renkoHistoryKey || "");
             objState.renko.historySyncedAt = String(objRuntime.state?.renkoHistorySyncedAt || "");
             objState.renko.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.renkoHistoryCandleCount || 0)));
@@ -1131,6 +1140,8 @@ export class RollingOptionsStrangleService {
                 renkoAnchor: pState.renko.anchor,
                 renkoLastDir: pState.renko.lastDir,
                 renkoLastColor: pState.renko.lastColor,
+                renkoCalculationPrice: pState.renko.lastPrice ?? null,
+                renkoManualPrice: pConfig.renkoManualPrice ?? null,
                 renkoTimeframe: pConfig.renkoTimeframe || "1m",
                 renkoHistoryKey: pState.renko.historyKey || "",
                 renkoHistorySyncedAt: pState.renko.historySyncedAt || "",
@@ -3141,7 +3152,8 @@ export class RollingOptionsStrangleService {
             pConfig.contractName,
             pConfig.renkoStepPoints,
             pConfig.renkoTimeframe || "1m",
-            pConfig.renkoPriceSource
+            pConfig.renkoPriceSource,
+            pConfig.renkoManualPriceResetToken || 0
         ].join("|");
     }
 
@@ -3155,6 +3167,18 @@ export class RollingOptionsStrangleService {
 
         const vHistoryKey = this.getRenkoHistoryKey(pConfig);
         if (pState.renko.historyKey === vHistoryKey && pState.renko.anchor !== null) {
+            return;
+        }
+
+        const vManualStartPrice = Number(pConfig.renkoManualPrice);
+        if (Number.isFinite(vManualStartPrice) && vManualStartPrice > 0) {
+            pState.renko.anchor = vManualStartPrice;
+            pState.renko.lastDir = 0;
+            pState.renko.lastColor = "";
+            pState.renko.lastPrice = vManualStartPrice;
+            pState.renko.historyKey = vHistoryKey;
+            pState.renko.historySyncedAt = new Date().toISOString();
+            pState.renko.historyCandleCount = 0;
             return;
         }
 

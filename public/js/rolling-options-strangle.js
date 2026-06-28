@@ -67,8 +67,10 @@
         positivePnlAdverseRenkoCloseEnabled: document.getElementById("chkRollingDemoPositivePnlAdverseRenkoClose"),
         renkoFeedEnabled: document.querySelector(".rolling-demo-switch input"),
         renkoFeedPts: document.getElementById("txtRenkoFeedPts"),
+        renkoFeedManualPrice: document.getElementById("txtRenkoFeedManualPrice"),
         renkoFeedTimeframe: document.getElementById("ddlRenkoFeedTimeframe"),
         renkoFeedPriceSrc: document.getElementById("ddlRenkoFeedPriceSrc"),
+        updateRenkoButton: document.getElementById("btnRollingDemoUpdateRenko"),
         emaEnabled: document.getElementById("chkRollingDemoEma"),
         emaSignalEnabled: document.getElementById("chkRollingDemoEmaSignal"),
         emaRenkoConfirmEnabled: document.getElementById("chkRollingDemoEmaRenkoConfirm"),
@@ -88,6 +90,7 @@
         closedFromDate: document.getElementById("txtClsFromDate"),
         closedToDate: document.getElementById("txtClsToDate"),
         renkoFeedMeta: document.querySelector(".rolling-demo-feed-meta"),
+        renkoSaveMessage: document.getElementById("rollingDemoRenkoSaveMessage"),
         ruleSettingsMessages: document.getElementById("rollingDemoRuleSettingsMessages"),
         renkoFeedBadge: document.querySelector(".rolling-demo-switch")?.nextElementSibling,
         oneLotValue: document.getElementById("rollingDemoOneLotValue"),
@@ -100,6 +103,8 @@
         openCount: document.getElementById("rollingDemoOpenCount"),
         autoTraderButton: document.getElementById("btnRollingDemoAutoTrader"),
         lastSignal: document.getElementById("rollingDemoLastSignal"),
+        renkoFromPrice: document.getElementById("rollingDemoRenkoFromPrice"),
+        renkoAnchor: document.getElementById("rollingDemoRenkoAnchor"),
         openPositionsBody: document.getElementById("rollingDemoOpenPositionsBody"),
         payoffGraph: document.getElementById("rollingDemoOpenPayoffGraph"),
         tempClosedPositionsBody: document.getElementById("rollingDemoTempClosedPositionsBody"),
@@ -146,6 +151,7 @@
     let gSaveTimer = null;
     let gProfileRevision = 0;
     let gConfirmedProfileRevision = 0;
+    let gRenkoSaveNoticePending = false;
     let gProfileSaveChain = Promise.resolve();
     let gPreviousOpenPositionLtps = new Map();
     let gPreviousMarketPricesBySymbol = new Map();
@@ -162,6 +168,7 @@
     let gPayoffSlSelectedLegKey = PAYOFF_SL_ALL_LEGS_KEY;
     let gPayoffProjectionDays = 0;
     let gPayoffCustomSpotPrice = NaN;
+    let gRenkoManualPriceResetToken = 0;
     let gSelectedLinkOutPositionId = "";
     const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-events";
     const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-green-skipped-events";
@@ -777,6 +784,18 @@
         }
     }
 
+    function setRenkoSaveMessage(message, tone) {
+        if (!ids.renkoSaveMessage) {
+            return;
+        }
+        const vMessage = String(message || "").trim();
+        const vTone = String(tone || "").trim();
+        ids.renkoSaveMessage.innerHTML = `
+            <div class="rolling-demo-rule-message-title">Delta Renko server confirmation</div>
+            <div class="rolling-demo-rule-message-item${vTone ? ` ${escapeHtml(vTone)}` : ""}">${escapeHtml(vMessage || "No Renko settings confirmation yet.")}</div>
+        `;
+    }
+
     function appendRuleSettingsMessage(message) {
         if (!ids.ruleSettingsMessages) {
             return;
@@ -902,6 +921,10 @@
             trailRedSl1Enabled: Boolean(ids.trailRedSl1Enabled?.checked),
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoFeedPts, 10),
+            renkoFeedManualPrice: Number(ids.renkoFeedManualPrice?.value) > 0
+                ? Number(ids.renkoFeedManualPrice.value)
+                : null,
+            renkoManualPriceResetToken: gRenkoManualPriceResetToken,
             renkoFeedTimeframe: String(ids.renkoFeedTimeframe?.value || "1m"),
             renkoFeedPriceSrc: String(ids.renkoFeedPriceSrc?.value || "spot_price"),
             emaEnabled: Boolean(ids.emaEnabled?.checked),
@@ -974,6 +997,7 @@
         gPayoffSlSelectedLegKey = normalizePayoffSlSelectedLegKey(uiState?.payoffSlSelectedLegKey);
         gPayoffProjectionDays = normalizePayoffProjectionDays(uiState?.payoffProjectionDays);
         gPayoffCustomSpotPrice = normalizePayoffCustomSpotPrice(uiState?.payoffCustomSpotPrice);
+        gRenkoManualPriceResetToken = Number(uiState?.renkoManualPriceResetToken) || 0;
 
         setFieldValue("symbol", uiState.symbol);
         setFieldValue("manualFutQty", uiState.manualFutQty);
@@ -1023,6 +1047,7 @@
         setFieldValue("trailRedSl1Enabled", uiState.trailRedSl1Enabled ?? true);
         setFieldValue("renkoFeedEnabled", uiState.renkoFeedEnabled);
         setFieldValue("renkoFeedPts", uiState.renkoFeedPts);
+        setFieldValue("renkoFeedManualPrice", Number(uiState.renkoFeedManualPrice) > 0 ? uiState.renkoFeedManualPrice : "");
         setFieldValue("renkoFeedTimeframe", uiState.renkoFeedTimeframe ?? "1m");
         setFieldValue("renkoFeedPriceSrc", uiState.renkoFeedPriceSrc);
         setFieldValue("emaEnabled", uiState.emaEnabled ?? false);
@@ -1088,6 +1113,10 @@
         const lastSignal = String(runtimeState?.lastSignal || "-").trim() || "-";
         const openCount = Number(runtimeState?.counts?.openPositions || 0);
         const renkoColor = String(runtimeState?.state?.renkoLastColor || "").trim().toUpperCase();
+        const renkoCalculationPriceRaw = runtimeState?.state?.renkoCalculationPrice;
+        const renkoCalculationPrice = Number(renkoCalculationPriceRaw);
+        const renkoAnchorRaw = runtimeState?.state?.renkoAnchor;
+        const renkoAnchor = Number(renkoAnchorRaw);
         const tradingViewEmaEnabled = Boolean(runtimeState?.state?.tradingViewEmaEnabled ?? ids.tradingViewEmaEnabled?.checked);
         const tradingViewEmaSideRaw = String(runtimeState?.state?.tradingViewEmaSide || ids.tradingViewEmaSide?.value || "BOTH").trim().toUpperCase();
         const tradingViewEmaSide = tradingViewEmaSideRaw === "UP" || tradingViewEmaSideRaw === "DOWN" ? tradingViewEmaSideRaw : "BOTH";
@@ -1121,6 +1150,20 @@
         if (ids.lastSignal) {
             applyRenkoSignalBox(renkoColor);
             ids.lastSignal.dataset.lastSignalText = lastSignal;
+        }
+        if (ids.renkoFromPrice) {
+            ids.renkoFromPrice.textContent = renkoCalculationPriceRaw !== null
+                && renkoCalculationPriceRaw !== undefined
+                && Number.isFinite(renkoCalculationPrice)
+                ? `From: ${formatNumericValue(renkoCalculationPrice, 2)}`
+                : "From: --";
+        }
+        if (ids.renkoAnchor) {
+            ids.renkoAnchor.textContent = renkoAnchorRaw !== null
+                && renkoAnchorRaw !== undefined
+                && Number.isFinite(renkoAnchor)
+                ? `Anchor: ${formatNumericValue(renkoAnchor, 2)}`
+                : "Anchor: --";
         }
 
         if (ids.tradingViewEmaTrend) {
@@ -1733,6 +1776,12 @@
             throw new Error("Server saved the profile but did not return synchronized settings.");
         }
         gConfirmedProfileRevision = Math.max(gConfirmedProfileRevision, revision);
+        if (gRenkoSaveNoticePending && revision === gProfileRevision) {
+            gRenkoSaveNoticePending = false;
+            const vRenkoMessage = String(objPayload?.message || "Renko settings updated on server.");
+            setStatus(vRenkoMessage, "success");
+            setRenkoSaveMessage(vRenkoMessage, "success");
+        }
         return objSavedUiState;
     }
 
@@ -2100,6 +2149,7 @@
     });
 
     ids.renkoFeedEnabled?.addEventListener("change", function () {
+        gRenkoSaveNoticePending = true;
         updateRenkoFeedVisualState();
         queueProfileSave();
         void kickRenkoCycleIfNeeded().then(function () {
@@ -2146,19 +2196,55 @@
     });
 
     ids.renkoFeedPts?.addEventListener("change", function () {
+        gRenkoSaveNoticePending = true;
+        queueProfileSave();
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadLivePanels();
+        }).catch(function () { return undefined; });
+    });
+    ids.renkoFeedManualPrice?.addEventListener("change", function () {
+        gRenkoSaveNoticePending = true;
+        queueProfileSave();
         void kickRenkoCycleIfNeeded().then(function () {
             return loadLivePanels();
         }).catch(function () { return undefined; });
     });
     ids.renkoFeedTimeframe?.addEventListener("change", function () {
+        gRenkoSaveNoticePending = true;
+        queueProfileSave();
         void kickRenkoCycleIfNeeded().then(function () {
             return loadLivePanels();
         }).catch(function () { return undefined; });
     });
     ids.renkoFeedPriceSrc?.addEventListener("change", function () {
+        gRenkoSaveNoticePending = true;
+        queueProfileSave();
         void kickRenkoCycleIfNeeded().then(function () {
             return loadLivePanels();
         }).catch(function () { return undefined; });
+    });
+    ids.updateRenkoButton?.addEventListener("click", async function () {
+        const objButton = ids.updateRenkoButton;
+        if (objButton) {
+            objButton.disabled = true;
+        }
+        gRenkoManualPriceResetToken = Date.now();
+        gRenkoSaveNoticePending = true;
+        queueProfileSave();
+        try {
+            await kickRenkoCycleIfNeeded();
+            await loadLivePanels();
+        }
+        catch (objError) {
+            const vMessage = objError instanceof Error ? objError.message : "Unable to update Renko settings.";
+            setStatus(vMessage, "danger");
+            setRenkoSaveMessage(vMessage, "danger");
+        }
+        finally {
+            if (objButton) {
+                objButton.disabled = false;
+            }
+        }
     });
 
     ids.lastSignal?.addEventListener("click", function () {
@@ -2400,9 +2486,6 @@
         ids.greenReDelta,
         ids.greenTpPct,
         ids.greenSlPct,
-        ids.renkoFeedPts,
-        ids.renkoFeedTimeframe,
-        ids.renkoFeedPriceSrc,
         ids.emaEnabled,
         ids.emaSignalEnabled,
         ids.emaRenkoConfirmEnabled,

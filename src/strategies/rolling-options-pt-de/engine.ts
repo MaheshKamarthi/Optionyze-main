@@ -197,6 +197,7 @@ export function updateRenkoState(
     if (!Number.isFinite(vPrice) || vPrice <= 0) {
         return objSignals;
     }
+    pEngineState.renko.lastPrice = vPrice;
 
     const vAnchor = pEngineState.renko.anchor;
     if (vAnchor === null || !Number.isFinite(vAnchor)) {
@@ -449,6 +450,10 @@ export function buildConfigFromUiState(pUiState: Record<string, unknown>): Rolli
         addOneLotFuture: Boolean(pUiState.addOneLotFuture),
         renkoEnabled: Boolean(pUiState.renkoFeedEnabled ?? (Number(pUiState.renkoFeedPts ?? 10) > 0)),
         renkoStepPoints: Math.max(1, Math.round(Number(pUiState.renkoFeedPts || 10))),
+        renkoManualPrice: Number(pUiState.renkoFeedManualPrice) > 0
+            ? Number(pUiState.renkoFeedManualPrice)
+            : null,
+        renkoManualPriceResetToken: Number(pUiState.renkoManualPriceResetToken) || 0,
         renkoPriceSource: vPriceSource,
         loopSeconds: 8
     };

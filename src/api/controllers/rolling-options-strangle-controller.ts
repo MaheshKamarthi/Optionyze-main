@@ -97,6 +97,8 @@ function getDefaultUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         renkoFeedPts: 10,
+        renkoFeedManualPrice: null,
+        renkoManualPriceResetToken: 0,
         renkoFeedTimeframe: "1m",
         renkoFeedPriceSrc: "spot_price",
         emaEnabled: false,
@@ -308,6 +310,10 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.emaRenkoConfirmEnabled = Boolean((objUiState as any).emaRenkoConfirmEnabled);
     objUiState.emaSource = normalizeEmaSource((objUiState as any).emaSource);
     objUiState.renkoFeedTimeframe = normalizeRenkoTimeframe((objUiState as any).renkoFeedTimeframe);
+    objUiState.renkoFeedManualPrice = Number((objUiState as any).renkoFeedManualPrice) > 0
+        ? Number((objUiState as any).renkoFeedManualPrice)
+        : null;
+    objUiState.renkoManualPriceResetToken = Number((objUiState as any).renkoManualPriceResetToken) || 0;
     objUiState.emaTimeframe = normalizeEmaTimeframe((objUiState as any).emaTimeframe);
     objUiState.emaPeriod = normalizeEmaPeriod((objUiState as any).emaPeriod);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
@@ -1011,8 +1017,24 @@ export async function saveRollingOptionsStrangleProfileController(req: Request, 
         uiState: objNormalizedUiState,
         updatedAt: ""
     });
+    const vRenkoSource = String(objNormalizedUiState.renkoFeedPriceSrc || "spot_price");
+    const objRenkoSourceLabels: Record<string, string> = {
+        mark_price: "Mark Price",
+        spot_price: "Spot Price",
+        best_bid: "Best Bid",
+        best_ask: "Best Ask"
+    };
+    const vManualPrice = Number(objNormalizedUiState.renkoFeedManualPrice);
+    const vRenkoMessage = [
+        `Enabled: ${Boolean(objNormalizedUiState.renkoFeedEnabled) ? "Yes" : "No"}`,
+        `Points: ${Number(objNormalizedUiState.renkoFeedPts || 10)}`,
+        `Manual Start Price: ${Number.isFinite(vManualPrice) && vManualPrice > 0 ? vManualPrice : "Historical anchor"}`,
+        `Timeframe: ${normalizeRenkoTimeframe(objNormalizedUiState.renkoFeedTimeframe)}`,
+        `Price Source: ${objRenkoSourceLabels[vRenkoSource] || vRenkoSource}`
+    ].join(", ");
     res.json({
         status: "success",
+        message: `Renko settings updated on server — ${vRenkoMessage}.`,
         data: {
             ...objSaved,
             uiState: objNormalizedUiState

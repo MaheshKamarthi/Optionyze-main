@@ -33,6 +33,8 @@ export interface RollingOptionsPtDeConfig {
     addOneLotFuture: boolean;
     renkoEnabled: boolean;
     renkoStepPoints: number;
+    renkoManualPrice?: number | null;
+    renkoManualPriceResetToken?: number;
     renkoTimeframe?: RollingOptionsPtDeRenkoTimeframe;
     renkoPriceSource: "mark_price" | "spot_price" | "best_bid" | "best_ask";
     loopSeconds: number;
@@ -48,6 +50,7 @@ export interface RollingOptionsPtDeRenkoState {
     anchor: number | null;
     lastDir: -1 | 0 | 1;
     lastColor: "" | "R" | "G";
+    lastPrice?: number | null;
     historyKey?: string;
     historySyncedAt?: string;
     historyCandleCount?: number;
