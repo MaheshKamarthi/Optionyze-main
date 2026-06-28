@@ -637,24 +637,24 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         reEnter2: false,
         redOptQty: 1,
         reRedDelta: 0.53,
-        redTpPct: 15,
-        redSlPct: 85,
+        redTpPct: 0.50,
+        redSlPct: 0.90,
         greenOptQty: 1,
         greenReDelta: 0.53,
-        greenTpPct: 15,
-        greenSlPct: 85,
+        greenTpPct: 0.50,
+        greenSlPct: 0.90,
         trailGreenTp1Enabled: true,
         trailGreenSl1Enabled: true,
         trailRedTp1Enabled: true,
         trailRedSl1Enabled: true,
         greenOptQty2: 1,
         greenReDelta2: 0.53,
-        greenTpPct2: 15,
-        greenSlPct2: 85,
+        greenTpPct2: 0.50,
+        greenSlPct2: 0.90,
         redOptQty2: 1,
         redReDelta2: 0.53,
-        redTpPct2: 15,
-        redSlPct2: 85,
+        redTpPct2: 0.50,
+        redSlPct2: 0.90,
         trailGreenTp2Enabled: true,
         trailGreenSl2Enabled: true,
         trailRedTp2Enabled: true,
@@ -819,13 +819,12 @@ function getLiveRuleMetadataForColor(
     const vEntryDelta = Math.abs(Number(pEntryDelta || 0.53));
     const vSide = String(pSide || "").trim().toUpperCase();
     const vIsBuy = vSide === "BUY";
-    const vTpMove = clamp01(Number((pColorCode === "G" ? objConfig.greenTakeProfitPct : objConfig.redTakeProfitPct) ?? 15) / 100);
-    const vSlMove = clamp01(Number((pColorCode === "G" ? objConfig.greenStopLossPct : objConfig.redStopLossPct) ?? 85) / 100);
-    const vTakeProfitDelta = vIsBuy
-        ? clamp01(vEntryDelta + vTpMove)
-        : clamp01(vEntryDelta - vTpMove);
-    const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
-    const vStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss);
+    const normalizeTarget = (pValue: unknown, pFallback: number): number => {
+        const vValue = Number(pValue);
+        return clamp01(Number.isFinite(vValue) ? (vValue > 1 ? vValue / 100 : vValue) : pFallback);
+    };
+    const vTakeProfitDelta = normalizeTarget(pColorCode === "G" ? objConfig.greenTakeProfitPct : objConfig.redTakeProfitPct, 0.50);
+    const vStopLossDelta = normalizeTarget(pColorCode === "G" ? objConfig.greenStopLossPct : objConfig.redStopLossPct, 0.90);
 
     if (pColorCode === "G") {
         return {
@@ -835,6 +834,7 @@ function getLiveRuleMetadataForColor(
             reEntryDelta: Number(objConfig.greenReDelta ?? objConfig.reDelta ?? 0.53),
             openedReason: pReason,
             trailBestDelta: vEntryDelta,
+            trailSlGap: Number(Math.abs(vStopLossDelta - vEntryDelta).toFixed(6)),
             trailTpPeakDelta: vEntryDelta
         };
     }
@@ -846,6 +846,7 @@ function getLiveRuleMetadataForColor(
         reEntryDelta: Number(objConfig.redReDelta ?? objConfig.reDelta ?? 0.53),
         openedReason: pReason,
         trailBestDelta: vEntryDelta,
+        trailSlGap: Number(Math.abs(vStopLossDelta - vEntryDelta).toFixed(6)),
         trailTpPeakDelta: vEntryDelta
     };
 }
@@ -857,16 +858,9 @@ function getLiveOptionDeltaTargetsFromPct(
     pStopLossPct: number
 ): { takeProfitDelta: number; stopLossDelta: number; } {
     const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
-    const vSide = String(pSide || "").trim().toUpperCase();
-    const vIsBuy = vSide === "BUY";
-    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
-    const vStopLossMove = clamp01(pStopLossPct / 100);
-    const vTakeProfitDelta = vIsBuy
-        ? clamp01(vEntryDelta + vTakeProfitMove)
-        : clamp01(vEntryDelta - vTakeProfitMove);
-    const vRawStopLoss = vIsBuy ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
-    const vStopLossDelta = !vIsBuy && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    const normalizeTarget = (pValue: number): number => clamp01(pValue > 1 ? pValue / 100 : pValue);
+    const vTakeProfitDelta = normalizeTarget(pTakeProfitPct);
+    const vStopLossDelta = normalizeTarget(pStopLossPct);
     return {
         takeProfitDelta: vTakeProfitDelta,
         stopLossDelta: vStopLossDelta

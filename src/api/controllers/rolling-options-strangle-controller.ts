@@ -72,21 +72,21 @@ function getDefaultUiState(): Record<string, unknown> {
         reEnter2: false,
         greenOptQty2: 1,
         greenReDelta2: 0.53,
-        greenTpPct2: 15,
-        greenSlPct2: 85,
+        greenTpPct2: 0.50,
+        greenSlPct2: 0.90,
         redOptQty2: 1,
         redReDelta2: 0.53,
-        redTpPct2: 15,
-        redSlPct2: 85,
+        redTpPct2: 0.50,
+        redSlPct2: 0.90,
         redOptQty: 1,
-        redTpPct: 15,
-        redSlPct: 85,
+        redTpPct: 0.50,
+        redSlPct: 0.90,
         greenOptQty: 1,
         greenReDelta: 0.53,
         greenTpDelta: 0.15,
         greenSlDelta: 0.85,
-        greenTpPct: 15,
-        greenSlPct: 85,
+        greenTpPct: 0.50,
+        greenSlPct: 0.90,
         trailGreenTp1Enabled: true,
         trailGreenSl1Enabled: true,
         trailRedTp1Enabled: true,
@@ -2060,27 +2060,27 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
 
     const clampPct = (pValue: unknown, pFallback: number): number => {
         const vNum = normalizeNumber(pValue, pFallback);
-        return Math.max(0, Math.min(100, vNum));
+        return Math.max(0, Math.min(1, vNum > 1 ? vNum / 100 : vNum));
     };
     const normalizeLegacyPct = (pValue: unknown, pFallback: number): number => {
         const vNum = normalizeNumber(pValue, pFallback);
-        return vNum <= 2 ? vNum * 100 : vNum;
+        return vNum > 1 ? vNum / 100 : vNum;
     };
-    const vGreenTpPct1 = clampPct(objUiState.greenTpPct, normalizeLegacyPct(objUiState.greenTpDelta, 15));
-    const vGreenSlPct1 = clampPct(objUiState.greenSlPct, normalizeLegacyPct(objUiState.greenSlDelta, 85));
-    const vRedTpPct1 = clampPct(objUiState.redTpPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1, 15));
-    const vRedSlPct1 = clampPct(objUiState.redSlPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1, 85));
+    const vGreenTpPct1 = clampPct(objUiState.greenTpPct, normalizeLegacyPct(objUiState.greenTpDelta, 0.50));
+    const vGreenSlPct1 = clampPct(objUiState.greenSlPct, normalizeLegacyPct(objUiState.greenSlDelta, 0.90));
+    const vRedTpPct1 = clampPct(objUiState.redTpPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1, 0.50));
+    const vRedSlPct1 = clampPct(objUiState.redSlPct, normalizeLegacyPct((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1, 0.90));
     const vGreenReDelta1 = normalizeNumber(objUiState.greenReDelta, normalizeNumber(objUiState.reDelta1, 0.53));
     const vRedReDelta1 = normalizeNumber((objUiState as Record<string, unknown>).redReDelta, normalizeNumber(objUiState.reRedDelta ?? objUiState.reDelta1, 0.53));
 
     const vTakeProfitPct = vColor === "G"
-        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenTpPct2, 15) : vGreenTpPct1)
-        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redTpPct2, 15) : vRedTpPct1);
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenTpPct2, 0.50) : vGreenTpPct1)
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redTpPct2, 0.50) : vRedTpPct1);
     const vStopLossPct = vColor === "G"
-        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenSlPct2, 85) : vGreenSlPct1)
-        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redSlPct2, 85) : vRedSlPct1);
-    const vTakeProfitDelta = Number((Math.min(100, Math.max(0, vTakeProfitPct)) / 100).toFixed(4));
-    const vStopLossDelta = Number((Math.min(100, Math.max(0, vStopLossPct)) / 100).toFixed(4));
+        ? (vRuleSetNumber === 2 ? clampPct((objUiState as any).greenSlPct2, 0.90) : vGreenSlPct1)
+        : (vRuleSetNumber === 2 ? clampPct((objUiState as any).redSlPct2, 0.90) : vRedSlPct1);
+    const vTakeProfitDelta = Number(vTakeProfitPct.toFixed(4));
+    const vStopLossDelta = Number(vStopLossPct.toFixed(4));
     const vReEntryDelta = vColor === "G"
         ? (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).greenReDelta2, 0.53) : vGreenReDelta1)
         : (vRuleSetNumber === 2 ? normalizeNumber((objUiState as any).redReDelta2, 0.53) : vRedReDelta1);
@@ -2124,15 +2124,8 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
         }
 
         const vEntryDelta = Math.abs(Number(objPosition.entryDelta || 0.53));
-        const vTpMove = Math.min(1, Math.max(0, vTakeProfitDelta));
-        const vSlMove = Math.min(1, Math.max(0, vStopLossDelta));
-        const vIsBuy = String(objPosition.action || "").trim().toUpperCase() === "BUY";
-        const vPositionTakeProfitDelta = vIsBuy
-            ? Math.min(1, Math.max(0, vEntryDelta + vTpMove))
-            : Math.min(1, Math.max(0, vEntryDelta - vTpMove));
-        const vRawStopLoss = vIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
-        const vAbsoluteStopLoss = Math.min(1, Math.max(0, vStopLossDelta));
-        const vPositionStopLossDelta = (!vIsBuy && vRawStopLoss > 1) ? vAbsoluteStopLoss : Math.min(1, Math.max(0, vRawStopLoss));
+        const vPositionTakeProfitDelta = vTakeProfitDelta;
+        const vPositionStopLossDelta = vStopLossDelta;
         vLastPositionTakeProfitDelta = vPositionTakeProfitDelta;
         vLastPositionStopLossDelta = vPositionStopLossDelta;
 
@@ -2150,6 +2143,7 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
                 configuredStopLossPct: vStopLossPct,
                 reEntryDelta: vReEntryDelta,
                 trailBestDelta: vEntryDelta,
+                trailSlGap: Number(Math.abs(vPositionStopLossDelta - vEntryDelta).toFixed(6)),
                 trailTpPeakDelta: vEntryDelta
             },
             updatedAt: ""
@@ -2171,7 +2165,7 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
     )));
     const vConfiguredLotSize = getLotSizeForSymbol(String(objUiState.symbol || "BTC").trim().toUpperCase() || "BTC");
     const vConfiguredLots = Number((vConfiguredQty * vConfiguredLotSize).toFixed(8));
-    const vSavedSettingsMessage = `Saved settings: configured qty ${vConfiguredQty}, lot size ${vConfiguredLotSize}, total lots ${vConfiguredLots}, TP move ${vTakeProfitPct}%, SL move ${vStopLossPct}%, Re-entry delta ${vReEntryDelta}.`;
+    const vSavedSettingsMessage = `Saved settings: configured qty ${vConfiguredQty}, lot size ${vConfiguredLotSize}, total lots ${vConfiguredLots}, TP delta ${vTakeProfitPct}, SL delta ${vStopLossPct}, Re-entry delta ${vReEntryDelta}.`;
     const vLegacyMessage = vLegacyMissingColorMatchCount > 0
         ? ` ${vLegacyMissingColorMatchCount} legacy Action 1 position${vLegacyMissingColorMatchCount === 1 ? "" : "s"} had no rule color saved, so they were treated as Green and repaired.`
         : "";
@@ -2179,7 +2173,7 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
         ? ` ${vLegacyManualSideColorMatchCount} legacy manual ${vColorLabel} position${vLegacyManualSideColorMatchCount === 1 ? "" : "s"} had the wrong rule color saved for the option side, so they were repaired.`
         : "";
     const vMessage = vUpdated > 0
-        ? `${vActionLabel} ${vColorLabel} rule settings applied to ${vUpdated} open option position${vUpdated === 1 ? "" : "s"}. ${vSizeMessage} TP move ${vTakeProfitPct}% and SL move ${vStopLossPct}% were recalculated from each leg entry delta; Re-entry delta is ${vReEntryDelta}. Trailing TP/SL memory was reset to the new settings. Last recalculated TP delta: ${vLastPositionTakeProfitDelta.toFixed(4)}, SL delta: ${vLastPositionStopLossDelta.toFixed(4)}.${vLegacyMessage}${vLegacySideMessage}`
+        ? `${vActionLabel} ${vColorLabel} rule settings applied to ${vUpdated} open option position${vUpdated === 1 ? "" : "s"}. ${vSizeMessage} TP delta ${vTakeProfitPct} and SL delta ${vStopLossPct}; Re-entry delta is ${vReEntryDelta}. Trailing TP/SL memory was reset to the new settings.${vLegacyMessage}${vLegacySideMessage}`
         : `${vActionLabel} ${vColorLabel} rule settings saved and verified before trade. ${vSavedSettingsMessage} No existing open legs were reset because checked ${vOpenOptionCount} open option position${vOpenOptionCount === 1 ? "" : "s"}; ${vRuleSetMatchCount} matched ${vActionLabel}, and no matching ${vActionLabel} ${vColorLabel} open legs were active.`;
 
     res.json({

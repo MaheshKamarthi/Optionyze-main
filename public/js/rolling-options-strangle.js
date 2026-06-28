@@ -739,6 +739,14 @@
         return parsedValue.toFixed(fractionDigits);
     }
 
+    function normalizeConfiguredDelta(value, fallbackValue) {
+        const parsedValue = Number(value);
+        if (!Number.isFinite(parsedValue)) {
+            return fallbackValue;
+        }
+        return Math.min(1, Math.max(0, parsedValue > 1 ? parsedValue / 100 : parsedValue));
+    }
+
     function formatDeltaWithConfiguredPct(deltaValue, configuredPctValue, fractionDigits) {
         const vDeltaText = formatNumericValue(deltaValue, fractionDigits);
         const vConfiguredPct = Number(configuredPctValue);
@@ -746,7 +754,7 @@
             return vDeltaText;
         }
 
-        return `${vDeltaText} / ${formatNumericValue(vConfiguredPct, 2)}%`;
+        return `${vDeltaText} / ${formatNumericValue(normalizeConfiguredDelta(vConfiguredPct, 0), 2)}`;
     }
 
     function parseNumberInput(field, fallbackValue) {
@@ -895,8 +903,8 @@
             expiryDate1: String(ids.expiryDate1?.value || ""),
             manualOptQty1: parseNumberInput(ids.manualOptQty1, 1),
             reDelta1: parseNumberInput(ids.reDelta1, 0.53),
-            redTpPct: parseNumberInput(ids.redTpPct, 15),
-            redSlPct: parseNumberInput(ids.redSlPct, 85),
+            redTpPct: parseNumberInput(ids.redTpPct, 0.50),
+            redSlPct: parseNumberInput(ids.redSlPct, 0.90),
             reEnter1: Boolean(ids.reEnter1?.checked),
             action2: String(ids.action2?.value || "none"),
             legSide2: String(ids.legSide2?.value || "pe"),
@@ -906,17 +914,17 @@
             reEnter2: Boolean(ids.reEnter2?.checked),
             greenOptQty2: parseNumberInput(ids.greenOptQty2, 1),
             greenReDelta2: parseNumberInput(ids.greenReDelta2, 0.53),
-            greenTpPct2: parseNumberInput(ids.greenTpPct2, 15),
-            greenSlPct2: parseNumberInput(ids.greenSlPct2, 85),
+            greenTpPct2: parseNumberInput(ids.greenTpPct2, 0.50),
+            greenSlPct2: parseNumberInput(ids.greenSlPct2, 0.90),
             redOptQty2: parseNumberInput(ids.redOptQty2, 1),
             redReDelta2: parseNumberInput(ids.redReDelta2, 0.53),
-            redTpPct2: parseNumberInput(ids.redTpPct2, 15),
-            redSlPct2: parseNumberInput(ids.redSlPct2, 85),
+            redTpPct2: parseNumberInput(ids.redTpPct2, 0.50),
+            redSlPct2: parseNumberInput(ids.redSlPct2, 0.90),
             redOptQty: parseNumberInput(ids.redOptQty, 1),
             greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
-            greenTpPct: parseNumberInput(ids.greenTpPct, 15),
-            greenSlPct: parseNumberInput(ids.greenSlPct, 85),
+            greenTpPct: parseNumberInput(ids.greenTpPct, 0.50),
+            greenSlPct: parseNumberInput(ids.greenSlPct, 0.90),
             trailGreenTp1Enabled: Boolean(ids.trailGreenTp1Enabled?.checked),
             trailGreenSl1Enabled: Boolean(ids.trailGreenSl1Enabled?.checked),
             trailRedTp1Enabled: Boolean(ids.trailRedTp1Enabled?.checked),
@@ -1021,8 +1029,8 @@
         setFieldValue("expiryDate1", uiState.expiryDate1);
         setFieldValue("manualOptQty1", uiState.manualOptQty1);
         setFieldValue("reDelta1", uiState.reDelta1);
-        setFieldValue("redTpPct", uiState.redTpPct ?? (Number.isFinite(Number(uiState.deltaTp1)) ? (Number(uiState.deltaTp1) <= 2 ? Number(uiState.deltaTp1) * 100 : Number(uiState.deltaTp1)) : ""));
-        setFieldValue("redSlPct", uiState.redSlPct ?? (Number.isFinite(Number(uiState.deltaSl1)) ? (Number(uiState.deltaSl1) <= 2 ? Number(uiState.deltaSl1) * 100 : Number(uiState.deltaSl1)) : ""));
+        setFieldValue("redTpPct", normalizeConfiguredDelta(uiState.redTpPct ?? uiState.deltaTp1, 0.50));
+        setFieldValue("redSlPct", normalizeConfiguredDelta(uiState.redSlPct ?? uiState.deltaSl1, 0.90));
         setFieldValue("reEnter1", uiState.reEnter1);
         setFieldValue("action2", uiState.action2 ?? "none");
         setFieldValue("legSide2", uiState.legSide2 ?? "pe");
@@ -1032,17 +1040,17 @@
         setFieldValue("reEnter2", uiState.reEnter2);
         setFieldValue("greenOptQty2", uiState.greenOptQty2 ?? 1);
         setFieldValue("greenReDelta2", uiState.greenReDelta2 ?? 0.53);
-        setFieldValue("greenTpPct2", uiState.greenTpPct2 ?? 15);
-        setFieldValue("greenSlPct2", uiState.greenSlPct2 ?? 85);
+        setFieldValue("greenTpPct2", normalizeConfiguredDelta(uiState.greenTpPct2, 0.50));
+        setFieldValue("greenSlPct2", normalizeConfiguredDelta(uiState.greenSlPct2, 0.90));
         setFieldValue("redOptQty2", uiState.redOptQty2 ?? 1);
         setFieldValue("redReDelta2", uiState.redReDelta2 ?? 0.53);
-        setFieldValue("redTpPct2", uiState.redTpPct2 ?? 15);
-        setFieldValue("redSlPct2", uiState.redSlPct2 ?? 85);
+        setFieldValue("redTpPct2", normalizeConfiguredDelta(uiState.redTpPct2, 0.50));
+        setFieldValue("redSlPct2", normalizeConfiguredDelta(uiState.redSlPct2, 0.90));
         setFieldValue("redOptQty", uiState.redOptQty ?? uiState.redOptQtyPct);
         setFieldValue("greenOptQty", uiState.greenOptQty ?? uiState.greenOptQtyPct);
         setFieldValue("greenReDelta", uiState.greenReDelta);
-        setFieldValue("greenTpPct", uiState.greenTpPct ?? (Number.isFinite(Number(uiState.greenTpDelta)) ? Number(uiState.greenTpDelta) * 100 : ""));
-        setFieldValue("greenSlPct", uiState.greenSlPct ?? (Number.isFinite(Number(uiState.greenSlDelta)) ? Number(uiState.greenSlDelta) * 100 : ""));
+        setFieldValue("greenTpPct", normalizeConfiguredDelta(uiState.greenTpPct ?? uiState.greenTpDelta, 0.50));
+        setFieldValue("greenSlPct", normalizeConfiguredDelta(uiState.greenSlPct ?? uiState.greenSlDelta, 0.90));
         setFieldValue("trailGreenTp1Enabled", uiState.trailGreenTp1Enabled ?? true);
         setFieldValue("trailGreenSl1Enabled", uiState.trailGreenSl1Enabled ?? true);
         setFieldValue("trailRedTp1Enabled", uiState.trailRedTp1Enabled ?? true);

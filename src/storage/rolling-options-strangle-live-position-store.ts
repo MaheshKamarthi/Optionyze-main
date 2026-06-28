@@ -42,6 +42,7 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     productBestAsk?: number | null;
     sourceImportId?: string;
     trailBestDelta?: number | null;
+    trailSlGap?: number | null;
     trailTpPeakDelta?: number | null;
 }
 

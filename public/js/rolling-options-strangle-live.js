@@ -711,6 +711,14 @@
             : "-";
     }
 
+    function normalizeConfiguredDelta(value, fallbackValue) {
+        const parsedValue = Number(value);
+        if (!Number.isFinite(parsedValue)) {
+            return fallbackValue;
+        }
+        return Math.min(1, Math.max(0, parsedValue > 1 ? parsedValue / 100 : parsedValue));
+    }
+
     function parseNumberInput(field, fallbackValue) {
         const rawValue = field?.value;
         if (rawValue === null || rawValue === undefined || rawValue === "") {
@@ -768,26 +776,26 @@
             reEnter2: Boolean(ids.optionReEnter2?.checked),
             redOptQty: parseNumberInput(ids.redOptQty, 1),
             reRedDelta: parseNumberInput(ids.reRedDelta, 0.53),
-            redTpPct: parseNumberInput(ids.redTpPct, 15),
-            redSlPct: parseNumberInput(ids.redSlPct, 85),
+            redTpPct: parseNumberInput(ids.redTpPct, 0.50),
+            redSlPct: parseNumberInput(ids.redSlPct, 0.90),
             greenOptQty: parseNumberInput(ids.greenOptQty, 1),
             greenReDelta: parseNumberInput(ids.greenReDelta, 0.53),
-            greenTpPct: parseNumberInput(ids.greenTpPct, 15),
-            greenSlPct: parseNumberInput(ids.greenSlPct, 85),
+            greenTpPct: parseNumberInput(ids.greenTpPct, 0.50),
+            greenSlPct: parseNumberInput(ids.greenSlPct, 0.90),
             trailGreenTp1Enabled: Boolean(ids.trailGreenTp1Enabled?.checked),
             trailGreenSl1Enabled: Boolean(ids.trailGreenSl1Enabled?.checked),
             trailRedTp1Enabled: Boolean(ids.trailRedTp1Enabled?.checked),
             trailRedSl1Enabled: Boolean(ids.trailRedSl1Enabled?.checked),
             greenOptQty2: parseNumberInput(ids.greenOptQty2, 1),
             greenReDelta2: parseNumberInput(ids.greenReDelta2, 0.53),
-            greenTpPct2: parseNumberInput(ids.greenTpPct2, 15),
-            greenSlPct2: parseNumberInput(ids.greenSlPct2, 85),
+            greenTpPct2: parseNumberInput(ids.greenTpPct2, 0.50),
+            greenSlPct2: parseNumberInput(ids.greenSlPct2, 0.90),
             trailGreenTp2Enabled: Boolean(ids.trailGreenTp2Enabled?.checked),
             trailGreenSl2Enabled: Boolean(ids.trailGreenSl2Enabled?.checked),
             redOptQty2: parseNumberInput(ids.redOptQty2, 1),
             redReDelta2: parseNumberInput(ids.redReDelta2, 0.53),
-            redTpPct2: parseNumberInput(ids.redTpPct2, 15),
-            redSlPct2: parseNumberInput(ids.redSlPct2, 85),
+            redTpPct2: parseNumberInput(ids.redTpPct2, 0.50),
+            redSlPct2: parseNumberInput(ids.redSlPct2, 0.90),
             trailRedTp2Enabled: Boolean(ids.trailRedTp2Enabled?.checked),
             trailRedSl2Enabled: Boolean(ids.trailRedSl2Enabled?.checked),
             negativePnlHedgeEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
@@ -875,8 +883,8 @@
         setFieldValue(ids.reRedDelta, uiState.reRedDelta);
         const vRedTpLegacy = Number(uiState.redTpDelta ?? uiState.deltaTp1 ?? 0);
         const vRedSlLegacy = Number(uiState.redSlDelta ?? uiState.deltaSl1 ?? 0);
-        const vRedTpPct = Number(uiState.redTpPct ?? (vRedTpLegacy > 0 ? (vRedTpLegacy <= 2 ? vRedTpLegacy * 100 : vRedTpLegacy) : 15));
-        const vRedSlPct = Number(uiState.redSlPct ?? (vRedSlLegacy > 0 ? (vRedSlLegacy <= 2 ? vRedSlLegacy * 100 : vRedSlLegacy) : 85));
+        const vRedTpPct = normalizeConfiguredDelta(uiState.redTpPct ?? vRedTpLegacy, 0.50);
+        const vRedSlPct = normalizeConfiguredDelta(uiState.redSlPct ?? vRedSlLegacy, 0.90);
         setFieldValue(ids.redTpPct, vRedTpPct);
         setFieldValue(ids.redSlPct, vRedSlPct);
         const vGreenOptQtyLegacyPct = Number(uiState.greenOptQtyPct ?? 0);
@@ -889,8 +897,8 @@
         setFieldValue(ids.greenReDelta, uiState.greenReDelta);
         const vGreenTpLegacy = Number(uiState.greenTpDelta ?? uiState.deltaTp1 ?? 0);
         const vGreenSlLegacy = Number(uiState.greenSlDelta ?? uiState.deltaSl1 ?? 0);
-        const vGreenTpPct = Number(uiState.greenTpPct ?? (vGreenTpLegacy > 0 ? (vGreenTpLegacy <= 2 ? vGreenTpLegacy * 100 : vGreenTpLegacy) : 15));
-        const vGreenSlPct = Number(uiState.greenSlPct ?? (vGreenSlLegacy > 0 ? (vGreenSlLegacy <= 2 ? vGreenSlLegacy * 100 : vGreenSlLegacy) : 85));
+        const vGreenTpPct = normalizeConfiguredDelta(uiState.greenTpPct ?? vGreenTpLegacy, 0.50);
+        const vGreenSlPct = normalizeConfiguredDelta(uiState.greenSlPct ?? vGreenSlLegacy, 0.90);
         setFieldValue(ids.greenTpPct, vGreenTpPct);
         setFieldValue(ids.greenSlPct, vGreenSlPct);
         setFieldValue(ids.trailGreenTp1Enabled, uiState.trailGreenTp1Enabled ?? true);
@@ -899,14 +907,14 @@
         setFieldValue(ids.trailRedSl1Enabled, uiState.trailRedSl1Enabled ?? true);
         setFieldValue(ids.greenOptQty2, uiState.greenOptQty2 ?? 1);
         setFieldValue(ids.greenReDelta2, uiState.greenReDelta2 ?? 0.53);
-        setFieldValue(ids.greenTpPct2, uiState.greenTpPct2 ?? 15);
-        setFieldValue(ids.greenSlPct2, uiState.greenSlPct2 ?? 85);
+        setFieldValue(ids.greenTpPct2, normalizeConfiguredDelta(uiState.greenTpPct2, 0.50));
+        setFieldValue(ids.greenSlPct2, normalizeConfiguredDelta(uiState.greenSlPct2, 0.90));
         setFieldValue(ids.trailGreenTp2Enabled, uiState.trailGreenTp2Enabled ?? true);
         setFieldValue(ids.trailGreenSl2Enabled, uiState.trailGreenSl2Enabled ?? true);
         setFieldValue(ids.redOptQty2, uiState.redOptQty2 ?? 1);
         setFieldValue(ids.redReDelta2, uiState.redReDelta2 ?? 0.53);
-        setFieldValue(ids.redTpPct2, uiState.redTpPct2 ?? 15);
-        setFieldValue(ids.redSlPct2, uiState.redSlPct2 ?? 85);
+        setFieldValue(ids.redTpPct2, normalizeConfiguredDelta(uiState.redTpPct2, 0.50));
+        setFieldValue(ids.redSlPct2, normalizeConfiguredDelta(uiState.redSlPct2, 0.90));
         setFieldValue(ids.trailRedTp2Enabled, uiState.trailRedTp2Enabled ?? true);
         setFieldValue(ids.trailRedSl2Enabled, uiState.trailRedSl2Enabled ?? true);
         setFieldValue(ids.negativePnlHedgeEnabled, uiState.negativePnlHedgeEnabled ?? true);

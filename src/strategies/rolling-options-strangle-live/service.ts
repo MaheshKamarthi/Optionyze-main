@@ -228,24 +228,24 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         reEnter2: false,
         redOptQty: 1,
         reRedDelta: 0.53,
-        redTpPct: 15,
-        redSlPct: 85,
+        redTpPct: 0.50,
+        redSlPct: 0.90,
         greenOptQty: 1,
         greenReDelta: 0.53,
-        greenTpPct: 15,
-        greenSlPct: 85,
+        greenTpPct: 0.50,
+        greenSlPct: 0.90,
         trailGreenTp1Enabled: true,
         trailGreenSl1Enabled: true,
         trailRedTp1Enabled: true,
         trailRedSl1Enabled: true,
         greenOptQty2: 1,
         greenReDelta2: 0.53,
-        greenTpPct2: 15,
-        greenSlPct2: 85,
+        greenTpPct2: 0.50,
+        greenSlPct2: 0.90,
         redOptQty2: 1,
         redReDelta2: 0.53,
-        redTpPct2: 15,
-        redSlPct2: 85,
+        redTpPct2: 0.50,
+        redSlPct2: 0.90,
         trailGreenTp2Enabled: true,
         trailGreenSl2Enabled: true,
         trailRedTp2Enabled: true,
@@ -382,16 +382,9 @@ function getLiveOptionDeltaTargetsFromPct(
     pStopLossPct: number
 ): { takeProfitDelta: number; stopLossDelta: number; } {
     const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
-    const vSide = String(pSide || "").trim().toUpperCase();
-    const vIsBuy = vSide === "BUY";
-    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
-    const vStopLossMove = clamp01(pStopLossPct / 100);
-    const vTakeProfitDelta = vIsBuy
-        ? clamp01(vEntryDelta + vTakeProfitMove)
-        : clamp01(vEntryDelta - vTakeProfitMove);
-    const vRawStopLoss = vIsBuy ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
-    const vStopLossDelta = !vIsBuy && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    const normalizeTarget = (pValue: number): number => clamp01(pValue > 1 ? pValue / 100 : pValue);
+    const vTakeProfitDelta = normalizeTarget(pTakeProfitPct);
+    const vStopLossDelta = normalizeTarget(pStopLossPct);
     return {
         takeProfitDelta: vTakeProfitDelta,
         stopLossDelta: vStopLossDelta
@@ -898,16 +891,16 @@ export class RollingOptionsStrangleLiveService {
             return {
                 colorCode: "G",
                 reDelta: Number(pConfig.greenReDelta ?? pConfig.reDelta ?? 0.53),
-                tpMove: clamp01(Number(pConfig.greenTakeProfitPct ?? 15) / 100),
-                slMove: clamp01(Number(pConfig.greenStopLossPct ?? 85) / 100)
+                tpMove: clamp01(Number(pConfig.greenTakeProfitPct ?? 0.50) > 1 ? Number(pConfig.greenTakeProfitPct) / 100 : Number(pConfig.greenTakeProfitPct ?? 0.50)),
+                slMove: clamp01(Number(pConfig.greenStopLossPct ?? 0.90) > 1 ? Number(pConfig.greenStopLossPct) / 100 : Number(pConfig.greenStopLossPct ?? 0.90))
             };
         }
 
         return {
             colorCode: "R",
             reDelta: Number(pConfig.redReDelta ?? pConfig.reDelta ?? 0.53),
-            tpMove: clamp01(Number(pConfig.redTakeProfitPct ?? 15) / 100),
-            slMove: clamp01(Number(pConfig.redStopLossPct ?? 85) / 100)
+            tpMove: clamp01(Number(pConfig.redTakeProfitPct ?? 0.50) > 1 ? Number(pConfig.redTakeProfitPct) / 100 : Number(pConfig.redTakeProfitPct ?? 0.50)),
+            slMove: clamp01(Number(pConfig.redStopLossPct ?? 0.90) > 1 ? Number(pConfig.redStopLossPct) / 100 : Number(pConfig.redStopLossPct ?? 0.90))
         };
     }
 
@@ -1092,18 +1085,8 @@ export class RollingOptionsStrangleLiveService {
         pEntryDelta: number
     ): { takeProfitDelta: number; stopLossDelta: number; } {
         const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-        const vEntryDelta = Math.abs(Number(pEntryDelta || 0.53));
-        const vTpMove = clamp01(Number(pRuleValues.tpMove || 0));
-        const vSlMove = clamp01(Number(pRuleValues.slMove || 0));
-        const bIsBuy = pPositionSide === "BUY";
-
-        const vTakeProfitDelta = vTpMove > 0
-            ? (bIsBuy ? clamp01(vEntryDelta + vTpMove) : clamp01(vEntryDelta - vTpMove))
-            : 0;
-        const vRawStopLoss = bIsBuy ? (vEntryDelta - vSlMove) : (vEntryDelta + vSlMove);
-        const vStopLossDelta = vSlMove > 0
-            ? ((!bIsBuy && vRawStopLoss > 1) ? vSlMove : clamp01(vRawStopLoss))
-            : 0;
+        const vTakeProfitDelta = clamp01(Number(pRuleValues.tpMove || 0));
+        const vStopLossDelta = clamp01(Number(pRuleValues.slMove || 0));
         return { takeProfitDelta: vTakeProfitDelta, stopLossDelta: vStopLossDelta };
     }
 
@@ -1126,6 +1109,7 @@ export class RollingOptionsStrangleLiveService {
             reEnter: Boolean(pConfig.reEnter),
             openedReason: pReason,
             trailBestDelta: vEntryDelta,
+            trailSlGap: Number(Math.abs(objThresholds.stopLossDelta - vEntryDelta).toFixed(6)),
             trailTpPeakDelta: vEntryDelta
         };
     }
@@ -1146,12 +1130,12 @@ export class RollingOptionsStrangleLiveService {
             reEnter1: false,
             redOptQty: 1,
             reRedDelta: 0.53,
-            redTpPct: 15,
-            redSlPct: 85,
+            redTpPct: 0.50,
+            redSlPct: 0.90,
             greenOptQty: 1,
             greenReDelta: 0.53,
-            greenTpPct: 15,
-            greenSlPct: 85,
+            greenTpPct: 0.50,
+            greenSlPct: 0.90,
             trailGreenTp1Enabled: true,
             trailGreenSl1Enabled: true,
             trailRedTp1Enabled: true,
@@ -1168,12 +1152,12 @@ export class RollingOptionsStrangleLiveService {
             reEnter2: false,
             greenOptQty2: 1,
             greenReDelta2: 0.53,
-            greenTpPct2: 15,
-            greenSlPct2: 85,
+            greenTpPct2: 0.50,
+            greenSlPct2: 0.90,
             redOptQty2: 1,
             redReDelta2: 0.53,
-            redTpPct2: 15,
-            redSlPct2: 85,
+            redTpPct2: 0.50,
+            redSlPct2: 0.90,
             trailGreenTp2Enabled: true,
             trailGreenSl2Enabled: true,
             trailRedTp2Enabled: true,
@@ -2562,14 +2546,14 @@ export class RollingOptionsStrangleLiveService {
                 const vSide = String(objPosition.side || "").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
                 const vEntryDelta = Math.abs(Number(objPosition.entryDelta ?? objPosition.currentDelta ?? 0.53));
                 const vCurrentDelta = Math.abs(Number(objPosition.currentDelta ?? 0.53));
-                const vSlMove = vRuleColor === "G"
-                    ? clamp01(Number(objRuleConfig.greenStopLossPct ?? 85) / 100)
-                    : clamp01(Number(objRuleConfig.redStopLossPct ?? 85) / 100);
+                const vConfiguredSl = vRuleColor === "G"
+                    ? clamp01(Number(objRuleConfig.greenStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.greenStopLossPct) / 100 : Number(objRuleConfig.greenStopLossPct ?? 0.90))
+                    : clamp01(Number(objRuleConfig.redStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.redStopLossPct) / 100 : Number(objRuleConfig.redStopLossPct ?? 0.90));
                 const vTpMove = vRuleColor === "G"
-                    ? clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 15) / 100)
-                    : clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
+                    ? clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 0.50) > 1 ? Number(objRuleConfig.greenTakeProfitPct) / 100 : Number(objRuleConfig.greenTakeProfitPct ?? 0.50))
+                    : clamp01(Number(objRuleConfig.redTakeProfitPct ?? 0.50) > 1 ? Number(objRuleConfig.redTakeProfitPct) / 100 : Number(objRuleConfig.redTakeProfitPct ?? 0.50));
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
-                const objInitial = this.computeOptionThresholds({ tpMove: vTpMove, slMove: vSlMove }, vSide, vEntryDelta);
+                const objInitial = this.computeOptionThresholds({ tpMove: vTpMove, slMove: vConfiguredSl }, vSide, vEntryDelta);
 
                 if (!Number.isFinite(Number(objNextMeta.takeProfitDelta)) || !(Number(objNextMeta.takeProfitDelta) > 0)) {
                     objNextMeta.takeProfitDelta = Number(objInitial.takeProfitDelta.toFixed(6));
@@ -2585,19 +2569,25 @@ export class RollingOptionsStrangleLiveService {
                     ? (vRuleColor === "G" ? bTrailGreenTp2Enabled : bTrailRedTp2Enabled)
                     : (vRuleColor === "G" ? bTrailGreenTp1Enabled : bTrailRedTp1Enabled);
 
-                if (bTrailSlEnabled && Number.isFinite(vSlMove) && vSlMove > 0) {
+                if (bTrailSlEnabled) {
                     const vPrevBest = Number(objNextMeta.trailBestDelta);
                     const vBestDelta = Number.isFinite(vPrevBest)
                         ? (vSide === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
                         : (vSide === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
-                    const vCandidateRaw = vSide === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
-                    const vCandidate = (vSide === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
                     const vStoredSl = Number(objNextMeta.stopLossDelta);
+                    const vStoredTrailGap = Number(objNextMeta.trailSlGap);
+                    const vTrailSlGap = Number.isFinite(vStoredTrailGap) && vStoredTrailGap >= 0
+                        ? vStoredTrailGap
+                        : Math.abs((Number.isFinite(vStoredSl) && vStoredSl > 0 ? vStoredSl : vConfiguredSl) - vEntryDelta);
+                    const vCandidate = clamp01(vSide === "BUY"
+                        ? vBestDelta - vTrailSlGap
+                        : vBestDelta + vTrailSlGap);
                     const vNextSl = vSide === "BUY"
                         ? (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.max(vStoredSl, vCandidate) : vCandidate)
                         : (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.min(vStoredSl, vCandidate) : vCandidate);
                     objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
                     objNextMeta.trailBestDelta = Number(vBestDelta.toFixed(6));
+                    objNextMeta.trailSlGap = Number(vTrailSlGap.toFixed(6));
                 }
 
                 if (bTrailTpEnabled && Number.isFinite(vTpMove) && vTpMove > 0) {
@@ -2657,11 +2647,11 @@ export class RollingOptionsStrangleLiveService {
                 const vSide = String(objPosition.side || "").trim().toUpperCase() === "BUY" ? "BUY" : "SELL";
                 const vEntryDelta = Math.abs(Number(objPosition.entryDelta ?? objPosition.currentDelta ?? 0.53));
                 const vTpMove = vRuleColor === "G"
-                    ? clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 15) / 100)
-                    : clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
+                    ? clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 0.50) > 1 ? Number(objRuleConfig.greenTakeProfitPct) / 100 : Number(objRuleConfig.greenTakeProfitPct ?? 0.50))
+                    : clamp01(Number(objRuleConfig.redTakeProfitPct ?? 0.50) > 1 ? Number(objRuleConfig.redTakeProfitPct) / 100 : Number(objRuleConfig.redTakeProfitPct ?? 0.50));
                 const vSlMove = vRuleColor === "G"
-                    ? clamp01(Number(objRuleConfig.greenStopLossPct ?? 85) / 100)
-                    : clamp01(Number(objRuleConfig.redStopLossPct ?? 85) / 100);
+                    ? clamp01(Number(objRuleConfig.greenStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.greenStopLossPct) / 100 : Number(objRuleConfig.greenStopLossPct ?? 0.90))
+                    : clamp01(Number(objRuleConfig.redStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.redStopLossPct) / 100 : Number(objRuleConfig.redStopLossPct ?? 0.90));
                 const objFallbackThresholds = this.computeOptionThresholds({ tpMove: vTpMove, slMove: vSlMove }, vSide, vEntryDelta);
                 const objDecision = shouldTriggerImportedOption(
                     objPosition.side,

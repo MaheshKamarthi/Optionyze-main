@@ -155,14 +155,9 @@ function getOptionDeltaTargetsFromPct(
     pStopLossPct: number
 ): { takeProfitDelta: number; stopLossDelta: number; } {
     const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-    const vEntryDelta = Math.abs(Number.isFinite(Number(pEntryDelta)) ? Number(pEntryDelta) : 0.53);
-    const vTakeProfitMove = clamp01(pTakeProfitPct / 100);
-    const vStopLossMove = clamp01(pStopLossPct / 100);
-    const vTakeProfitDelta = pAction === "BUY"
-        ? clamp01(vEntryDelta + vTakeProfitMove)
-        : clamp01(vEntryDelta - vTakeProfitMove);
-    const vRawStopLoss = pAction === "BUY" ? (vEntryDelta - vStopLossMove) : (vEntryDelta + vStopLossMove);
-    const vStopLossDelta = pAction === "SELL" && vRawStopLoss > 1 ? vStopLossMove : clamp01(vRawStopLoss);
+    const normalizeTarget = (pValue: number): number => clamp01(pValue > 1 ? pValue / 100 : pValue);
+    const vTakeProfitDelta = normalizeTarget(pTakeProfitPct);
+    const vStopLossDelta = normalizeTarget(pStopLossPct);
     return {
         takeProfitDelta: vTakeProfitDelta,
         stopLossDelta: vStopLossDelta
@@ -403,21 +398,21 @@ function getDefaultUiState(): Record<string, unknown> {
         reEnter2: false,
         greenOptQty2: 1,
         greenReDelta2: 0.53,
-        greenTpPct2: 15,
-        greenSlPct2: 85,
+        greenTpPct2: 0.50,
+        greenSlPct2: 0.90,
         redOptQty2: 1,
         redReDelta2: 0.53,
-        redTpPct2: 15,
-        redSlPct2: 85,
+        redTpPct2: 0.50,
+        redSlPct2: 0.90,
         redOptQty: 1,
-        redTpPct: 15,
-        redSlPct: 85,
+        redTpPct: 0.50,
+        redSlPct: 0.90,
         greenOptQty: 1,
         greenReDelta: 0.53,
         greenTpDelta: 0.15,
         greenSlDelta: 0.85,
-        greenTpPct: 15,
-        greenSlPct: 85,
+        greenTpPct: 0.50,
+        greenSlPct: 0.90,
         trailGreenTp1Enabled: true,
         trailGreenSl1Enabled: true,
         trailRedTp1Enabled: true,
@@ -611,10 +606,10 @@ export class RollingOptionsStrangleService {
             greenReDelta: 0.53,
             greenTpDelta: 0.15,
             greenSlDelta: 0.85,
-            greenTpPct: 15,
-            greenSlPct: 85,
-            redTpPct: 15,
-            redSlPct: 85,
+            greenTpPct: 0.50,
+            greenSlPct: 0.90,
+            redTpPct: 0.50,
+            redSlPct: 0.90,
             targetOpenPnl: 0,
             closeAllLegsOnAnyClose: false,
             closeSupportLegOnSourceClose: false,
@@ -649,12 +644,12 @@ export class RollingOptionsStrangleService {
             reEnter2: false,
             greenOptQty2: 1,
             greenReDelta2: 0.53,
-            greenTpPct2: 15,
-            greenSlPct2: 85,
+            greenTpPct2: 0.50,
+            greenSlPct2: 0.90,
             redOptQty2: 1,
             redReDelta2: 0.53,
-            redTpPct2: 15,
-            redSlPct2: 85,
+            redTpPct2: 0.50,
+            redSlPct2: 0.90,
             positivePnlSupportEnabled: true,
             positivePnlSupportAction: "buy",
             positivePnlSupportQty: 10,
@@ -1531,34 +1526,23 @@ export class RollingOptionsStrangleService {
             if (pColorCode === "G" || pColorCode === "R") {
                 const getPctValue = (pValue: unknown, pFallback: number): number => {
                     const vNum = Number(pValue);
-                    return Number.isFinite(vNum) ? Math.max(0, Math.min(100, vNum)) : pFallback;
+                    return Number.isFinite(vNum) ? clamp01(vNum > 1 ? vNum / 100 : vNum) : pFallback;
                 };
                 const bIsRuleSet2 = Number((pConfig as any)?.ruleSet || 1) === 2;
                 const vTpPct = bIsRuleSet2
                     ? (pColorCode === "G"
-                        ? getPctValue((pConfig as any).ruleSetGreenTpPct, 15)
-                        : getPctValue((pConfig as any).ruleSetRedTpPct, 15))
-                    : getPctValue((pColorCode === "G" ? pConfig.greenTakeProfitPct : pConfig.redTakeProfitPct), 15);
+                        ? getPctValue((pConfig as any).ruleSetGreenTpPct, 0.50)
+                        : getPctValue((pConfig as any).ruleSetRedTpPct, 0.50))
+                    : getPctValue((pColorCode === "G" ? pConfig.greenTakeProfitPct : pConfig.redTakeProfitPct), 0.50);
                 const vSlPct = bIsRuleSet2
                     ? (pColorCode === "G"
-                        ? getPctValue((pConfig as any).ruleSetGreenSlPct, 85)
-                        : getPctValue((pConfig as any).ruleSetRedSlPct, 85))
-                    : getPctValue((pColorCode === "G" ? pConfig.greenStopLossPct : pConfig.redStopLossPct), 85);
+                        ? getPctValue((pConfig as any).ruleSetGreenSlPct, 0.90)
+                        : getPctValue((pConfig as any).ruleSetRedSlPct, 0.90))
+                    : getPctValue((pColorCode === "G" ? pConfig.greenStopLossPct : pConfig.redStopLossPct), 0.90);
                 vConfiguredTakeProfitPct = vTpPct;
                 vConfiguredStopLossPct = vSlPct;
-
-                const vTpMove = clamp01(vTpPct / 100);
-                const vSlMove = clamp01(vSlPct / 100);
-                if (vAction === "BUY") {
-                    vTakeProfitDelta = clamp01(vBaseDelta + vTpMove);
-                    vStopLossDelta = clamp01(vBaseDelta - vSlMove);
-                }
-                else {
-                    vTakeProfitDelta = clamp01(vBaseDelta - vTpMove);
-                    const vRawStopLoss = vBaseDelta + vSlMove;
-                    const vAbsoluteStopLoss = clamp01(vSlPct / 100);
-                    vStopLossDelta = vRawStopLoss > 1 ? vAbsoluteStopLoss : clamp01(vRawStopLoss);
-                }
+                vTakeProfitDelta = vTpPct;
+                vStopLossDelta = vSlPct;
             }
 
             const objUiState = ((pConfig as any).__uiState || {}) as Record<string, unknown>;
@@ -1651,6 +1635,7 @@ export class RollingOptionsStrangleService {
                     deltaStopLoss: objLeg.stopLossDelta,
                     takeProfitDelta: objLeg.takeProfitDelta,
                     stopLossDelta: objLeg.stopLossDelta,
+                    trailSlGap: Number(Math.abs(objLeg.stopLossDelta - objLeg.entryDelta).toFixed(6)),
                     configuredTakeProfitPct: objLeg.configuredTakeProfitPct,
                     configuredStopLossPct: objLeg.configuredStopLossPct,
                     reEntryDelta: objRuleValues.reDelta,
@@ -3623,11 +3608,11 @@ export class RollingOptionsStrangleService {
                 const vRuleSet = Math.floor(Number((objMeta as any).ruleSet ?? 1)) === 2 ? 2 : 1;
                 const objRuleConfig = vRuleSet === 2 ? objConfig2 : objConfig;
                 const clamp01 = (pValue: number): number => Math.min(1, Math.max(0, pValue));
-                const vSlMove = bPositivePnlSupport
+                const vConfiguredSl = bPositivePnlSupport
                     ? clamp01(Number(objMeta.configuredStopLossPct ?? (objUiState as any).positivePnlSlPct ?? 85) / 100)
                     : (vRuleColor === "R"
-                        ? clamp01(Number(objRuleConfig.redStopLossPct ?? 85) / 100)
-                        : clamp01(Number(objRuleConfig.greenStopLossPct ?? 85) / 100));
+                        ? clamp01(Number(objRuleConfig.redStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.redStopLossPct) / 100 : Number(objRuleConfig.redStopLossPct ?? 0.90))
+                        : clamp01(Number(objRuleConfig.greenStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.greenStopLossPct) / 100 : Number(objRuleConfig.greenStopLossPct ?? 0.90)));
                 const vGreenTpMove = clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 15) / 100);
                 const vRedTpMove = clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
                 const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
@@ -3653,9 +3638,14 @@ export class RollingOptionsStrangleService {
                             ? (vAction === "BUY" ? Math.max(vPrevBest, vCurrentDelta) : Math.min(vPrevBest, vCurrentDelta))
                             : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
 
-                        if (Number.isFinite(vSlMove) && vSlMove > 0) {
-                            const vCandidateRaw = vAction === "BUY" ? (vBestDelta - vSlMove) : (vBestDelta + vSlMove);
-                            const vCandidate = (vAction === "SELL" && vCandidateRaw > 1) ? vSlMove : clamp01(vCandidateRaw);
+                        const vStoredTrailGap = Number(objNextMeta.trailSlGap);
+                        const vTrailSlGap = Number.isFinite(vStoredTrailGap) && vStoredTrailGap >= 0
+                            ? vStoredTrailGap
+                            : Math.abs((Number.isFinite(vExistingSl) && vExistingSl > 0 ? vExistingSl : vConfiguredSl) - vEntryDelta);
+                        if (Number.isFinite(vTrailSlGap) && vTrailSlGap > 0) {
+                            const vCandidate = clamp01(vAction === "BUY"
+                                ? vBestDelta - vTrailSlGap
+                                : vBestDelta + vTrailSlGap);
                             const vNextSl = vAction === "BUY"
                                 ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
                                 : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
@@ -3663,6 +3653,10 @@ export class RollingOptionsStrangleService {
                             if (!Number.isFinite(vExistingStopLoss) || Math.abs(vExistingStopLoss - vNextSl) > 1e-9) {
                                 objNextMeta.deltaStopLoss = Number(vNextSl.toFixed(6));
                                 objNextMeta.stopLossDelta = Number(vNextSl.toFixed(6));
+                                bMetaChanged = true;
+                            }
+                            if (!Number.isFinite(vStoredTrailGap) || Math.abs(vStoredTrailGap - vTrailSlGap) > 1e-9) {
+                                objNextMeta.trailSlGap = Number(vTrailSlGap.toFixed(6));
                                 bMetaChanged = true;
                             }
                         }
