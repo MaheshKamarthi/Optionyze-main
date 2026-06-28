@@ -198,7 +198,9 @@
     let gIsEventLogVisible = false;
     let gLastExpiryRefreshDay = formatDateInputValue(new Date());
     let gLastPositivePnlTestRefreshKey = "";
+    let gRenkoLiveRefreshInFlight = false;
     const gStatusRefreshMs = 45000;
+    const gRenkoLiveRefreshMs = 5000;
     const gEmaRefreshMs = 30000;
     const gOpenPositionsRefreshMs = 30000;
     const gClosedPositionsRefreshMs = 90000;
@@ -2619,6 +2621,23 @@
             setStatus(objError instanceof Error ? objError.message : "Unable to refresh Rolling Options data.", "danger");
         });
     }, gStatusRefreshMs);
+
+    setInterval(function () {
+        if (document.visibilityState !== "visible"
+            || !ids.renkoFeedEnabled?.checked
+            || gRenkoLiveRefreshInFlight) {
+            return;
+        }
+
+        gRenkoLiveRefreshInFlight = true;
+        void kickRenkoCycleIfNeeded().then(function () {
+            return loadStatus();
+        }).catch(function (objError) {
+            console.error(objError);
+        }).finally(function () {
+            gRenkoLiveRefreshInFlight = false;
+        });
+    }, gRenkoLiveRefreshMs);
 
     setInterval(function () {
         if (document.visibilityState !== "visible") {
