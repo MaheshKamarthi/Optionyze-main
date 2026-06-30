@@ -660,6 +660,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         addOneLotFuture: false,
+        renkoFeedEnabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "mark_price",
         targetOpenPnl: 0,
@@ -673,6 +674,20 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
+        positivePnlSupportEnabled: false,
+        positivePnlSupportAction: "buy",
+        positivePnlSupportQty: 10,
+        positivePnlMaxLegs: 1,
+        positivePnlTriggerAmount: 0,
+        positivePnlTpPct: 15,
+        positivePnlSlPct: 85,
+        positivePnlExpiryMode: "1",
+        positivePnlExpiryDate: "",
+        positivePnlExpiryRefreshTime: "",
+        positivePnlTargetDelta: 0.53,
+        positivePnlTrailSlEnabled: false,
+        positivePnlAdverseRenkoCloseEnabled: false,
+        closeSupportLegOnSourceClose: false,
         closedFromDate: "",
         closedToDate: "",
         telegramAlertsEnabled: false,
@@ -835,6 +850,7 @@ function getLiveRuleMetadataForColor(
             openedReason: pReason,
             trailBestDelta: vEntryDelta,
             trailSlGap: Number(Math.abs(vStopLossDelta - vEntryDelta).toFixed(6)),
+            trailTpGap: Number(Math.abs(vTakeProfitDelta - vEntryDelta).toFixed(6)),
             trailTpPeakDelta: vEntryDelta
         };
     }
@@ -847,6 +863,7 @@ function getLiveRuleMetadataForColor(
         openedReason: pReason,
         trailBestDelta: vEntryDelta,
         trailSlGap: Number(Math.abs(vStopLossDelta - vEntryDelta).toFixed(6)),
+        trailTpGap: Number(Math.abs(vTakeProfitDelta - vEntryDelta).toFixed(6)),
         trailTpPeakDelta: vEntryDelta
     };
 }
@@ -1133,6 +1150,37 @@ export async function runRollingOptionsStrangleLiveStrategyCycle(
         data: {
             runtime: objRuntime,
             trackedOpenPositions: arrPositions
+        }
+    });
+}
+
+export async function openRollingOptionsStrangleLivePositivePnlSupport(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleLiveService
+): Promise<void> {
+    const vUserId = getAccountId(req);
+    const objProfile = await readLiveProfile(vUserId);
+    const vSelectedApiProfileId = String(objProfile.selectedApiProfileId || "").trim();
+    if (!vSelectedApiProfileId) {
+        res.status(400).json({ status: "warning", message: "Select an API profile before opening live support." });
+        return;
+    }
+    const objCheck = await performRollingOptionsStrangleLiveConnectionCheck(vUserId, vSelectedApiProfileId);
+    if (objCheck.profile.connectionStatus.state !== "connected") {
+        res.status(400).json({
+            status: "warning",
+            message: objCheck.profile.connectionStatus.message || "Delta connection is not healthy."
+        });
+        return;
+    }
+    const objResult = await pService.openPositivePnlSupportManually(vUserId);
+    res.status(objResult.status === "success" ? 200 : 400).json({
+        status: objResult.status,
+        message: objResult.message,
+        data: {
+            openedCount: objResult.openedCount,
+            trackedOpenPositions: await listRollingOptionsStrangleLiveImportedPositions(vUserId)
         }
     });
 }
@@ -1924,6 +1972,27 @@ export async function setRollingOptionsStrangleLiveManualRenkoSignal(
         message: `Renko box changed to ${vColor}.`,
         data: objRuntime
     });
+}
+
+export async function updateRollingOptionsStrangleLiveBoxMovingPrice(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleLiveService
+): Promise<void> {
+    const vUserId = getAccountId(req);
+    const objResult = await pService.applyBoxMovingPrice(vUserId, Number(req.body?.price));
+    res.json({ ...objResult, data: await loadRollingOptionsStrangleLiveRuntime(vUserId) });
+}
+
+export async function setRollingOptionsStrangleLiveManualBoxSignal(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleLiveService
+): Promise<void> {
+    const vUserId = getAccountId(req);
+    const vColor: "R" | "G" = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
+    const objResult = await pService.setManualBoxSignal(vUserId, vColor);
+    res.json({ ...objResult, data: await loadRollingOptionsStrangleLiveRuntime(vUserId) });
 }
 
 export async function getRollingOptionsStrangleLiveEvents(req: Request, res: Response): Promise<void> {

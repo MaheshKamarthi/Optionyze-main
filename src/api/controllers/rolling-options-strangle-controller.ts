@@ -1577,36 +1577,40 @@ export async function executeRollingOptionsStrangleManualOption(
 
     const vGreenTpPctLegacy = Number(objUiState.greenTpDelta);
     const vGreenSlPctLegacy = Number(objUiState.greenSlDelta);
-    const vGreenTpPct = Math.max(0, Math.min(100, normalizeNumber(
+    const normalizeDirectDelta = (pValue: unknown, pFallback: number): number => {
+        const vValue = normalizeNumber(pValue, pFallback);
+        return Math.max(0, Math.min(1, vValue > 1 ? vValue / 100 : vValue));
+    };
+    const vGreenTpPct = normalizeDirectDelta(
         objUiState.greenTpPct,
-        Number.isFinite(vGreenTpPctLegacy) ? (vGreenTpPctLegacy <= 2 ? vGreenTpPctLegacy * 100 : vGreenTpPctLegacy) : 15
-    )));
-    const vGreenSlPct = Math.max(0, Math.min(100, normalizeNumber(
+        Number.isFinite(vGreenTpPctLegacy) ? vGreenTpPctLegacy : 0.50
+    );
+    const vGreenSlPct = normalizeDirectDelta(
         objUiState.greenSlPct,
-        Number.isFinite(vGreenSlPctLegacy) ? (vGreenSlPctLegacy <= 2 ? vGreenSlPctLegacy * 100 : vGreenSlPctLegacy) : 85
-    )));
-    const vGreenTpDelta = Number((vGreenTpPct / 100).toFixed(4));
-    const vGreenSlDelta = Number((vGreenSlPct / 100).toFixed(4));
+        Number.isFinite(vGreenSlPctLegacy) ? vGreenSlPctLegacy : 0.90
+    );
+    const vGreenTpDelta = Number(vGreenTpPct.toFixed(4));
+    const vGreenSlDelta = Number(vGreenSlPct.toFixed(4));
     const vRedTpPctLegacy = Number((objUiState as Record<string, unknown>).redTpDelta ?? objUiState.deltaTp1);
     const vRedSlPctLegacy = Number((objUiState as Record<string, unknown>).redSlDelta ?? objUiState.deltaSl1);
-    const vRedTpPct = Math.max(0, Math.min(100, normalizeNumber(
+    const vRedTpPct = normalizeDirectDelta(
         objUiState.redTpPct,
-        Number.isFinite(vRedTpPctLegacy) ? (vRedTpPctLegacy <= 2 ? vRedTpPctLegacy * 100 : vRedTpPctLegacy) : 15
-    )));
-    const vRedSlPct = Math.max(0, Math.min(100, normalizeNumber(
+        Number.isFinite(vRedTpPctLegacy) ? vRedTpPctLegacy : 0.50
+    );
+    const vRedSlPct = normalizeDirectDelta(
         objUiState.redSlPct,
-        Number.isFinite(vRedSlPctLegacy) ? (vRedSlPctLegacy <= 2 ? vRedSlPctLegacy * 100 : vRedSlPctLegacy) : 85
-    )));
-    const vRedTpDelta = Number((vRedTpPct / 100).toFixed(4));
-    const vRedSlDelta = Number((vRedSlPct / 100).toFixed(4));
-    const vGreenTpPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenTpPct2, 15)));
-    const vGreenSlPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).greenSlPct2, 85)));
-    const vGreenTpDelta2 = Number((vGreenTpPct2 / 100).toFixed(4));
-    const vGreenSlDelta2 = Number((vGreenSlPct2 / 100).toFixed(4));
-    const vRedTpPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).redTpPct2, 15)));
-    const vRedSlPct2 = Math.max(0, Math.min(100, normalizeNumber((objUiState as any).redSlPct2, 85)));
-    const vRedTpDelta2 = Number((vRedTpPct2 / 100).toFixed(4));
-    const vRedSlDelta2 = Number((vRedSlPct2 / 100).toFixed(4));
+        Number.isFinite(vRedSlPctLegacy) ? vRedSlPctLegacy : 0.90
+    );
+    const vRedTpDelta = Number(vRedTpPct.toFixed(4));
+    const vRedSlDelta = Number(vRedSlPct.toFixed(4));
+    const vGreenTpPct2 = normalizeDirectDelta((objUiState as any).greenTpPct2, 0.50);
+    const vGreenSlPct2 = normalizeDirectDelta((objUiState as any).greenSlPct2, 0.90);
+    const vGreenTpDelta2 = Number(vGreenTpPct2.toFixed(4));
+    const vGreenSlDelta2 = Number(vGreenSlPct2.toFixed(4));
+    const vRedTpPct2 = normalizeDirectDelta((objUiState as any).redTpPct2, 0.50);
+    const vRedSlPct2 = normalizeDirectDelta((objUiState as any).redSlPct2, 0.90);
+    const vRedTpDelta2 = Number(vRedTpPct2.toFixed(4));
+    const vRedSlDelta2 = Number(vRedSlPct2.toFixed(4));
 
     for (const objLegPlan of objLegPlans) {
         const vLegGreenTpDelta = objLegPlan.ruleSet === 2 ? vGreenTpDelta2 : vGreenTpDelta;
@@ -1628,17 +1632,11 @@ export async function executeRollingOptionsStrangleManualOption(
             const vLegTpDelta = vRuleColor === "R" ? vLegRedTpDelta : vLegGreenTpDelta;
             const vLegSlDelta = vRuleColor === "R" ? vLegRedSlDelta : vLegGreenSlDelta;
             const vLegReDelta = vRuleColor === "R" ? vLegRedReDelta : vLegGreenReDelta;
-            const vLegTpPct = Number((vLegTpDelta * 100).toFixed(4));
-            const vLegSlPct = Number((vLegSlDelta * 100).toFixed(4));
+            const vLegTpPct = vLegTpDelta;
+            const vLegSlPct = vLegSlDelta;
             const vBaseDelta = Math.abs(Number(objQuote.entryDelta || 0.53));
-            const vTpMove = Math.min(1, Math.max(0, vLegTpDelta));
-            const vSlMove = Math.min(1, Math.max(0, vLegSlDelta));
-            const vTakeProfitDelta = objLegPlan.action === "BUY"
-                ? Math.min(1, Math.max(0, vBaseDelta + vTpMove))
-                : Math.min(1, Math.max(0, vBaseDelta - vTpMove));
-            const vStopLossDelta = objLegPlan.action === "BUY"
-                ? Math.min(1, Math.max(0, vBaseDelta - vSlMove))
-                : ((vBaseDelta + vSlMove) > 1 ? Math.min(1, Math.max(0, vLegSlDelta)) : Math.min(1, Math.max(0, vBaseDelta + vSlMove)));
+            const vTakeProfitDelta = vLegTpDelta;
+            const vStopLossDelta = vLegSlDelta;
             const objPosition: RollingOptionsPtDePositionRecord = {
                 ...createPositionBase(vUserId),
                 status: "OPEN",
@@ -1674,6 +1672,10 @@ export async function executeRollingOptionsStrangleManualOption(
                     reEntryDelta: vLegReDelta,
                     reEnter: objLegPlan.reEnter,
                     ruleColor: vRuleColor,
+                    trailBestDelta: vBaseDelta,
+                    trailSlGap: Number(Math.abs(vStopLossDelta - vBaseDelta).toFixed(6)),
+                    trailTpGap: Number(Math.abs(vTakeProfitDelta - vBaseDelta).toFixed(6)),
+                    trailTpPeakDelta: vBaseDelta,
                     ...objQuote.metadata
                 }
             };
@@ -2144,6 +2146,7 @@ export async function updateRollingOptionsStrangleRuleSettings(req: Request, res
                 reEntryDelta: vReEntryDelta,
                 trailBestDelta: vEntryDelta,
                 trailSlGap: Number(Math.abs(vPositionStopLossDelta - vEntryDelta).toFixed(6)),
+                trailTpGap: Number(Math.abs(vPositionTakeProfitDelta - vEntryDelta).toFixed(6)),
                 trailTpPeakDelta: vEntryDelta
             },
             updatedAt: ""
@@ -2318,6 +2321,30 @@ export async function setRollingOptionsStrangleManualRenkoSignal(
     const vUserId = getUserIdFromReq(req);
     const vColorCode = String(req.body?.color || "").trim().toUpperCase() === "R" ? "R" : "G";
     const objResult = await pService.setManualRenkoSignal(vUserId, vColorCode);
+    const objRuntime = await loadEffectiveRuntimeState(vUserId);
+    res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
+}
+
+export async function updateRollingOptionsStrangleBoxMovingPrice(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vPrice = Number(req.body?.price);
+    const objResult = await pService.applyBoxMovingPrice(vUserId, vPrice);
+    const objRuntime = await loadEffectiveRuntimeState(vUserId);
+    res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
+}
+
+export async function setRollingOptionsStrangleManualBoxSignal(
+    req: Request,
+    res: Response,
+    pService: RollingOptionsStrangleService
+): Promise<void> {
+    const vUserId = getUserIdFromReq(req);
+    const vColorCode: "R" | "G" = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
+    const objResult = await pService.setManualBoxSignal(vUserId, vColorCode, null);
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }

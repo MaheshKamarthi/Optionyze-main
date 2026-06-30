@@ -12,6 +12,21 @@
         futQty: document.getElementById("txtRollingStrangleLiveFutQty"),
         futureOrderType: document.getElementById("ddlRollingStrangleLiveOrderType"),
         futuresEnabled: document.getElementById("chkRollingStrangleLiveFuturesEnabled"),
+        replacementBlockSameLegEnabled: document.getElementById("chkRollingStrangleLiveReplacementBlockSameLeg"),
+        replacementImmediateTriggerGuardEnabled: document.getElementById("chkRollingStrangleLiveReplacementImmediateGuard"),
+        replacementUseRenkoColorEnabled: document.getElementById("chkRollingStrangleLiveReplacementUseRenkoColor"),
+        replacementWaitForRenkoPointEnabled: document.getElementById("chkRollingStrangleLiveReplacementWaitForRenkoPoint"),
+        replacementCloseOrphanEnabled: document.getElementById("chkRollingStrangleLiveReplacementCloseOrphan"),
+        replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingStrangleLiveReplacementCloseOriginalPositive"),
+        replacementUseEmaTrendEnabled: document.getElementById("chkRollingStrangleLiveReplacementUseEmaTrend"),
+        replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingStrangleLiveReplacementCloseEmaMismatch"),
+        boxColorChangeCloseEnabled: document.getElementById("chkRollingStrangleLiveBoxColorClose"),
+        emaEnabled: document.getElementById("chkRollingStrangleLiveEma"),
+        emaSignalEnabled: document.getElementById("chkRollingStrangleLiveEmaSignal"),
+        emaRenkoConfirmEnabled: document.getElementById("chkRollingStrangleLiveEmaRenkoConfirm"),
+        emaTimeframe: document.getElementById("ddlRollingStrangleLiveEmaTimeframe"),
+        emaSource: document.getElementById("ddlRollingStrangleLiveEmaSource"),
+        emaPeriod: document.getElementById("txtRollingStrangleLiveEmaPeriod"),
         oneLotValue: document.getElementById("rollingStrangleLiveOneLotValue"),
         totalMarginValue: document.getElementById("rollingStrangleLiveTotalMarginValue"),
         blockedMarginValue: document.getElementById("rollingStrangleLiveBlockedMarginValue"),
@@ -80,12 +95,35 @@
         negativePnlTpPct: document.getElementById("txtRollingStrangleLiveNegativePnlTp"),
         negativePnlSlPct: document.getElementById("txtRollingStrangleLiveNegativePnlSl"),
         negativePnlRecoveryTarget: document.getElementById("txtRollingStrangleLiveNegativePnlRecoveryTarget"),
+        positivePnlTriggerAmount: document.getElementById("txtRollingStrangleLivePositivePnlTriggerAmount"),
+        positivePnlTrailSlEnabled: document.getElementById("chkRollingStrangleLivePositivePnlTrailSl"),
+        closeSupportLegOnSourceClose: document.getElementById("chkRollingStrangleLiveCloseSupportOnSourceClose"),
+        positivePnlExpiryDate: document.getElementById("txtRollingStrangleLivePositivePnlExpiryDate"),
+        positivePnlExpiryRefreshTime: document.getElementById("txtRollingStrangleLivePositivePnlRefreshTime"),
+        positivePnlAdverseRenkoCloseEnabled: document.getElementById("chkRollingStrangleLivePositivePnlAdverseRenkoClose"),
+        positivePnlMarketPrice: document.getElementById("txtRollingStrangleLivePositivePnlMarketPrice"),
+        openPositivePnlButton: document.getElementById("btnRollingStrangleLiveOpenPositivePnl"),
         updateGreenRulesButton: document.getElementById("btnRollingStrangleLiveUpdateGreenRules"),
         updateGreenRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateGreenRules2"),
         addOneLotFuture: document.getElementById("chkRollingStrangleLiveAddOneLotFuture"),
         renkoValue: document.getElementById("txtRollingStrangleLiveRenkoValue"),
+        renkoManualPrice: document.getElementById("txtRollingStrangleLiveRenkoManualPrice"),
+        renkoTimeframe: document.getElementById("ddlRollingStrangleLiveRenkoTimeframe"),
         renkoPriceSrc: document.getElementById("ddlRollingStrangleLiveRenkoPriceSrc"),
+        renkoFeedEnabled: document.getElementById("chkRollingStrangleLiveRenkoFeed"),
+        renkoFeedStatus: document.getElementById("rollingStrangleLiveRenkoFeedStatus"),
+        renkoFromPrice: document.getElementById("rollingStrangleLiveRenkoFromPrice"),
+        renkoAnchor: document.getElementById("rollingStrangleLiveRenkoAnchor"),
+        emaIndicator: document.getElementById("rollingStrangleLiveEmaIndicator"),
         renkoBoxButton: document.getElementById("btnRollingStrangleLiveRenkoBox"),
+        boxConditionPoints: document.getElementById("txtRollingStrangleLiveBoxPoints"),
+        boxConditionEnabled: document.getElementById("chkRollingStrangleLiveBoxConditionsEnabled"),
+        boxConditionMovingPrice: document.getElementById("txtRollingStrangleLiveBoxMovingPrice"),
+        updateBoxMovingPriceButton: document.getElementById("btnRollingStrangleLiveUpdateBoxMovingPrice"),
+        boxConditionSignal: document.getElementById("rollingStrangleLiveBoxSignal"),
+        boxConditionFromPrice: document.getElementById("rollingStrangleLiveBoxFromPrice"),
+        boxConditionUpperAnchor: document.getElementById("rollingStrangleLiveBoxUpperAnchor"),
+        boxConditionLowerAnchor: document.getElementById("rollingStrangleLiveBoxLowerAnchor"),
         updateRedRulesButton: document.getElementById("btnRollingStrangleLiveUpdateRedRules"),
         updateRedRulesButton2: document.getElementById("btnRollingStrangleLiveUpdateRedRules2"),
         updateNegativePnlButton: document.getElementById("btnRollingStrangleLiveUpdateNegativePnl"),
@@ -147,6 +185,8 @@
     let gPayoffSlSelectedLegKey = PAYOFF_SL_ALL_LEGS_KEY;
     let gPayoffProjectionDays = 0;
     let gPayoffCustomSpotPrice = NaN;
+    let gPreviousMarketPrice = NaN;
+    let gRenkoManualPriceResetToken = 0;
     let gNegativePnlAdjustmentOrderInFlight = false;
     const gNegativePnlAdjustedSourceKeys = new Set();
     const gClosedPositionsPageSize = 10;
@@ -187,6 +227,24 @@
         return typeof shared.resolveExpiryDateByMode === "function"
             ? shared.resolveExpiryDateByMode(expiryMode)
             : new Date();
+    }
+
+    function refreshPositivePnlExpiryAtConfiguredTime() {
+        const vRefreshTime = String(ids.positivePnlExpiryRefreshTime?.value || "").trim();
+        const vMode = String(ids.negativePnlHedgeExpiryMode?.value || "1").trim();
+        if (!/^\d{2}:\d{2}$/.test(vRefreshTime) || vMode === "source") {
+            return;
+        }
+        const objNow = new Date();
+        const vNowTime = `${String(objNow.getHours()).padStart(2, "0")}:${String(objNow.getMinutes()).padStart(2, "0")}`;
+        if (vNowTime < vRefreshTime) {
+            return;
+        }
+        const vResolvedDate = normalizeExpiryDateValue(resolveExpiryDateByMode(vMode));
+        if (vResolvedDate && ids.positivePnlExpiryDate?.value !== vResolvedDate) {
+            ids.positivePnlExpiryDate.value = vResolvedDate;
+            queueProfileSave();
+        }
     }
 
     function normalizeExpiryDateValue(value) {
@@ -571,8 +629,7 @@
     }
 
     function withNegativePnlOptionLegPreviews(rows) {
-        const arrRows = Array.isArray(rows) ? rows : [];
-        return arrRows.concat(getNegativePnlOptionLegPreviews(arrRows));
+        return Array.isArray(rows) ? rows : [];
     }
 
     function refreshNegativePnlHedgePreview() {
@@ -762,6 +819,21 @@
             manualFutOrderType: String(ids.futureOrderType?.value || "market_order"),
             manualFutAction: String(ids.manualFutAction?.value || "SELL"),
             futuresEnabled: Boolean(ids.futuresEnabled?.checked),
+            replacementBlockSameLegEnabled: Boolean(ids.replacementBlockSameLegEnabled?.checked),
+            replacementImmediateTriggerGuardEnabled: Boolean(ids.replacementImmediateTriggerGuardEnabled?.checked),
+            replacementUseRenkoColorEnabled: Boolean(ids.replacementUseRenkoColorEnabled?.checked),
+            replacementWaitForRenkoPointEnabled: Boolean(ids.replacementWaitForRenkoPointEnabled?.checked),
+            replacementCloseOrphanEnabled: Boolean(ids.replacementCloseOrphanEnabled?.checked),
+            replacementCloseWhenOriginalPositiveEnabled: Boolean(ids.replacementCloseWhenOriginalPositiveEnabled?.checked),
+            replacementUseEmaTrendEnabled: Boolean(ids.replacementUseEmaTrendEnabled?.checked),
+            replacementCloseEmaMismatchEnabled: Boolean(ids.replacementCloseEmaMismatchEnabled?.checked),
+            boxColorChangeCloseEnabled: Boolean(ids.boxColorChangeCloseEnabled?.checked),
+            emaEnabled: Boolean(ids.emaEnabled?.checked),
+            emaSignalEnabled: Boolean(ids.emaSignalEnabled?.checked),
+            emaRenkoConfirmEnabled: Boolean(ids.emaRenkoConfirmEnabled?.checked),
+            emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
+            emaSource: String(ids.emaSource?.value || "candles"),
+            emaPeriod: parseNumberInput(ids.emaPeriod, 20),
             action1: String(ids.optionAction?.value || "sell"),
             legSide1: String(ids.optionLegSide?.value || "ce"),
             expiryMode1: String(ids.optionExpiryMode?.value || "1"),
@@ -808,9 +880,31 @@
             negativePnlTpPct: parseNumberInput(ids.negativePnlTpPct, 15),
             negativePnlSlPct: parseNumberInput(ids.negativePnlSlPct, 85),
             negativePnlRecoveryTarget: parseNumberInput(ids.negativePnlRecoveryTarget, 0),
+            positivePnlSupportEnabled: Boolean(ids.negativePnlHedgeEnabled?.checked),
+            positivePnlSupportAction: String(ids.negativePnlAction3?.value || "buy"),
+            positivePnlSupportQty: parseNumberInput(ids.negativePnlHedgeQty, 10),
+            positivePnlMaxLegs: parseNumberInput(ids.negativePnlMaxLegs, 1),
+            positivePnlTriggerAmount: Math.min(0, parseNumberInput(ids.positivePnlTriggerAmount, 0)),
+            positivePnlExpiryMode: String(ids.negativePnlHedgeExpiryMode?.value || "1"),
+            positivePnlTargetDelta: parseNumberInput(ids.negativePnlHedgeDelta, 0.53),
+            positivePnlTpPct: parseNumberInput(ids.negativePnlTpPct, 15),
+            positivePnlSlPct: parseNumberInput(ids.negativePnlSlPct, 85),
+            positivePnlTrailSlEnabled: Boolean(ids.positivePnlTrailSlEnabled?.checked),
+            closeSupportLegOnSourceClose: Boolean(ids.closeSupportLegOnSourceClose?.checked),
+            positivePnlExpiryDate: String(ids.positivePnlExpiryDate?.value || ""),
+            positivePnlExpiryRefreshTime: String(ids.positivePnlExpiryRefreshTime?.value || ""),
+            positivePnlAdverseRenkoCloseEnabled: Boolean(ids.positivePnlAdverseRenkoCloseEnabled?.checked),
             addOneLotFuture: Boolean(ids.addOneLotFuture?.checked),
             renkoFeedPts: parseNumberInput(ids.renkoValue, 10),
+            renkoFeedManualPrice: Number(ids.renkoManualPrice?.value) > 0
+                ? Number(ids.renkoManualPrice.value)
+                : null,
+            renkoManualPriceResetToken: gRenkoManualPriceResetToken,
+            renkoFeedTimeframe: String(ids.renkoTimeframe?.value || "1m"),
             renkoFeedPriceSrc: String(ids.renkoPriceSrc?.value || "mark_price"),
+            renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
+            boxConditionPoints: parseNumberInput(ids.boxConditionPoints, 10),
+            boxConditionEnabled: Boolean(ids.boxConditionEnabled?.checked),
             targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
             payoffSlCheckpointPrices: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints)
                 .filter(function (checkpoint) {
@@ -860,6 +954,21 @@
         setFieldValue(ids.futureOrderType, uiState.manualFutOrderType);
         setFieldValue(ids.manualFutAction, uiState.manualFutAction ?? "SELL");
         setFieldValue(ids.futuresEnabled, uiState.futuresEnabled ?? true);
+        setFieldValue(ids.replacementBlockSameLegEnabled, uiState.replacementBlockSameLegEnabled ?? true);
+        setFieldValue(ids.replacementImmediateTriggerGuardEnabled, uiState.replacementImmediateTriggerGuardEnabled ?? true);
+        setFieldValue(ids.replacementUseRenkoColorEnabled, uiState.replacementUseRenkoColorEnabled ?? true);
+        setFieldValue(ids.replacementWaitForRenkoPointEnabled, uiState.replacementWaitForRenkoPointEnabled ?? false);
+        setFieldValue(ids.replacementCloseOrphanEnabled, uiState.replacementCloseOrphanEnabled ?? true);
+        setFieldValue(ids.replacementCloseWhenOriginalPositiveEnabled, uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
+        setFieldValue(ids.replacementUseEmaTrendEnabled, uiState.replacementUseEmaTrendEnabled ?? true);
+        setFieldValue(ids.replacementCloseEmaMismatchEnabled, uiState.replacementCloseEmaMismatchEnabled ?? false);
+        setFieldValue(ids.boxColorChangeCloseEnabled, uiState.boxColorChangeCloseEnabled ?? false);
+        setFieldValue(ids.emaEnabled, uiState.emaEnabled ?? false);
+        setFieldValue(ids.emaSignalEnabled, uiState.emaSignalEnabled ?? false);
+        setFieldValue(ids.emaRenkoConfirmEnabled, uiState.emaRenkoConfirmEnabled ?? false);
+        setFieldValue(ids.emaTimeframe, uiState.emaTimeframe ?? "1m");
+        setFieldValue(ids.emaSource, uiState.emaSource ?? "candles");
+        setFieldValue(ids.emaPeriod, uiState.emaPeriod ?? 20);
         setFieldValue(ids.optionAction, uiState.action1);
         setFieldValue(ids.optionLegSide, uiState.legSide1);
         setFieldValue(ids.optionExpiryMode, uiState.expiryMode1);
@@ -927,9 +1036,29 @@
         setFieldValue(ids.negativePnlTpPct, uiState.negativePnlTpPct ?? 15);
         setFieldValue(ids.negativePnlSlPct, uiState.negativePnlSlPct ?? 85);
         setFieldValue(ids.negativePnlRecoveryTarget, uiState.negativePnlRecoveryTarget ?? 0);
+        setFieldValue(ids.negativePnlHedgeEnabled, uiState.positivePnlSupportEnabled ?? false);
+        setFieldValue(ids.negativePnlAction3, uiState.positivePnlSupportAction ?? uiState.negativePnlAction3 ?? "buy");
+        setFieldValue(ids.negativePnlHedgeQty, uiState.positivePnlSupportQty ?? uiState.negativePnlHedgeQty ?? 10);
+        setFieldValue(ids.negativePnlMaxLegs, uiState.positivePnlMaxLegs ?? uiState.negativePnlMaxLegs ?? 1);
+        setFieldValue(ids.positivePnlTriggerAmount, uiState.positivePnlTriggerAmount ?? 0);
+        setFieldValue(ids.negativePnlHedgeExpiryMode, uiState.positivePnlExpiryMode ?? uiState.negativePnlHedgeExpiryMode ?? "1");
+        setFieldValue(ids.negativePnlHedgeDelta, uiState.positivePnlTargetDelta ?? uiState.negativePnlHedgeDelta ?? 0.53);
+        setFieldValue(ids.negativePnlTpPct, uiState.positivePnlTpPct ?? uiState.negativePnlTpPct ?? 15);
+        setFieldValue(ids.negativePnlSlPct, uiState.positivePnlSlPct ?? uiState.negativePnlSlPct ?? 85);
+        setFieldValue(ids.positivePnlTrailSlEnabled, uiState.positivePnlTrailSlEnabled ?? false);
+        setFieldValue(ids.closeSupportLegOnSourceClose, uiState.closeSupportLegOnSourceClose ?? false);
+        setFieldValue(ids.positivePnlExpiryDate, uiState.positivePnlExpiryDate ?? "");
+        setFieldValue(ids.positivePnlExpiryRefreshTime, uiState.positivePnlExpiryRefreshTime ?? "");
+        setFieldValue(ids.positivePnlAdverseRenkoCloseEnabled, uiState.positivePnlAdverseRenkoCloseEnabled ?? false);
         setFieldValue(ids.addOneLotFuture, uiState.addOneLotFuture);
         setFieldValue(ids.renkoValue, uiState.renkoFeedPts);
+        setFieldValue(ids.renkoManualPrice, Number(uiState.renkoFeedManualPrice) > 0 ? uiState.renkoFeedManualPrice : "");
+        gRenkoManualPriceResetToken = Number(uiState.renkoManualPriceResetToken) || 0;
+        setFieldValue(ids.renkoTimeframe, uiState.renkoFeedTimeframe ?? "1m");
         setFieldValue(ids.renkoPriceSrc, uiState.renkoFeedPriceSrc ?? "mark_price");
+        setFieldValue(ids.renkoFeedEnabled, uiState.renkoFeedEnabled ?? true);
+        setFieldValue(ids.boxConditionPoints, uiState.boxConditionPoints ?? 10);
+        setFieldValue(ids.boxConditionEnabled, uiState.boxConditionEnabled ?? false);
         setFieldValue(ids.targetOpenPnl, uiState.targetOpenPnl ?? 0);
         setFieldValue(ids.closeAllLegsOnAnyClose, uiState.closeAllLegsOnAnyClose ?? false);
         setFieldValue(ids.skipRenkoEntryNoOpenOptions, uiState.skipRenkoEntryNoOpenOptions ?? false);
@@ -1045,6 +1174,7 @@
             ids.placeFutureButton,
             ids.openOptionButton,
             ids.exitOptionButton,
+            ids.openPositivePnlButton,
             ids.importButton,
             ids.refreshOpenPositionsButton,
             ids.refreshClosedPositionsButton
@@ -1109,12 +1239,81 @@
             ids.engineStatus.textContent = gRuntimeStatus.charAt(0).toUpperCase() + gRuntimeStatus.slice(1);
         }
         if (ids.renkoBoxButton instanceof HTMLButtonElement) {
-            ids.renkoBoxButton.textContent = vRenkoColor || "R";
-            ids.renkoBoxButton.classList.toggle("renko-red", vRenkoColor !== "G");
-            ids.renkoBoxButton.classList.toggle("renko-green", vRenkoColor === "G");
+            ids.renkoBoxButton.textContent = vRenkoColor || "-";
+            ids.renkoBoxButton.classList.remove("idle", "green", "red", "renko-red", "renko-green");
+            ids.renkoBoxButton.classList.add(
+                vRenkoColor === "G" ? "green" : (vRenkoColor === "R" ? "red" : "idle")
+            );
+            ids.renkoBoxButton.title = vRenkoColor
+                ? `Current Renko signal: ${vRenkoColor === "G" ? "Green" : "Red"}. Click to toggle.`
+                : "Current Renko signal. Click to toggle.";
+        }
+        if (ids.renkoFeedStatus) {
+            const bFeedEnabled = Boolean(ids.renkoFeedEnabled?.checked);
+            ids.renkoFeedStatus.textContent = bFeedEnabled ? "ON" : "OFF";
+            ids.renkoFeedStatus.className = `rolling-demo-badge ${bFeedEnabled ? "success" : "secondary"}`;
+        }
+        if (ids.renkoFromPrice) {
+            const vFromPriceRaw = objRuntime?.state?.renkoCalculationPrice;
+            const vFromPrice = Number(vFromPriceRaw);
+            ids.renkoFromPrice.textContent = `From: ${
+                vFromPriceRaw !== null && vFromPriceRaw !== undefined && Number.isFinite(vFromPrice)
+                    ? fmt(vFromPrice, 2)
+                    : "--"
+            }`;
+        }
+        if (ids.renkoAnchor) {
+            const vAnchor = Number(objRuntime?.state?.renkoAnchor);
+            ids.renkoAnchor.textContent = `Anchor: ${Number.isFinite(vAnchor) ? fmt(vAnchor, 2) : "--"}`;
+        }
+        const bBoxEnabled = Boolean(objRuntime?.state?.boxConditionEnabled ?? ids.boxConditionEnabled?.checked);
+        const vBoxRaw = bBoxEnabled ? String(objRuntime?.state?.boxLastColor || "").trim().toUpperCase() : "";
+        const vBoxColor = vBoxRaw === "G" ? "G" : (vBoxRaw === "R" ? "R" : "");
+        if (ids.boxConditionSignal) {
+            ids.boxConditionSignal.textContent = vBoxColor || "-";
+            ids.boxConditionSignal.classList.remove("idle", "green", "red");
+            ids.boxConditionSignal.classList.add(vBoxColor === "G" ? "green" : (vBoxColor === "R" ? "red" : "idle"));
+        }
+        const setBoxValue = function (objElement, label, rawValue) {
+            if (!objElement) return;
+            const vValue = Number(rawValue);
+            objElement.textContent = `${label}: ${rawValue !== null && rawValue !== undefined && Number.isFinite(vValue) ? fmt(vValue, 2) : "--"}`;
+        };
+        setBoxValue(ids.boxConditionFromPrice, "From", objRuntime?.state?.boxCalculationPrice);
+        setBoxValue(ids.boxConditionLowerAnchor, "Lower", objRuntime?.state?.boxLowerAnchor);
+        setBoxValue(ids.boxConditionUpperAnchor, "Upper", objRuntime?.state?.boxUpperAnchor);
+        if (ids.emaIndicator) {
+            const vTrend = String(objRuntime?.state?.emaTrend || "FLAT").toUpperCase();
+            const bEmaEnabled = Boolean(ids.emaEnabled?.checked);
+            const bEmaSignalEnabled = Boolean(objRuntime?.state?.emaSignalEnabled ?? ids.emaSignalEnabled?.checked);
+            ids.emaIndicator.textContent = bEmaEnabled
+                ? `EMA: ${vTrend}${bEmaSignalEnabled ? " / SIGNAL" : ""}`
+                : "EMA: OFF";
         }
         if (ids.openRenkoSignal) {
-            ids.openRenkoSignal.textContent = vRenkoColor ? "Renko Change Detected" : "-";
+            ids.openRenkoSignal.textContent = vRenkoColor || "-";
+            ids.openRenkoSignal.classList.remove("idle", "green", "red");
+            ids.openRenkoSignal.classList.add(
+                vRenkoColor === "G" ? "green" : (vRenkoColor === "R" ? "red" : "idle")
+            );
+            ids.openRenkoSignal.title = vRenkoColor
+                ? `Current Renko signal: ${vRenkoColor === "G" ? "Green" : "Red"}`
+                : "Current Renko signal";
+        }
+        if (ids.positivePnlMarketPrice instanceof HTMLInputElement) {
+            const vMarketPrice = Number(objRuntime.lastSpotPrice ?? objRuntime.lastFuturesPrice);
+            ids.positivePnlMarketPrice.classList.remove("market-up", "market-down");
+            if (Number.isFinite(vMarketPrice) && Number.isFinite(gPreviousMarketPrice)) {
+                if (vMarketPrice > gPreviousMarketPrice) {
+                    ids.positivePnlMarketPrice.classList.add("market-up");
+                } else if (vMarketPrice < gPreviousMarketPrice) {
+                    ids.positivePnlMarketPrice.classList.add("market-down");
+                }
+            }
+            ids.positivePnlMarketPrice.value = Number.isFinite(vMarketPrice) ? fmt(vMarketPrice, 2) : "-";
+            if (Number.isFinite(vMarketPrice)) {
+                gPreviousMarketPrice = vMarketPrice;
+            }
         }
         if (ids.autoTraderButton instanceof HTMLButtonElement) {
             ids.autoTraderButton.textContent = gAutoTraderEnabled ? "Auto Trader - ON" : "Auto Trader - OFF";
@@ -1559,7 +1758,6 @@
             ids.openPnlValue.textContent = fmt(totalPnl, 3);
         }
         renderPayoffGraph(arrDisplayRows);
-        void placeNegativePnlAdjustmentOrders(arrAdjustmentRows);
     }
 
     function renderPayoffGraph(rows) {
@@ -1984,6 +2182,20 @@
     ids.redSlPct2?.addEventListener("input", queueProfileSave);
     ids.trailRedTp2Enabled?.addEventListener("change", queueProfileSave);
     ids.trailRedSl2Enabled?.addEventListener("change", queueProfileSave);
+    ids.replacementBlockSameLegEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementImmediateTriggerGuardEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementUseRenkoColorEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementWaitForRenkoPointEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementCloseOrphanEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementCloseWhenOriginalPositiveEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementUseEmaTrendEnabled?.addEventListener("change", queueProfileSave);
+    ids.replacementCloseEmaMismatchEnabled?.addEventListener("change", queueProfileSave);
+    ids.emaEnabled?.addEventListener("change", queueProfileSave);
+    ids.emaSignalEnabled?.addEventListener("change", queueProfileSave);
+    ids.emaRenkoConfirmEnabled?.addEventListener("change", queueProfileSave);
+    ids.emaTimeframe?.addEventListener("change", queueProfileSave);
+    ids.emaSource?.addEventListener("change", queueProfileSave);
+    ids.emaPeriod?.addEventListener("input", queueProfileSave);
     ids.negativePnlHedgeEnabled?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlPlaceOrders?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlAction3?.addEventListener("change", refreshNegativePnlHedgePreview);
@@ -1994,6 +2206,12 @@
     ids.negativePnlTpPct?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlSlPct?.addEventListener("input", refreshNegativePnlHedgePreview);
     ids.negativePnlRecoveryTarget?.addEventListener("input", refreshNegativePnlHedgePreview);
+    ids.positivePnlTriggerAmount?.addEventListener("input", queueProfileSave);
+    ids.positivePnlTrailSlEnabled?.addEventListener("change", queueProfileSave);
+    ids.closeSupportLegOnSourceClose?.addEventListener("change", queueProfileSave);
+    ids.positivePnlExpiryDate?.addEventListener("change", queueProfileSave);
+    ids.positivePnlExpiryRefreshTime?.addEventListener("change", queueProfileSave);
+    ids.positivePnlAdverseRenkoCloseEnabled?.addEventListener("change", queueProfileSave);
     ids.addOneLotFuture?.addEventListener("change", queueProfileSave);
     ids.targetOpenPnl?.addEventListener("input", queueProfileSave);
     ids.closeAllLegsOnAnyClose?.addEventListener("change", queueProfileSave);
@@ -2260,6 +2478,53 @@
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to toggle Renko box.", "danger");
         });
     });
+    ids.updateBoxMovingPriceButton?.addEventListener("click", function () {
+        const vPrice = Number(ids.boxConditionMovingPrice?.value);
+        if (!ids.boxConditionEnabled?.checked || !Number.isFinite(vPrice) || vPrice <= 0) {
+            setStatus(ids.pageStatus, "Enable Box Conditions and enter a valid Moving Price.", "warning");
+            return;
+        }
+        void postJson("/api/rollingoptions-strangle-live/box/moving-price", { price: vPrice })
+            .then(function (objResult) {
+                applyRuntimeStatus(objResult?.data || {});
+                setStatus(ids.pageStatus, objResult?.message || "Box Moving Price updated.", objResult?.status || "success");
+            })
+            .catch(function (objError) {
+                setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Box Moving Price.", "danger");
+            });
+    });
+    ids.boxConditionSignal?.addEventListener("click", function () {
+        if (!ids.boxConditionEnabled?.checked) {
+            setStatus(ids.pageStatus, "Enable Box Conditions before toggling the Box signal.", "warning");
+            return;
+        }
+        const vCurrent = String(gLatestRuntimeState?.state?.boxLastColor || "").trim().toUpperCase();
+        const vColor = vCurrent === "R" ? "G" : "R";
+        void postJson("/api/rollingoptions-strangle-live/box/signal", { color: vColor })
+            .then(function (objResult) {
+                applyRuntimeStatus(objResult?.data || {});
+                setStatus(ids.pageStatus, objResult?.message || `Box changed to ${vColor}.`, objResult?.status || "success");
+            })
+            .catch(function (objError) {
+                setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to toggle Box signal.", "danger");
+            });
+    });
+    ids.renkoFeedEnabled?.addEventListener("change", function () {
+        queueProfileSave();
+        if (ids.renkoFeedStatus) {
+            ids.renkoFeedStatus.textContent = ids.renkoFeedEnabled.checked ? "ON" : "OFF";
+            ids.renkoFeedStatus.className = `rolling-demo-badge ${ids.renkoFeedEnabled.checked ? "success" : "secondary"}`;
+        }
+    });
+    ids.renkoManualPrice?.addEventListener("change", function () {
+        gRenkoManualPriceResetToken = Date.now();
+        queueProfileSave();
+    });
+    ids.renkoTimeframe?.addEventListener("change", queueProfileSave);
+    ids.boxConditionEnabled?.addEventListener("change", queueProfileSave);
+    ids.boxConditionPoints?.addEventListener("change", queueProfileSave);
+    ids.boxConditionPoints?.addEventListener("input", queueProfileSave);
+    ids.boxColorChangeCloseEnabled?.addEventListener("change", queueProfileSave);
     ids.updateGreenRulesButton?.addEventListener("click", function () {
         void updateRuleSettings("G", 1).then(function (objResult) {
             setStatus(ids.pageStatus, objResult?.message || "Updated Green rule settings for open options.", "success");
@@ -2306,6 +2571,16 @@
             return loadEvents().catch(function () { return undefined; });
         }).catch(function (objError) {
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update negative PnL option leg settings.", "danger");
+        });
+    });
+    ids.openPositivePnlButton?.addEventListener("click", function () {
+        void flushProfileSave().then(function () {
+            return postJson("/api/rollingoptions-strangle-live/positive-pnl/open", {});
+        }).then(function (objResult) {
+            setStatus(ids.pageStatus, objResult?.message || "Positive PnL support cycle completed.", "success");
+            return loadOpenPositions();
+        }).catch(function (objError) {
+            setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to open Positive PnL support.", "danger");
         });
     });
     ids.copyWhitelistIpButton?.addEventListener("click", function () {
@@ -2459,4 +2734,6 @@
     });
 
     startConnectionPolling();
+    refreshPositivePnlExpiryAtConfiguredTime();
+    setInterval(refreshPositivePnlExpiryAtConfiguredTime, 60000);
 })();

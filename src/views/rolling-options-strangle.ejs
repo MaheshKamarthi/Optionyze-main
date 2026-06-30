@@ -120,6 +120,14 @@
                             </label>
                         </div>
                     </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingDemoBoxColorClose" title="Closes eligible original option legs when the Box signal changes color.">Close on Box color change</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingDemoBoxColorClose">
+                                <input type="checkbox" id="chkRollingDemoBoxColorClose" />
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -815,6 +823,38 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <h2>Box Conditions</h2>
+                        <label class="rolling-demo-switch">
+                            <input type="checkbox" id="chkRollingDemoBoxConditionsEnabled" />
+                            <span>Enable</span>
+                        </label>
+                        <button class="rolling-demo-signal idle" type="button" id="rollingDemoBoxSignal" title="Click to toggle the manual Box signal">-</button>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxFromPrice">From: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxUpperAnchor">Upper: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxLowerAnchor">Lower: --</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-grid options">
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingDemoBoxPoints">Box Points</label>
+                        <input type="number" id="txtRollingDemoBoxPoints" value="10" min="1" step="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingDemoBoxMovingPrice">Moving Price</label>
+                        <input type="number" id="txtRollingDemoBoxMovingPrice" min="0" step="any" placeholder="Enter price" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="btnRollingDemoUpdateBoxMovingPrice">Box</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingDemoUpdateBoxMovingPrice">Update</button>
+                    </div>
                 </div>
             </div>
         </section>

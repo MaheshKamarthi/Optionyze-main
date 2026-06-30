@@ -11,6 +11,7 @@
         replacementCloseOrphanEnabled: document.getElementById("chkRollingDemoReplacementCloseOrphan"),
         replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingDemoReplacementCloseOriginalPositive"),
         replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
+        boxColorChangeCloseEnabled: document.getElementById("chkRollingDemoBoxColorClose"),
         closeSupportLegOnSourceClose: document.getElementById("chkRollingDemoCloseSupportOnSourceClose"),
         replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
         replacementWaitForRenkoPointEnabled: document.getElementById("chkRollingDemoReplacementWaitForRenkoPoint"),
@@ -105,6 +106,14 @@
         lastSignal: document.getElementById("rollingDemoLastSignal"),
         renkoFromPrice: document.getElementById("rollingDemoRenkoFromPrice"),
         renkoAnchor: document.getElementById("rollingDemoRenkoAnchor"),
+        boxConditionPoints: document.getElementById("txtRollingDemoBoxPoints"),
+        boxConditionEnabled: document.getElementById("chkRollingDemoBoxConditionsEnabled"),
+        boxConditionMovingPrice: document.getElementById("txtRollingDemoBoxMovingPrice"),
+        updateBoxMovingPriceButton: document.getElementById("btnRollingDemoUpdateBoxMovingPrice"),
+        boxConditionSignal: document.getElementById("rollingDemoBoxSignal"),
+        boxConditionFromPrice: document.getElementById("rollingDemoBoxFromPrice"),
+        boxConditionUpperAnchor: document.getElementById("rollingDemoBoxUpperAnchor"),
+        boxConditionLowerAnchor: document.getElementById("rollingDemoBoxLowerAnchor"),
         openPositionsBody: document.getElementById("rollingDemoOpenPositionsBody"),
         payoffGraph: document.getElementById("rollingDemoOpenPayoffGraph"),
         tempClosedPositionsBody: document.getElementById("rollingDemoTempClosedPositionsBody"),
@@ -893,6 +902,7 @@
             replacementCloseOrphanEnabled: ids.replacementCloseOrphanEnabled ? Boolean(ids.replacementCloseOrphanEnabled.checked) : true,
             replacementCloseWhenOriginalPositiveEnabled: ids.replacementCloseWhenOriginalPositiveEnabled ? Boolean(ids.replacementCloseWhenOriginalPositiveEnabled.checked) : true,
             replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
+            boxColorChangeCloseEnabled: Boolean(ids.boxColorChangeCloseEnabled?.checked),
             closeSupportLegOnSourceClose: ids.closeSupportLegOnSourceClose ? Boolean(ids.closeSupportLegOnSourceClose.checked) : false,
             replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
             replacementWaitForRenkoPointEnabled: ids.replacementWaitForRenkoPointEnabled ? Boolean(ids.replacementWaitForRenkoPointEnabled.checked) : false,
@@ -978,6 +988,8 @@
             positivePnlSlPct: parseNumberInput(ids.positivePnlSlPct, 85),
             positivePnlTrailSlEnabled: Boolean(ids.positivePnlTrailSlEnabled?.checked),
             positivePnlAdverseRenkoCloseEnabled: Boolean(ids.positivePnlAdverseRenkoCloseEnabled?.checked),
+            boxConditionPoints: parseNumberInput(ids.boxConditionPoints, 10),
+            boxConditionEnabled: Boolean(ids.boxConditionEnabled?.checked),
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -1019,6 +1031,7 @@
         setFieldValue("replacementCloseOrphanEnabled", uiState.replacementCloseOrphanEnabled ?? true);
         setFieldValue("replacementCloseWhenOriginalPositiveEnabled", uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
         setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
+        setFieldValue("boxColorChangeCloseEnabled", uiState.boxColorChangeCloseEnabled ?? false);
         setFieldValue("closeSupportLegOnSourceClose", uiState.closeSupportLegOnSourceClose ?? false);
         setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
         setFieldValue("replacementWaitForRenkoPointEnabled", uiState.replacementWaitForRenkoPointEnabled ?? false);
@@ -1091,6 +1104,8 @@
         setFieldValue("positivePnlSlPct", uiState.positivePnlSlPct ?? uiState.negativePnlSlPct ?? 85);
         setFieldValue("positivePnlTrailSlEnabled", uiState.positivePnlTrailSlEnabled ?? false);
         setFieldValue("positivePnlAdverseRenkoCloseEnabled", uiState.positivePnlAdverseRenkoCloseEnabled ?? uiState.negativePnlRenkoCloseOnly ?? false);
+        setFieldValue("boxConditionPoints", uiState.boxConditionPoints ?? 10);
+        setFieldValue("boxConditionEnabled", uiState.boxConditionEnabled ?? false);
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -1174,6 +1189,43 @@
                 && Number.isFinite(renkoAnchor)
                 ? `Anchor: ${formatNumericValue(renkoAnchor, 2)}`
                 : "Anchor: --";
+        }
+        const boxEnabled = Boolean(runtimeState?.state?.boxConditionEnabled ?? ids.boxConditionEnabled?.checked);
+        const boxColorRaw = boxEnabled
+            ? String(runtimeState?.state?.boxLastColor || "").trim().toUpperCase()
+            : "";
+        const boxColor = boxColorRaw === "G" ? "G" : (boxColorRaw === "R" ? "R" : "");
+        if (ids.boxConditionSignal) {
+            ids.boxConditionSignal.textContent = boxColor || "-";
+            ids.boxConditionSignal.classList.remove("idle", "green", "red");
+            ids.boxConditionSignal.classList.add(boxColor === "G" ? "green" : (boxColor === "R" ? "red" : "idle"));
+        }
+        if (ids.boxConditionFromPrice) {
+            const boxPriceRaw = boxEnabled ? runtimeState?.state?.boxCalculationPrice : null;
+            const boxPrice = Number(boxPriceRaw);
+            ids.boxConditionFromPrice.textContent = boxPriceRaw !== null
+                && boxPriceRaw !== undefined
+                && Number.isFinite(boxPrice)
+                ? `From: ${formatNumericValue(boxPrice, 2)}`
+                : "From: --";
+        }
+        if (ids.boxConditionUpperAnchor) {
+            const boxUpperRaw = boxEnabled ? runtimeState?.state?.boxUpperAnchor : null;
+            const boxUpper = Number(boxUpperRaw);
+            ids.boxConditionUpperAnchor.textContent = boxUpperRaw !== null
+                && boxUpperRaw !== undefined
+                && Number.isFinite(boxUpper)
+                ? `Upper: ${formatNumericValue(boxUpper, 2)}`
+                : "Upper: --";
+        }
+        if (ids.boxConditionLowerAnchor) {
+            const boxLowerRaw = boxEnabled ? runtimeState?.state?.boxLowerAnchor : null;
+            const boxLower = Number(boxLowerRaw);
+            ids.boxConditionLowerAnchor.textContent = boxLowerRaw !== null
+                && boxLowerRaw !== undefined
+                && Number.isFinite(boxLower)
+                ? `Lower: ${formatNumericValue(boxLower, 2)}`
+                : "Lower: --";
         }
 
         if (ids.tradingViewEmaTrend) {
@@ -2263,6 +2315,28 @@
     ids.lastSignal?.addEventListener("click", function () {
         void toggleManualRenkoSignal();
     });
+    ids.updateBoxMovingPriceButton?.addEventListener("click", function () {
+        const vMovingPrice = Number(ids.boxConditionMovingPrice?.value);
+        if (!ids.boxConditionEnabled?.checked || !Number.isFinite(vMovingPrice) || vMovingPrice <= 0) {
+            setStatus("Enable Box Conditions and enter a valid Moving Price.", "warning");
+            return;
+        }
+        void runServerAction(`${apiBase}/box/moving-price`, {
+            price: vMovingPrice
+        });
+    });
+    ids.boxConditionSignal?.addEventListener("click", function () {
+        if (!ids.boxConditionEnabled?.checked) {
+            setStatus("Enable Box Conditions before toggling the Box signal.", "warning");
+            return;
+        }
+        const vCurrentColor = String(gLatestRuntimeState?.state?.boxLastColor || "").trim().toUpperCase();
+        const vNextColor = vCurrentColor === "R" ? "G" : "R";
+        void runServerAction(`${apiBase}/box/signal`, {
+            color: vNextColor,
+            price: null
+        });
+    });
 
     ids.refreshOpenPositionsButton?.addEventListener("click", function () {
         void Promise.all([loadStatus(), loadOpenPositions()]);
@@ -2468,6 +2542,7 @@
         ids.replacementCloseOrphanEnabled,
         ids.replacementCloseWhenOriginalPositiveEnabled,
         ids.replacementCloseEmaMismatchEnabled,
+        ids.boxColorChangeCloseEnabled,
         ids.closeSupportLegOnSourceClose,
         ids.replacementUseRenkoColorEnabled,
         ids.replacementWaitForRenkoPointEnabled,
@@ -2511,6 +2586,8 @@
         ids.closeAllLegsOnAnyClose,
         ids.skipRenkoEntryNoOpenOptions,
         ids.targetOpenPnl,
+        ids.boxConditionPoints,
+        ids.boxConditionEnabled,
         ids.closedFromDate,
         ids.closedToDate
     ].forEach(function (objField) {

@@ -20,10 +20,14 @@ import {
 } from "../../storage/rolling-options-strangle-live-runtime-store";
 import { runWithPostgresAdvisoryLock } from "../../storage/postgres";
 import { calculateDeltaStylePnl } from "../../lib/delta-style-pnl";
-import { buildConfigFromUiState, updateRenkoState } from "../rolling-options-pt-de/engine";
+import { getDeltaTrailGap, getTrailedDeltaTarget } from "../../lib/delta-trailing";
+import { buildConfigFromUiState, buildRenkoBrickClosesFromPrices, updateRenkoState } from "../rolling-options-pt-de/engine";
 import {
     ensureLiveTickerSymbolsForOwner,
+    calculateEmaFromCloses,
     findBestLiveOptionContract,
+    getCandleEma,
+    getHistoricalCandleCloses,
     getLiveTickerFeedStats,
     getLiveTickerSymbolsForOwner,
     getLiveMarketSnapshot,
@@ -31,7 +35,7 @@ import {
     releaseLiveTickerSymbolsForOwner
 } from "../rolling-options-pt-de/market-data";
 import { logRollingOptionsStrangleLiveEvent } from "./event-logger";
-import type { RollingOptionsPtDeConfig, RollingOptionsPtDeEngineState, RollingOptionsPtDeMarketSnapshot } from "../rolling-options-pt-de/types";
+import type { RollingOptionsPtDeConfig, RollingOptionsPtDeEmaTimeframe, RollingOptionsPtDeEngineState, RollingOptionsPtDeMarketSnapshot, RollingOptionsPtDeRenkoTimeframe } from "../rolling-options-pt-de/types";
 
 interface EnrichedImportedPosition extends RollingOptionsStrangleLiveImportedPositionRecord {
     currentDelta: number | null;
@@ -70,7 +74,25 @@ function isOptionContract(pContractName: string): boolean {
 }
 
 function isNegativePnlAdjustmentPosition(pPosition: RollingOptionsStrangleLiveImportedPositionRecord): boolean {
-    return Boolean(pPosition.metadata?.negativePnlAdjustment);
+    return Boolean(pPosition.metadata?.negativePnlAdjustment || (pPosition.metadata as any)?.positivePnlSupport);
+}
+
+function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe {
+    const vValue = String(pValue || "").trim().toLowerCase();
+    return vValue === "5s" || vValue === "5m" || vValue === "15m" || vValue === "1h" ? vValue : "1m";
+}
+
+function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimeframe {
+    return normalizeEmaTimeframe(pValue);
+}
+
+function normalizeEmaSource(pValue: unknown): "candles" | "renko" {
+    return String(pValue || "").trim().toLowerCase() === "renko" ? "renko" : "candles";
+}
+
+function normalizeEmaPeriod(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.min(500, Math.max(1, vValue)) : 20;
 }
 
 function getLotSizeForContractName(pContractName: string): number {
@@ -214,6 +236,19 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         manualFutOrderType: "market_order",
         manualFutAction: "SELL",
         futuresEnabled: true,
+        replacementBlockSameLegEnabled: true,
+        replacementImmediateTriggerGuardEnabled: true,
+        replacementUseRenkoColorEnabled: true,
+        replacementWaitForRenkoPointEnabled: false,
+        replacementCloseOrphanEnabled: true,
+        replacementCloseWhenOriginalPositiveEnabled: true,
+        replacementUseEmaTrendEnabled: true,
+        replacementCloseEmaMismatchEnabled: false,
+        emaEnabled: false,
+        emaRenkoConfirmEnabled: false,
+        emaTimeframe: "1m",
+        emaSource: "candles",
+        emaPeriod: 20,
         action1: "sell",
         legSide1: "ce",
         expiryMode1: "1",
@@ -251,6 +286,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         trailRedTp2Enabled: true,
         trailRedSl2Enabled: true,
         addOneLotFuture: false,
+        renkoFeedEnabled: true,
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "mark_price",
         targetOpenPnl: 0,
@@ -264,6 +300,20 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         negativePnlHedgeExpiryMode: "1",
         negativePnlHedgeDelta: 0.53,
         negativePnlRecoveryTarget: 0,
+        positivePnlSupportEnabled: false,
+        positivePnlSupportAction: "buy",
+        positivePnlSupportQty: 10,
+        positivePnlMaxLegs: 1,
+        positivePnlTriggerAmount: 0,
+        positivePnlExpiryMode: "1",
+        positivePnlExpiryDate: "",
+        positivePnlExpiryRefreshTime: "",
+        positivePnlTargetDelta: 0.53,
+        positivePnlTpPct: 15,
+        positivePnlSlPct: 85,
+        positivePnlTrailSlEnabled: false,
+        positivePnlAdverseRenkoCloseEnabled: false,
+        closeSupportLegOnSourceClose: false,
         closedFromDate: "",
         closedToDate: "",
         telegramAlertsEnabled: false,
@@ -473,6 +523,8 @@ const RE_DELTA_TOLERANCE = 0.05;
 
 export class RollingOptionsStrangleLiveService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
+    private readonly boxStateByUserId = new Map<string, RollingOptionsPtDeEngineState["renko"]>();
+    private readonly pendingReplacementByUserId = new Map<string, RollingOptionsStrangleLiveImportedPositionRecord[]>();
     private readonly lastErrorLogByUserId = new Map<string, { message: string; loggedAtMs: number }>();
 
     public constructor(private readonly runnerManager: RunnerManager) {}
@@ -1109,7 +1161,8 @@ export class RollingOptionsStrangleLiveService {
             reEnter: Boolean(pConfig.reEnter),
             openedReason: pReason,
             trailBestDelta: vEntryDelta,
-            trailSlGap: Number(Math.abs(objThresholds.stopLossDelta - vEntryDelta).toFixed(6)),
+            trailSlGap: Number(getDeltaTrailGap(vEntryDelta, objThresholds.stopLossDelta).toFixed(6)),
+            trailTpGap: Number(getDeltaTrailGap(vEntryDelta, objThresholds.takeProfitDelta).toFixed(6)),
             trailTpPeakDelta: vEntryDelta
         };
     }
@@ -1189,6 +1242,7 @@ export class RollingOptionsStrangleLiveService {
         }
 
         const objConfig = buildConfigFromUiState(objState);
+        objConfig.renkoTimeframe = normalizeRenkoTimeframe((pUiState as any).renkoFeedTimeframe);
         (objConfig as RollingOptionsPtDeConfig & { futuresEnabled?: boolean; ruleSet?: number; }).futuresEnabled = Boolean((pUiState as any).futuresEnabled ?? true);
         (objConfig as RollingOptionsPtDeConfig & { futuresEnabled?: boolean; ruleSet?: number; }).ruleSet = pRuleSet;
         return objConfig;
@@ -1221,7 +1275,11 @@ export class RollingOptionsStrangleLiveService {
             renko: {
                 anchor: null,
                 lastDir: 0,
-                lastColor: ""
+                lastColor: "",
+                lastPrice: null,
+                historyKey: "",
+                historySyncedAt: "",
+                historyCandleCount: 0
             },
             market: {
                 lastSpotPrice: null,
@@ -1242,9 +1300,115 @@ export class RollingOptionsStrangleLiveService {
         return objState;
     }
 
+    private getOrCreateBoxState(pUserId: string): RollingOptionsPtDeEngineState["renko"] {
+        const vUserId = String(pUserId || "").trim();
+        let objState = this.boxStateByUserId.get(vUserId);
+        if (!objState) {
+            objState = { anchor: null, lastDir: 0, lastColor: "", lastPrice: null, historyKey: "", historySyncedAt: "", historyCandleCount: 0 };
+            this.boxStateByUserId.set(vUserId, objState);
+        }
+        return objState;
+    }
+
+    private updateBoxState(
+        pBoxState: RollingOptionsPtDeEngineState["renko"],
+        pPrice: number,
+        pPoints: number
+    ): Array<"R" | "G"> {
+        const vPrice = Number(pPrice);
+        const vStep = Math.max(1, Number(pPoints || 10));
+        if (!Number.isFinite(vPrice) || vPrice <= 0) return [];
+        pBoxState.lastPrice = vPrice;
+        if (pBoxState.anchor === null || !Number.isFinite(pBoxState.anchor)) {
+            pBoxState.anchor = Math.floor(vPrice / vStep) * vStep;
+            pBoxState.lastDir = 0;
+            pBoxState.lastColor = "";
+            return [];
+        }
+        const vLower = Number(pBoxState.anchor);
+        const vUpper = vLower + vStep;
+        if (vPrice > vUpper) {
+            pBoxState.anchor = vPrice - vStep;
+            pBoxState.lastDir = 1;
+            pBoxState.lastColor = "G";
+            return ["G"];
+        }
+        if (vPrice < vLower) {
+            pBoxState.anchor = vPrice;
+            pBoxState.lastDir = -1;
+            pBoxState.lastColor = "R";
+            return ["R"];
+        }
+        return [];
+    }
+
+    private async closeOnBoxColorChange(
+        pUserId: string,
+        pPreviousColor: string,
+        pNextColor: "R" | "G",
+        pUiState: Record<string, unknown>
+    ): Promise<number> {
+        if (!Boolean((pUiState as any).boxColorChangeCloseEnabled)
+            || (pPreviousColor !== "R" && pPreviousColor !== "G")
+            || pPreviousColor === pNextColor) return 0;
+        const arrOpen = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
+        const arrTargets = arrOpen.filter((objPosition) => {
+            const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+            return isOptionContract(objPosition.contractName)
+                && !isNegativePnlAdjustmentPosition(objPosition)
+                && !this.isReplacementOptionPosition(objPosition)
+                && String(objMeta.ruleColor || "").trim().toUpperCase() === pPreviousColor;
+        });
+        for (const objPosition of arrTargets) await this.closeImportedPositionOnDelta(pUserId, objPosition);
+        if (arrTargets.length > 0) {
+            const objClosedIds = new Set(arrTargets.map((objPosition) => String(objPosition.importId || "").trim()));
+            await this.persistImportedPositions(pUserId, arrOpen.filter((objPosition) => !objClosedIds.has(String(objPosition.importId || "").trim())));
+            await this.reEnterClosedOptionPositions(pUserId, arrTargets, `Box color changed from ${pPreviousColor} to ${pNextColor}`);
+        }
+        return arrTargets.length;
+    }
+
+    public async applyBoxMovingPrice(pUserId: string, pMovingPrice: number): Promise<{ status: "success" | "warning"; message: string }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!Boolean((objUiState as any).boxConditionEnabled)) return { status: "warning", message: "Enable Box Conditions before updating Moving Price." };
+        const vPrice = Number(pMovingPrice);
+        if (!Number.isFinite(vPrice) || vPrice <= 0) return { status: "warning", message: "Enter a valid Box Moving Price." };
+        const objBox = this.getOrCreateBoxState(pUserId);
+        const vPrevious = String(objBox.lastColor || "").toUpperCase();
+        const arrSignals = this.updateBoxState(objBox, vPrice, Number((objUiState as any).boxConditionPoints || 10));
+        const vSignal = arrSignals.at(-1);
+        const vClosed = vSignal ? await this.closeOnBoxColorChange(pUserId, vPrevious, vSignal, objUiState) : 0;
+        await this.syncRuntime(pUserId, objConfig, this.getOrCreateState(pUserId));
+        return { status: "success", message: vSignal ? `Box moved to ${vSignal}; closed ${vClosed} eligible leg(s).` : "Moving Price is between the Box anchors; no Box change." };
+    }
+
+    public async setManualBoxSignal(pUserId: string, pColor: "R" | "G"): Promise<{ status: "success" | "warning"; message: string }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!Boolean((objUiState as any).boxConditionEnabled)) return { status: "warning", message: "Enable Box Conditions before toggling the Box signal." };
+        const objBox = this.getOrCreateBoxState(pUserId);
+        const vPrevious = String(objBox.lastColor || "").toUpperCase();
+        const vPrice = Number(objBox.lastPrice);
+        if (!Number.isFinite(vPrice) || vPrice <= 0) return { status: "warning", message: "Waiting for a live Box From price." };
+        const vPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
+        objBox.lastColor = pColor;
+        objBox.lastDir = pColor === "G" ? 1 : -1;
+        objBox.anchor = pColor === "G" ? vPrice - vPoints : vPrice;
+        const vClosed = await this.closeOnBoxColorChange(pUserId, vPrevious, pColor, objUiState);
+        await this.syncRuntime(pUserId, objConfig, this.getOrCreateState(pUserId));
+        return { status: "success", message: `Box changed to ${pColor}; closed ${vClosed} eligible leg(s).` };
+    }
+
     public async hydrate(): Promise<void> {
         const arrRuntimeRows = await listRollingOptionsStrangleLiveRuntime();
         for (const objRuntime of arrRuntimeRows) {
+            const arrPendingReplacement = Array.isArray(objRuntime.state?.pendingReplacementPositions)
+                ? objRuntime.state.pendingReplacementPositions as RollingOptionsStrangleLiveImportedPositionRecord[]
+                : [];
+            if (arrPendingReplacement.length > 0) {
+                this.pendingReplacementByUserId.set(objRuntime.userId, arrPendingReplacement);
+            }
             if (!objRuntime.autoTraderEnabled || objRuntime.status !== "running") {
                 continue;
             }
@@ -1260,6 +1424,22 @@ export class RollingOptionsStrangleLiveService {
                 : null;
             objState.renko.lastDir = Number(objRuntime.state?.renkoLastDir || 0) as -1 | 0 | 1;
             objState.renko.lastColor = String(objRuntime.state?.renkoLastColor || "") as "" | "R" | "G";
+            objState.renko.lastPrice = Number.isFinite(Number(objRuntime.state?.renkoCalculationPrice))
+                ? Number(objRuntime.state?.renkoCalculationPrice)
+                : null;
+            objState.renko.historyKey = String(objRuntime.state?.renkoHistoryKey || "");
+            objState.renko.historySyncedAt = String(objRuntime.state?.renkoHistorySyncedAt || "");
+            objState.renko.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.renkoHistoryCandleCount || 0)));
+            objState.ema.enabled = Boolean(objRuntime.state?.emaEnabled);
+            objState.ema.source = normalizeEmaSource(objRuntime.state?.emaSource);
+            objState.ema.timeframe = normalizeEmaTimeframe(objRuntime.state?.emaTimeframe);
+            objState.ema.period = normalizeEmaPeriod(objRuntime.state?.emaPeriod);
+            objState.ema.trend = String(objRuntime.state?.emaTrend || "FLAT") as "UP" | "DOWN" | "FLAT";
+            objState.ema.value = Number.isFinite(Number(objRuntime.state?.emaValue)) ? Number(objRuntime.state?.emaValue) : null;
+            objState.ema.close = Number.isFinite(Number(objRuntime.state?.emaClose)) ? Number(objRuntime.state?.emaClose) : null;
+            objState.ema.candleCount = Math.max(0, Math.floor(Number(objRuntime.state?.emaCandleCount || 0)));
+            objState.ema.calculatedAt = String(objRuntime.state?.emaCalculatedAt || "");
+            objState.ema.error = String(objRuntime.state?.emaError || "");
             objState.market.lastSpotPrice = objRuntime.lastSpotPrice;
             objState.market.lastFuturesPrice = objRuntime.lastFuturesPrice;
             objState.market.lastSource = String(objRuntime.state?.marketSource || "public") === "simulated" ? "simulated" : "public";
@@ -1282,6 +1462,165 @@ export class RollingOptionsStrangleLiveService {
         const objConfig = this.buildRuleSetConfig(objUiState, 1);
         (objConfig as RollingOptionsPtDeConfig & { __uiState?: Record<string, unknown>; }).__uiState = objUiState;
         return objConfig;
+    }
+
+    private async updateStandaloneEmaIndicator(
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>
+    ): Promise<void> {
+        const bEnabled = Boolean((pUiState as any).emaEnabled);
+        const vSource = normalizeEmaSource((pUiState as any).emaSource);
+        const vTimeframe = normalizeEmaTimeframe((pUiState as any).emaTimeframe);
+        const vPeriod = normalizeEmaPeriod((pUiState as any).emaPeriod);
+        pState.ema.enabled = bEnabled;
+        pState.ema.source = vSource;
+        pState.ema.timeframe = vTimeframe;
+        pState.ema.period = vPeriod;
+        if (!bEnabled) {
+            pState.ema.value = null;
+            pState.ema.close = null;
+            pState.ema.trend = "FLAT";
+            pState.ema.candleCount = 0;
+            pState.ema.calculatedAt = "";
+            pState.ema.error = "";
+            return;
+        }
+
+        try {
+            let objEma: { value: number | null; close: number | null; candleCount: number; calculatedAt: string; };
+            if (vSource === "renko") {
+                const objHistory = await getHistoricalCandleCloses(
+                    pConfig.contractName,
+                    pConfig.renkoTimeframe || "1m",
+                    Math.max(700, vPeriod * 20)
+                );
+                const objBricks = buildRenkoBrickClosesFromPrices(objHistory.closes, pConfig.renkoStepPoints);
+                objEma = {
+                    value: calculateEmaFromCloses(objBricks.closes, vPeriod),
+                    close: objBricks.closes.at(-1) ?? null,
+                    candleCount: objBricks.closes.length,
+                    calculatedAt: objHistory.fetchedAt
+                };
+            } else {
+                objEma = await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
+            }
+            pState.ema.value = objEma.value;
+            pState.ema.close = objEma.close;
+            pState.ema.trend = objEma.value !== null && objEma.close !== null
+                ? (objEma.close > objEma.value ? "UP" : (objEma.close < objEma.value ? "DOWN" : "FLAT"))
+                : "FLAT";
+            pState.ema.candleCount = objEma.candleCount;
+            pState.ema.calculatedAt = objEma.calculatedAt;
+            pState.ema.error = objEma.value === null ? `Need at least ${vPeriod} EMA data points.` : "";
+        } catch (objError) {
+            pState.ema.trend = "FLAT";
+            pState.ema.error = objError instanceof Error ? objError.message : String(objError);
+            pState.ema.calculatedAt = new Date().toISOString();
+        }
+    }
+
+    private getRenkoHistoryKey(pConfig: RollingOptionsPtDeConfig): string {
+        return [
+            pConfig.contractName,
+            pConfig.renkoStepPoints,
+            pConfig.renkoTimeframe || "1m",
+            pConfig.renkoPriceSource,
+            pConfig.renkoManualPriceResetToken || 0
+        ].join("|");
+    }
+
+    private async syncRenkoFromHistoricalCandles(
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState
+    ): Promise<void> {
+        if (!pConfig.renkoEnabled) {
+            return;
+        }
+
+        const vHistoryKey = this.getRenkoHistoryKey(pConfig);
+        if (pState.renko.historyKey === vHistoryKey && pState.renko.anchor !== null) {
+            return;
+        }
+
+        const vManualAnchor = Number(pConfig.renkoManualPrice);
+        if (Number.isFinite(vManualAnchor) && vManualAnchor > 0) {
+            pState.renko.anchor = vManualAnchor;
+            pState.renko.lastDir = 0;
+            pState.renko.lastColor = "";
+            pState.renko.lastPrice = vManualAnchor;
+            pState.renko.historyKey = vHistoryKey;
+            pState.renko.historySyncedAt = new Date().toISOString();
+            pState.renko.historyCandleCount = 0;
+            return;
+        }
+
+        const objHistory = await getHistoricalCandleCloses(
+            pConfig.contractName,
+            pConfig.renkoTimeframe || "1m",
+            700
+        );
+        if (objHistory.closes.length <= 0) {
+            return;
+        }
+
+        pState.renko.anchor = null;
+        pState.renko.lastDir = 0;
+        pState.renko.lastColor = "";
+        pState.renko.historyKey = vHistoryKey;
+        pState.renko.historySyncedAt = objHistory.fetchedAt;
+        pState.renko.historyCandleCount = objHistory.candleCount;
+
+        for (const vClose of objHistory.closes) {
+            updateRenkoState(pState, {
+                symbol: pConfig.symbol,
+                contractName: pConfig.contractName,
+                spotPrice: vClose,
+                futuresPrice: vClose,
+                bestBidPrice: vClose,
+                bestAskPrice: vClose,
+                priceSource: "public",
+                ts: objHistory.fetchedAt
+            }, pConfig);
+        }
+    }
+
+    private async handleEmaSignalCondition(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>
+    ): Promise<void> {
+        if (!Boolean((pUiState as any).emaSignalEnabled) || !pState.ema.enabled || pState.ema.error) {
+            return;
+        }
+
+        const vTrend = pState.ema.trend;
+        if ((vTrend !== "UP" && vTrend !== "DOWN") || pState.ema.signalTrend === vTrend) {
+            return;
+        }
+
+        pState.ema.signalTrend = vTrend;
+        const vColorCode: "R" | "G" = vTrend === "UP" ? "G" : "R";
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "EMA Signal Detected",
+            message: `EMA ${vTrend} condition triggered ${vColorCode === "G" ? "GREEN" : "RED"} live strategy flow.`,
+            payload: {
+                symbol: pConfig.symbol,
+                emaTrend: vTrend,
+                emaTimeframe: pState.ema.timeframe,
+                emaPeriod: pState.ema.period,
+                emaValue: pState.ema.value,
+                emaClose: pState.ema.close,
+                reason: "ema_signal_condition"
+            }
+        });
+
+        const arrPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
+        await this.handleRenkoOptionEntry(pUserId, pConfig, arrPositions, vColorCode);
     }
 
     private async getMarketSnapshot(pConfig: RollingOptionsPtDeConfig): Promise<RollingOptionsPtDeMarketSnapshot> {
@@ -1766,21 +2105,51 @@ export class RollingOptionsStrangleLiveService {
     public async reEnterClosedOptionPositions(
         pUserId: string,
         pClosedPositions: RollingOptionsStrangleLiveImportedPositionRecord[],
-        pReason: string
+        pReason: string,
+        pReleasePending = false
     ): Promise<RollingOptionsStrangleLiveImportedPositionRecord[]> {
         const arrClosedOptions = (Array.isArray(pClosedPositions) ? pClosedPositions : [])
             .filter((objPosition) => isOptionContract(objPosition?.contractName || ""))
-            .filter((objPosition) => !isNegativePnlAdjustmentPosition(objPosition));
+            .filter((objPosition) => !isNegativePnlAdjustmentPosition(objPosition))
+            .filter((objPosition) => !this.isReplacementOptionPosition(objPosition));
         if (arrClosedOptions.length <= 0 || Boolean(this.getOrCreateState(pUserId).positionMismatchDetected)) {
             return [];
         }
 
         const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
         const objUiState = getMergedLiveUiState(objProfile);
+        if (!pReleasePending && Boolean((objUiState as any).replacementWaitForRenkoPointEnabled)) {
+            const arrExistingPending = this.pendingReplacementByUserId.get(pUserId) || [];
+            const objPendingById = new Map<string, RollingOptionsStrangleLiveImportedPositionRecord>();
+            [...arrExistingPending, ...arrClosedOptions].forEach((objPosition) => {
+                const vKey = String(objPosition.importId || objPosition.contractName || "").trim();
+                if (vKey) {
+                    objPendingById.set(vKey, objPosition);
+                }
+            });
+            const arrNextPending = Array.from(objPendingById.values());
+            this.pendingReplacementByUserId.set(pUserId, arrNextPending);
+            const objConfig = await this.loadConfig(pUserId);
+            await this.syncRuntime(pUserId, objConfig, this.getOrCreateState(pUserId));
+            await logRollingOptionsStrangleLiveEvent({
+                userId: pUserId,
+                eventType: "reentry_skipped",
+                severity: "info",
+                title: "Replacement Option Pending",
+                message: `Queued ${arrClosedOptions.length} replacement leg(s) until the next Renko point.`,
+                payload: {
+                    qty: arrClosedOptions.length,
+                    reason: "replacement_waiting_for_new_renko_point"
+                }
+            });
+            return [];
+        }
         const objConfig1 = this.buildRuleSetConfig(objUiState, 1);
         const objConfig2 = this.buildRuleSetConfig(objUiState, 2);
         const bFuturesEnabled = Boolean((objConfig1 as RollingOptionsPtDeConfig & { futuresEnabled?: boolean; }).futuresEnabled ?? true);
         const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
+        const objState = this.getOrCreateState(pUserId);
+        await this.updateStandaloneEmaIndicator(objConfig1, objState, objUiState);
         const arrCreatedPositions: RollingOptionsStrangleLiveImportedPositionRecord[] = [];
         const objSnapshot = await getLiveMarketSnapshot(objConfig1);
         const vLotSize = getLotSizeForSymbol(objConfig1.symbol);
@@ -1788,10 +2157,33 @@ export class RollingOptionsStrangleLiveService {
 
         for (const objClosedOption of arrClosedOptions) {
             const vRuleSet: 1 | 2 = Number(objClosedOption.metadata?.ruleSet) === 2 ? 2 : 1;
+            const objReplacementConfig = vRuleSet === 2 ? objConfig2 : objConfig1;
+            if (!Boolean(objReplacementConfig.reEnter)) {
+                continue;
+            }
             const vStoredRuleColor = String(objClosedOption.metadata?.ruleColor || "").trim().toUpperCase();
-            const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled
+            const bUseRenkoColor = Boolean((objUiState as any).replacementUseRenkoColorEnabled ?? true);
+            const vActiveRuleColor: "R" | "G" = objConfig1.renkoEnabled && bUseRenkoColor
                 ? (vCurrentRenkoColor === "G" ? "G" : "R")
                 : (vStoredRuleColor === "G" ? "G" : "R");
+            const bUseEmaTrend = Boolean((objUiState as any).replacementUseEmaTrendEnabled ?? true)
+                && Boolean((objUiState as any).emaRenkoConfirmEnabled);
+            const vExpectedEmaTrend = vActiveRuleColor === "G" ? "UP" : "DOWN";
+            if (bUseEmaTrend && (objState.ema.trend !== vExpectedEmaTrend || vCurrentRenkoColor !== vActiveRuleColor)) {
+                await logRollingOptionsStrangleLiveEvent({
+                    userId: pUserId,
+                    eventType: "reentry_skipped",
+                    severity: "info",
+                    title: "Replacement Option Skipped",
+                    message: `Skipped replacement because EMA and Renko do not confirm ${vActiveRuleColor === "G" ? "GREEN" : "RED"}.`,
+                    payload: {
+                        reason: "ema_renko_confirmation_mismatch",
+                        emaTrend: objState.ema.trend,
+                        renkoColor: vCurrentRenkoColor || "NONE"
+                    }
+                });
+                continue;
+            }
             const vOptionSide: "CE" | "PE" = String(objClosedOption.contractName || "").trim().toUpperCase().startsWith("P-") ? "PE" : "CE";
             const arrCurrentPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
             const bSameLegAlreadyOpen = arrCurrentPositions.some((objRow) => {
@@ -1800,29 +2192,36 @@ export class RollingOptionsStrangleLiveService {
                     && Number(objRow.metadata?.ruleSet) === vRuleSet
                     && (String(objRow.contractName || "").trim().toUpperCase().startsWith("P-") ? "PE" : "CE") === vOptionSide;
             });
-            if (bSameLegAlreadyOpen) {
+            if (bSameLegAlreadyOpen && Boolean((objUiState as any).replacementBlockSameLegEnabled ?? true)) {
                 continue;
             }
 
-            // Use Action 3 settings for replacement legs
-            const vReEntryQty = Math.max(0, Math.floor(normalizeLiveNumber((objUiState as any).negativePnlHedgeQty, 1)));
+            const objReplacementRuleValues = this.getRuleValues(objReplacementConfig, vActiveRuleColor);
+            const vConfiguredReplacementQty = vRuleSet === 2
+                ? Number(vActiveRuleColor === "G"
+                    ? (objUiState as any).greenOptQty2
+                    : (objUiState as any).redOptQty2)
+                : Number(vActiveRuleColor === "G"
+                    ? objReplacementConfig.greenOptionQty
+                    : objReplacementConfig.redOptionQty);
+            const vReEntryQty = Number.isFinite(vConfiguredReplacementQty)
+                ? Math.max(0, Math.floor(vConfiguredReplacementQty))
+                : 0;
             if (!(vReEntryQty > 0)) {
                 continue;
             }
 
-            const vAction: "buy" | "sell" = String((objUiState as any).negativePnlAction3 || "buy").trim().toLowerCase() === "sell"
+            const vAction: "buy" | "sell" = String(objReplacementConfig.action || "buy").trim().toLowerCase() === "sell"
                 ? "sell"
                 : "buy";
-            const vTargetDelta = Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlHedgeDelta, 0.53));
-            const vExpiryMode = String((objUiState as any).negativePnlHedgeExpiryMode || "1").trim() || "1";
-            const vExpiryDate = String(objUiState.expiryDate1 || "").trim();
+            const vTargetDelta = Math.max(0, Number(objReplacementRuleValues.reDelta || 0.53));
+            const vExpiryMode = String(objReplacementConfig.expiryMode || "1").trim() || "1";
+            const vExpiryDate = String(objReplacementConfig.expiryDate || "").trim();
 
             const objQuoteUiState = {
                 ...objUiState,
-                expiryMode1: vExpiryMode === "source" ? String((objClosedOption.metadata as any)?.expiryMode || objUiState.expiryMode1 || "1") : vExpiryMode,
-                expiryDate1: vExpiryMode === "source"
-                    ? (vExpiryDate || String((objClosedOption.metadata as any)?.expiryDate || objUiState.expiryDate1 || ""))
-                    : vExpiryDate
+                expiryMode1: vExpiryMode,
+                expiryDate1: vExpiryDate
             };
             const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vOptionSide, vTargetDelta, RE_DELTA_TOLERANCE);
             if (!objQuote.contractSymbol) {
@@ -1830,11 +2229,33 @@ export class RollingOptionsStrangleLiveService {
             }
             const vEntryPrice = this.getOptionEntryPriceForAction(objQuote, vAction);
             const vEntryDelta = Number.isFinite(Number(objQuote.entryDelta)) ? Math.abs(Number(objQuote.entryDelta)) : vTargetDelta;
-            const vConfiguredTpPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlTpPct, 15)));
-            const vConfiguredSlPct = Math.min(100, Math.max(0, normalizeLiveNumber((objUiState as any).negativePnlSlPct, 85)));
-            const objDeltaTargets = getLiveOptionDeltaTargetsFromPct(vEntryDelta, vAction.toUpperCase(), vConfiguredTpPct, vConfiguredSlPct);
+            const objDeltaTargets = this.computeOptionThresholds(
+                objReplacementRuleValues,
+                vAction.toUpperCase() as "BUY" | "SELL",
+                vEntryDelta
+            );
             const vTakeProfitDelta = objDeltaTargets.takeProfitDelta;
             const vStopLossDelta = objDeltaTargets.stopLossDelta;
+            const bWouldTriggerImmediately = shouldTriggerImportedOption(
+                vAction.toUpperCase(),
+                vEntryDelta,
+                vTakeProfitDelta,
+                vStopLossDelta
+            ).shouldAct;
+            if (bWouldTriggerImmediately && Boolean((objUiState as any).replacementImmediateTriggerGuardEnabled ?? true)) {
+                await logRollingOptionsStrangleLiveEvent({
+                    userId: pUserId,
+                    eventType: "reentry_skipped",
+                    severity: "warning",
+                    title: "Replacement Option Skipped",
+                    message: `Skipped replacement because entry delta ${vEntryDelta.toFixed(4)} already violates its TP/SL settings.`,
+                    payload: {
+                        symbol: objConfig1.symbol,
+                        reason: "replacement_option_immediate_trigger_skip"
+                    }
+                });
+                continue;
+            }
 
             // Place the actual order
             const { client } = await this.getDeltaClient(pUserId);
@@ -1865,7 +2286,7 @@ export class RollingOptionsStrangleLiveService {
                     stopLossDelta: vStopLossDelta,
                     reEntryDelta: vTargetDelta,
                     reEnter: false,
-                    ruleColor: vOptionSide === "PE" ? "R" : "G",
+                    ruleColor: vActiveRuleColor,
                     ruleSet: vRuleSet,
                     openedReason: `${pReason} replacement option`,
                     productMarkPrice: objQuote.markPrice,
@@ -1889,7 +2310,7 @@ export class RollingOptionsStrangleLiveService {
                 eventType: "reentry_opened",
                 severity: "success",
                 title: "Replacement Option Opened",
-                message: `Opened replacement live option leg from the server runner using Action 3 settings.`,
+                message: `Opened replacement live option leg using Action ${vRuleSet} settings.`,
                 payload: {
                     symbol: objConfig1.symbol,
                     qty: vReEntryQty,
@@ -1914,6 +2335,11 @@ export class RollingOptionsStrangleLiveService {
     }
 
     private async closeOrphanReplacementOptionPositions(pUserId: string): Promise<RollingOptionsStrangleLiveImportedPositionRecord[]> {
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = getMergedLiveUiState(objProfile);
+        if (!Boolean((objUiState as any).replacementCloseOrphanEnabled ?? true)) {
+            return [];
+        }
         const arrOpenPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
         const arrReplacementOptions = arrOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
         if (arrReplacementOptions.length <= 0 || arrOpenPositions.some((objPosition) => !this.isReplacementOptionPosition(objPosition))) {
@@ -1936,6 +2362,347 @@ export class RollingOptionsStrangleLiveService {
             }
         });
         return arrReplacementOptions;
+    }
+
+    private async closeReplacementWhenOriginalLegsPositive(
+        pUserId: string,
+        pOpenPositions: EnrichedImportedPosition[]
+    ): Promise<EnrichedImportedPosition[]> {
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = getMergedLiveUiState(objProfile);
+        if (!Boolean((objUiState as any).replacementCloseWhenOriginalPositiveEnabled ?? true)) {
+            return [];
+        }
+
+        const arrReplacementOptions = pOpenPositions.filter((objPosition) => this.isReplacementOptionPosition(objPosition));
+        const arrClosed: EnrichedImportedPosition[] = [];
+        for (const objReplacement of arrReplacementOptions) {
+            const vRuleSet: 1 | 2 = Number(objReplacement.metadata?.ruleSet) === 2 ? 2 : 1;
+            const arrOriginalLegs = pOpenPositions.filter((objPosition) => {
+                const vPositionRuleSet: 1 | 2 = Number(objPosition.metadata?.ruleSet) === 2 ? 2 : 1;
+                return objPosition.isOption
+                    && !this.isReplacementOptionPosition(objPosition)
+                    && !isNegativePnlAdjustmentPosition(objPosition)
+                    && vPositionRuleSet === vRuleSet;
+            });
+            const bAllOriginalsPositive = arrOriginalLegs.length > 0 && arrOriginalLegs.every((objPosition) => {
+                const vPnl = Number(objPosition.pnl);
+                return Number.isFinite(vPnl) && vPnl >= 0;
+            });
+            if (!bAllOriginalsPositive) {
+                continue;
+            }
+            await this.closeImportedPositionOnDelta(pUserId, objReplacement);
+            arrClosed.push(objReplacement);
+        }
+        if (arrClosed.length <= 0) {
+            return [];
+        }
+
+        const objClosedIds = new Set(arrClosed.map((objPosition) => String(objPosition.importId || "").trim()));
+        const arrRemaining = pOpenPositions.filter((objPosition) => !objClosedIds.has(String(objPosition.importId || "").trim()));
+        await this.persistImportedPositions(pUserId, arrRemaining);
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "option_closed",
+            severity: "info",
+            title: "Replacement Option Closed",
+            message: `Closed ${arrClosed.length} replacement live option leg${arrClosed.length === 1 ? "" : "s"} because all original legs in the matching rule set are positive.`,
+            payload: {
+                qty: arrClosed.length,
+                reason: "replacement_original_legs_positive"
+            }
+        });
+        return arrClosed;
+    }
+
+    private async closeReplacementOnEmaMismatch(
+        pUserId: string,
+        pOpenPositions: EnrichedImportedPosition[]
+    ): Promise<EnrichedImportedPosition[]> {
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = getMergedLiveUiState(objProfile);
+        if (!Boolean((objUiState as any).replacementCloseEmaMismatchEnabled)) {
+            return [];
+        }
+        const vEmaTrend = String(this.getOrCreateState(pUserId).ema.trend || "FLAT").toUpperCase();
+        if (vEmaTrend !== "UP" && vEmaTrend !== "DOWN") {
+            return [];
+        }
+        const arrTargets = pOpenPositions.filter((objPosition) => {
+            if (!this.isReplacementOptionPosition(objPosition)) {
+                return false;
+            }
+            const vRuleColor = String(objPosition.metadata?.ruleColor || "").trim().toUpperCase();
+            return (vRuleColor === "G" && vEmaTrend === "DOWN") || (vRuleColor === "R" && vEmaTrend === "UP");
+        });
+        for (const objPosition of arrTargets) {
+            await this.closeImportedPositionOnDelta(pUserId, objPosition);
+        }
+        if (arrTargets.length <= 0) {
+            return [];
+        }
+        const objClosedIds = new Set(arrTargets.map((objPosition) => String(objPosition.importId || "").trim()));
+        await this.persistImportedPositions(pUserId, pOpenPositions.filter((objPosition) => {
+            return !objClosedIds.has(String(objPosition.importId || "").trim());
+        }));
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "option_closed",
+            severity: "info",
+            title: "Replacement Option Closed",
+            message: `Closed ${arrTargets.length} replacement live option leg${arrTargets.length === 1 ? "" : "s"} because EMA trend is ${vEmaTrend}.`,
+            payload: {
+                qty: arrTargets.length,
+                reason: "replacement_ema_mismatch",
+                emaTrend: vEmaTrend
+            }
+        });
+        return arrTargets;
+    }
+
+    private async managePositivePnlSupports(
+        pUserId: string,
+        pOpenPositions: EnrichedImportedPosition[],
+        pUiState: Record<string, unknown>
+    ): Promise<EnrichedImportedPosition[]> {
+        const isSupport = (objPosition: RollingOptionsStrangleLiveImportedPositionRecord): boolean => {
+            return Boolean((objPosition.metadata as any)?.positivePnlSupport || objPosition.metadata?.negativePnlAdjustment);
+        };
+        let arrCurrent = [...pOpenPositions];
+        let arrSupports = arrCurrent.filter((objPosition) => objPosition.isOption && isSupport(objPosition));
+        const vConfiguredExpiryDate = String((pUiState as any).positivePnlExpiryDate || "").trim();
+        const vCurrentRenkoColor = String(this.getOrCreateState(pUserId).renko.lastColor || "").trim().toUpperCase();
+        const arrPolicyCloseSupports = arrSupports.filter((objSupport) => {
+            const vSupportExpiry = String(
+                (objSupport.metadata as any)?.resolvedExpiryDate
+                || (objSupport.metadata as any)?.requestedExpiryDate
+                || ""
+            ).trim();
+            const bExpiryChanged = /^\d{4}-\d{2}-\d{2}$/.test(vConfiguredExpiryDate)
+                && Boolean(vSupportExpiry)
+                && vSupportExpiry !== vConfiguredExpiryDate;
+            const vSupportColor = getOptionSideFromContractName(objSupport.contractName) === "CE" ? "G" : "R";
+            const bAdverseRenko = Boolean((pUiState as any).positivePnlAdverseRenkoCloseEnabled)
+                && (vCurrentRenkoColor === "G" || vCurrentRenkoColor === "R")
+                && vSupportColor !== vCurrentRenkoColor;
+            return bExpiryChanged || bAdverseRenko;
+        });
+        for (const objSupport of arrPolicyCloseSupports) {
+            await this.closeImportedPositionOnDelta(pUserId, objSupport);
+        }
+        if (arrPolicyCloseSupports.length > 0) {
+            const objClosedIds = new Set(arrPolicyCloseSupports.map((objPosition) => String(objPosition.importId || "").trim()));
+            arrCurrent = arrCurrent.filter((objPosition) => !objClosedIds.has(String(objPosition.importId || "").trim()));
+            arrSupports = arrSupports.filter((objPosition) => !objClosedIds.has(String(objPosition.importId || "").trim()));
+            await logRollingOptionsStrangleLiveEvent({
+                userId: pUserId,
+                eventType: "option_closed",
+                severity: "info",
+                title: "Support Option Closed",
+                message: `Closed ${arrPolicyCloseSupports.length} support leg(s) because expiry or Renko no longer matches.`,
+                payload: {
+                    qty: arrPolicyCloseSupports.length,
+                    reason: "support_expiry_or_adverse_renko"
+                }
+            });
+        }
+        if (Boolean((pUiState as any).closeSupportLegOnSourceClose)) {
+            const objOpenIds = new Set(arrCurrent.map((objPosition) => String(objPosition.importId || "").trim()));
+            const arrOrphanSupports = arrSupports.filter((objSupport) => {
+                const vSourceId = String((objSupport.metadata as any)?.sourceImportId || "").trim();
+                return Boolean(vSourceId) && !objOpenIds.has(vSourceId);
+            });
+            for (const objSupport of arrOrphanSupports) {
+                await this.closeImportedPositionOnDelta(pUserId, objSupport);
+            }
+            if (arrOrphanSupports.length > 0) {
+                const objClosedIds = new Set(arrOrphanSupports.map((objPosition) => String(objPosition.importId || "").trim()));
+                arrCurrent = arrCurrent.filter((objPosition) => !objClosedIds.has(String(objPosition.importId || "").trim()));
+                await logRollingOptionsStrangleLiveEvent({
+                    userId: pUserId,
+                    eventType: "option_closed",
+                    severity: "info",
+                    title: "Support Option Closed",
+                    message: `Closed ${arrOrphanSupports.length} support leg(s) because the linked source leg is closed.`,
+                    payload: { qty: arrOrphanSupports.length, reason: "support_source_closed" }
+                });
+            }
+        }
+
+        if (!Boolean((pUiState as any).positivePnlSupportEnabled ?? true)) {
+            await this.persistImportedPositions(pUserId, arrCurrent);
+            return arrCurrent;
+        }
+        const vMaxLegs = Math.max(1, Math.floor(normalizeLiveNumber((pUiState as any).positivePnlMaxLegs, 1)));
+        const arrActiveSupports = arrCurrent.filter((objPosition) => objPosition.isOption && isSupport(objPosition));
+        if (arrActiveSupports.length >= vMaxLegs) {
+            await this.persistImportedPositions(pUserId, arrCurrent);
+            return arrCurrent;
+        }
+
+        const vTriggerAmount = Math.min(0, normalizeLiveNumber((pUiState as any).positivePnlTriggerAmount, 0));
+        const objSupportedSourceIds = new Set(arrActiveSupports
+            .map((objPosition) => String((objPosition.metadata as any)?.sourceImportId || "").trim())
+            .filter(Boolean));
+        const objSource = arrCurrent
+            .filter((objPosition) => objPosition.isOption
+                && !isSupport(objPosition)
+                && String(objPosition.side || "").trim().toUpperCase() === "SELL"
+                && Number.isFinite(Number(objPosition.pnl))
+                && Number(objPosition.pnl) <= vTriggerAmount
+                && !objSupportedSourceIds.has(String(objPosition.importId || "").trim()))
+            .sort((objLeft, objRight) => Number(objLeft.pnl || 0) - Number(objRight.pnl || 0))[0];
+        if (!objSource) {
+            await this.persistImportedPositions(pUserId, arrCurrent);
+            return arrCurrent;
+        }
+
+        const vAction: "buy" | "sell" = String((pUiState as any).positivePnlSupportAction || "buy").trim().toLowerCase() === "sell"
+            ? "sell"
+            : "buy";
+        const vSourceSide = getOptionSideFromContractName(objSource.contractName);
+        if (!vSourceSide) {
+            return arrCurrent;
+        }
+        const vSupportSide: "CE" | "PE" = vAction === "sell"
+            ? (vSourceSide === "CE" ? "PE" : "CE")
+            : vSourceSide;
+        const vQty = Math.max(0, Math.floor(normalizeLiveNumber((pUiState as any).positivePnlSupportQty, 10)));
+        if (!(vQty > 0)) {
+            return arrCurrent;
+        }
+        const vTargetDelta = Math.max(0, normalizeLiveNumber((pUiState as any).positivePnlTargetDelta, 0.53));
+        const vExpiryMode = String((pUiState as any).positivePnlExpiryMode || "1").trim() || "1";
+        const objQuoteUiState = {
+            ...pUiState,
+            expiryMode1: vExpiryMode === "source"
+                ? String((objSource.metadata as any)?.expiryMode || pUiState.expiryMode1 || "1")
+                : vExpiryMode,
+            expiryDate1: vExpiryMode === "source"
+                ? String((objSource.metadata as any)?.resolvedExpiryDate || (objSource.metadata as any)?.requestedExpiryDate || pUiState.expiryDate1 || "")
+                : (vConfiguredExpiryDate || String(pUiState.expiryDate1 || ""))
+        };
+        const objQuote = await getLiveOrFallbackOptionQuote(objQuoteUiState, vSupportSide, vTargetDelta, RE_DELTA_TOLERANCE);
+        if (!objQuote.contractSymbol) {
+            return arrCurrent;
+        }
+        const vEntryDelta = Math.abs(Number(objQuote.entryDelta || vTargetDelta));
+        const vTpPct = Math.min(100, Math.max(0, normalizeLiveNumber((pUiState as any).positivePnlTpPct, 15)));
+        const vSlPct = Math.min(100, Math.max(0, normalizeLiveNumber((pUiState as any).positivePnlSlPct, 85)));
+        const objTargets = getLiveOptionDeltaTargetsFromPct(vEntryDelta, vAction.toUpperCase(), vTpPct, vSlPct);
+        if (shouldTriggerImportedOption(
+            vAction.toUpperCase(),
+            vEntryDelta,
+            objTargets.takeProfitDelta,
+            objTargets.stopLossDelta
+        ).shouldAct) {
+            await logRollingOptionsStrangleLiveEvent({
+                userId: pUserId,
+                eventType: "reentry_skipped",
+                severity: "warning",
+                title: "Support Option Skipped",
+                message: `Skipped live support because entry delta ${vEntryDelta.toFixed(4)} already violates its TP/SL settings.`,
+                payload: {
+                    reason: "support_option_immediate_trigger_skip",
+                    sourceImportId: objSource.importId
+                }
+            });
+            return arrCurrent;
+        }
+        const { client } = await this.getDeltaClient(pUserId);
+        await client.apis.Orders.placeOrder({
+            order: {
+                product_symbol: objQuote.contractSymbol,
+                size: vQty,
+                side: vAction,
+                order_type: "market_order",
+                time_in_force: "gtc",
+                post_only: false,
+                reduce_only: false
+            }
+        });
+
+        const objSupport = {
+            ...createPositionBase(pUserId),
+            contractName: objQuote.contractSymbol,
+            side: vAction.toUpperCase() as "BUY" | "SELL",
+            qty: vQty,
+            entryPrice: this.getOptionEntryPriceForAction(objQuote, vAction),
+            markPrice: objQuote.markPrice,
+            entryDelta: vEntryDelta,
+            currentDelta: vEntryDelta,
+            pnl: 0,
+            isOption: true,
+            metadata: {
+                ...(objQuote.metadata || {}),
+                positivePnlSupport: true,
+                sourceImportId: objSource.importId,
+                ruleSet: Number(objSource.metadata?.ruleSet) === 2 ? 2 : 1,
+                ruleColor: String(objSource.metadata?.ruleColor || "R"),
+                takeProfitDelta: objTargets.takeProfitDelta,
+                stopLossDelta: objTargets.stopLossDelta,
+                configuredTakeProfitPct: vTpPct,
+                configuredStopLossPct: vSlPct,
+                positivePnlTrailSlEnabled: Boolean((pUiState as any).positivePnlTrailSlEnabled),
+                positivePnlExpiryDate: vConfiguredExpiryDate,
+                trailBestDelta: vEntryDelta,
+                trailSlGap: getDeltaTrailGap(vEntryDelta, objTargets.stopLossDelta),
+                openedReason: "Positive PnL support option"
+            }
+        } as EnrichedImportedPosition;
+        arrCurrent.push(objSupport);
+        await this.persistImportedPositions(pUserId, arrCurrent);
+        await logRollingOptionsStrangleLiveEvent({
+            userId: pUserId,
+            eventType: "option_opened",
+            severity: "success",
+            title: "Support Option Opened",
+            message: "Opened a live Positive PnL support leg for the worst qualifying source option.",
+            payload: {
+                qty: vQty,
+                sourceImportId: objSource.importId,
+                reason: "positive_pnl_support_opened"
+            }
+        });
+        return arrCurrent;
+    }
+
+    public async openPositivePnlSupportManually(pUserId: string): Promise<{
+        status: "success" | "warning";
+        message: string;
+        openedCount: number;
+    }> {
+        const objUiState = await this.loadUiState(pUserId);
+        if (!Boolean((objUiState as any).positivePnlSupportEnabled)) {
+            return {
+                status: "warning",
+                message: "Enable Positive PnL support before placing a live support order.",
+                openedCount: 0
+            };
+        }
+        const objConfig = this.buildRuleSetConfig(objUiState, 1);
+        const arrTracked = await this.reconcileUserPositions(pUserId, objConfig.symbol);
+        if (Boolean(this.getOrCreateState(pUserId).positionMismatchDetected)) {
+            return {
+                status: "warning",
+                message: "Support order blocked because live position reconciliation found a mismatch.",
+                openedCount: 0
+            };
+        }
+        const objSnapshot = await this.getMarketSnapshot(objConfig);
+        const arrBefore = await this.refreshImportedPositions(objConfig, objSnapshot, arrTracked);
+        const vBeforeCount = arrBefore.filter((objPosition) => Boolean((objPosition.metadata as any)?.positivePnlSupport)).length;
+        const arrAfter = await this.managePositivePnlSupports(pUserId, arrBefore, objUiState);
+        const vAfterCount = arrAfter.filter((objPosition) => Boolean((objPosition.metadata as any)?.positivePnlSupport)).length;
+        const vOpenedCount = Math.max(0, vAfterCount - vBeforeCount);
+        return {
+            status: vOpenedCount > 0 ? "success" : "warning",
+            message: vOpenedCount > 0
+                ? `Opened ${vOpenedCount} live Positive PnL support leg${vOpenedCount === 1 ? "" : "s"}.`
+                : "No support leg qualified. Check source PnL, quantity, Max Legs, and current positions.",
+            openedCount: vOpenedCount
+        };
     }
 
     private async handleOptionTrigger(
@@ -2022,6 +2789,7 @@ export class RollingOptionsStrangleLiveService {
         const arrImported = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
         const arrWatchedSymbols = getLiveTickerSymbolsForOwner(this.getTickerOwnerId(pUserId));
         const objFeedStats = getLiveTickerFeedStats();
+        const objBoxState = this.getOrCreateBoxState(pUserId);
         const vLastSignal = pOverrides.lastSignal
             || (pState.renko.lastColor === "R" ? "RED" : (pState.renko.lastColor === "G" ? "GREEN" : "IDLE"));
         return {
@@ -2047,6 +2815,31 @@ export class RollingOptionsStrangleLiveService {
                 renkoAnchor: pState.renko.anchor,
                 renkoLastDir: pState.renko.lastDir,
                 renkoLastColor: pState.renko.lastColor,
+                renkoCalculationPrice: pState.renko.lastPrice ?? null,
+                renkoTimeframe: pConfig.renkoTimeframe || "1m",
+                renkoHistoryKey: pState.renko.historyKey || "",
+                renkoHistorySyncedAt: pState.renko.historySyncedAt || "",
+                renkoHistoryCandleCount: pState.renko.historyCandleCount || 0,
+                boxLowerAnchor: objBoxState.anchor,
+                boxUpperAnchor: Number.isFinite(Number(objBoxState.anchor))
+                    ? Number(objBoxState.anchor) + Math.max(1, Number(((pConfig as any).__uiState || {}).boxConditionPoints || 10))
+                    : null,
+                boxLastDir: objBoxState.lastDir,
+                boxLastColor: objBoxState.lastColor,
+                boxCalculationPrice: objBoxState.lastPrice ?? null,
+                boxConditionEnabled: Boolean(((pConfig as any).__uiState || {}).boxConditionEnabled),
+                emaEnabled: pState.ema.enabled,
+                emaSource: pState.ema.source,
+                emaSignalEnabled: Boolean(((pConfig as any).__uiState || {}).emaSignalEnabled),
+                emaTimeframe: pState.ema.timeframe,
+                emaPeriod: pState.ema.period,
+                emaTrend: pState.ema.trend,
+                emaValue: pState.ema.value,
+                emaClose: pState.ema.close,
+                emaCandleCount: pState.ema.candleCount,
+                emaCalculatedAt: pState.ema.calculatedAt,
+                emaError: pState.ema.error,
+                pendingReplacementPositions: this.pendingReplacementByUserId.get(pUserId) || [],
                 marketSource: pState.market.lastSource,
                 marketDataOwnerId: this.getTickerOwnerId(pUserId),
                 marketDataConnectionState: objFeedStats.connectionState,
@@ -2362,6 +3155,10 @@ export class RollingOptionsStrangleLiveService {
             objState.market.lastSpotPrice = objSnapshot.spotPrice;
             objState.market.lastFuturesPrice = objSnapshot.futuresPrice;
             objState.market.lastSource = objSnapshot.priceSource;
+            await this.updateStandaloneEmaIndicator(objConfig, objState, objUiState);
+            if (objState.running) {
+                await this.handleEmaSignalCondition(pUserId, objConfig, objState, objUiState);
+            }
             const objPayoffSlTrigger = await this.handlePayoffSlCheckpointTrigger(
                 pUserId,
                 objConfig,
@@ -2390,6 +3187,21 @@ export class RollingOptionsStrangleLiveService {
                 };
             }
             const vMismatchSignal = bMismatchDetected ? "POSITION_MISMATCH" : "";
+            if (Boolean((objUiState as any).boxConditionEnabled)) {
+                const objBoxState = this.getOrCreateBoxState(pUserId);
+                const vPreviousBoxColor = String(objBoxState.lastColor || "").trim().toUpperCase();
+                const vBoxPrice = objConfig.renkoPriceSource === "spot_price"
+                    ? objSnapshot.spotPrice
+                    : (objConfig.renkoPriceSource === "best_bid"
+                        ? objSnapshot.bestBidPrice
+                        : (objConfig.renkoPriceSource === "best_ask" ? objSnapshot.bestAskPrice : objSnapshot.futuresPrice));
+                const arrBoxSignals = this.updateBoxState(objBoxState, vBoxPrice, Number((objUiState as any).boxConditionPoints || 10));
+                const vBoxSignal = arrBoxSignals.at(-1);
+                if (vBoxSignal) {
+                    await this.closeOnBoxColorChange(pUserId, vPreviousBoxColor, vBoxSignal, objUiState);
+                }
+            }
+            await this.syncRenkoFromHistoricalCandles(objConfig, objState);
             let vPreviousRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase() === "G" ? "G" : "R";
             if (String(objState.renko.lastColor || "").trim().toUpperCase() !== "G" && String(objState.renko.lastColor || "").trim().toUpperCase() !== "R") {
                 vPreviousRenkoColor = "";
@@ -2399,6 +3211,21 @@ export class RollingOptionsStrangleLiveService {
                 : [];
 
             if (!bMismatchDetected && arrRenkoSignals.length > 0) {
+                const arrPendingReplacement = this.pendingReplacementByUserId.get(pUserId) || [];
+                if (arrPendingReplacement.length > 0) {
+                    this.pendingReplacementByUserId.delete(pUserId);
+                    try {
+                        await this.reEnterClosedOptionPositions(
+                            pUserId,
+                            arrPendingReplacement,
+                            "New Renko point",
+                            true
+                        );
+                    } catch (objError) {
+                        this.pendingReplacementByUserId.set(pUserId, arrPendingReplacement);
+                        throw objError;
+                    }
+                }
                 const vLastRenkoSignal = arrRenkoSignals.at(-1) === "G" ? "G" : "R";
                 if ((vPreviousRenkoColor === "R" || vPreviousRenkoColor === "G")
                     && vPreviousRenkoColor !== vLastRenkoSignal) {
@@ -2524,7 +3351,7 @@ export class RollingOptionsStrangleLiveService {
                 }
             }
 
-            const arrRefreshedPositions = await this.refreshImportedPositions(
+            let arrRefreshedPositions = await this.refreshImportedPositions(
                 objConfig,
                 objSnapshot,
                 await listRollingOptionsStrangleLiveImportedPositions(pUserId)
@@ -2562,9 +3389,11 @@ export class RollingOptionsStrangleLiveService {
                     objNextMeta.stopLossDelta = Number(objInitial.stopLossDelta.toFixed(6));
                 }
 
-                const bTrailSlEnabled = vRuleSet === 2
-                    ? (vRuleColor === "G" ? bTrailGreenSl2Enabled : bTrailRedSl2Enabled)
-                    : (vRuleColor === "G" ? bTrailGreenSl1Enabled : bTrailRedSl1Enabled);
+                const bTrailSlEnabled = Boolean((objMeta as any).positivePnlSupport)
+                    ? Boolean((objMeta as any).positivePnlTrailSlEnabled ?? (objUiState as any).positivePnlTrailSlEnabled)
+                    : (vRuleSet === 2
+                        ? (vRuleColor === "G" ? bTrailGreenSl2Enabled : bTrailRedSl2Enabled)
+                        : (vRuleColor === "G" ? bTrailGreenSl1Enabled : bTrailRedSl1Enabled));
                 const bTrailTpEnabled = vRuleSet === 2
                     ? (vRuleColor === "G" ? bTrailGreenTp2Enabled : bTrailRedTp2Enabled)
                     : (vRuleColor === "G" ? bTrailGreenTp1Enabled : bTrailRedTp1Enabled);
@@ -2578,10 +3407,8 @@ export class RollingOptionsStrangleLiveService {
                     const vStoredTrailGap = Number(objNextMeta.trailSlGap);
                     const vTrailSlGap = Number.isFinite(vStoredTrailGap) && vStoredTrailGap >= 0
                         ? vStoredTrailGap
-                        : Math.abs((Number.isFinite(vStoredSl) && vStoredSl > 0 ? vStoredSl : vConfiguredSl) - vEntryDelta);
-                    const vCandidate = clamp01(vSide === "BUY"
-                        ? vBestDelta - vTrailSlGap
-                        : vBestDelta + vTrailSlGap);
+                        : getDeltaTrailGap(vEntryDelta, Number.isFinite(vStoredSl) && vStoredSl > 0 ? vStoredSl : vConfiguredSl);
+                    const vCandidate = getTrailedDeltaTarget(vSide, "stop-loss", vBestDelta, vTrailSlGap);
                     const vNextSl = vSide === "BUY"
                         ? (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.max(vStoredSl, vCandidate) : vCandidate)
                         : (Number.isFinite(vStoredSl) && vStoredSl > 0 ? Math.min(vStoredSl, vCandidate) : vCandidate);
@@ -2596,13 +3423,16 @@ export class RollingOptionsStrangleLiveService {
                         ? (vSide === "BUY" ? Math.max(vPrevPeak, vCurrentDelta) : Math.min(vPrevPeak, vCurrentDelta))
                         : (vSide === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
                     const vStoredTp = Number(objNextMeta.takeProfitDelta);
-                    const vCandidate = vSide === "BUY"
-                        ? clamp01(vPeakDelta + vTpMove)
-                        : clamp01(vPeakDelta - vTpMove);
+                    const vStoredTpGap = Number(objNextMeta.trailTpGap);
+                    const vTrailTpGap = Number.isFinite(vStoredTpGap) && vStoredTpGap >= 0
+                        ? vStoredTpGap
+                        : getDeltaTrailGap(vEntryDelta, Number.isFinite(vStoredTp) && vStoredTp > 0 ? vStoredTp : vTpMove);
+                    const vCandidate = getTrailedDeltaTarget(vSide, "take-profit", vPeakDelta, vTrailTpGap);
                     const vNextTp = Number.isFinite(vStoredTp) && vStoredTp > 0
                         ? (vSide === "BUY" ? Math.max(vStoredTp, vCandidate) : Math.min(vStoredTp, vCandidate))
                         : vCandidate;
                     objNextMeta.trailTpPeakDelta = Number(vPeakDelta.toFixed(6));
+                    objNextMeta.trailTpGap = Number(vTrailTpGap.toFixed(6));
                     objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
                 }
 
@@ -2632,6 +3462,31 @@ export class RollingOptionsStrangleLiveService {
                 openedAt: objRow.openedAt,
                 updatedAt: objRow.updatedAt
             })));
+            arrRefreshedPositions = await this.managePositivePnlSupports(
+                pUserId,
+                arrRefreshedPositions,
+                objUiState
+            );
+            const arrPositiveOriginalClosures = await this.closeReplacementWhenOriginalLegsPositive(
+                pUserId,
+                arrRefreshedPositions
+            );
+            if (arrPositiveOriginalClosures.length > 0) {
+                const objClosedIds = new Set(arrPositiveOriginalClosures.map((objPosition) => String(objPosition.importId || "").trim()));
+                arrRefreshedPositions = arrRefreshedPositions.filter((objPosition) => {
+                    return !objClosedIds.has(String(objPosition.importId || "").trim());
+                });
+            }
+            const arrEmaMismatchClosures = await this.closeReplacementOnEmaMismatch(
+                pUserId,
+                arrRefreshedPositions
+            );
+            if (arrEmaMismatchClosures.length > 0) {
+                const objClosedIds = new Set(arrEmaMismatchClosures.map((objPosition) => String(objPosition.importId || "").trim()));
+                arrRefreshedPositions = arrRefreshedPositions.filter((objPosition) => {
+                    return !objClosedIds.has(String(objPosition.importId || "").trim());
+                });
+            }
 
             let vTriggerSignal = "";
             for (const objPosition of arrRefreshedPositions) {

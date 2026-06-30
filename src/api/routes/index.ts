@@ -63,9 +63,11 @@ import {
     runRollingOptionsStrangleStrategyCycle,
     runRollingOptionsStrangleStrategyExecution,
     saveRollingOptionsStrangleProfileController,
+    setRollingOptionsStrangleManualBoxSignal,
     setRollingOptionsStrangleManualRenkoSignal,
     setRollingOptionsStrangleTradingViewEmaTrend,
     toggleRollingOptionsStrangleAutoTrader,
+    updateRollingOptionsStrangleBoxMovingPrice,
     updateRollingOptionsStrangleNegativePnlSettings,
     updateRollingOptionsStrangleOpenPositionLinkController,
     updateRollingOptionsStrangleRuleSettings
@@ -115,11 +117,14 @@ import {
     getRollingOptionsStrangleLiveOpenPositions,
     getRollingOptionsStrangleLiveProfile,
     getRollingOptionsStrangleLiveRuntimeStatus,
+    openRollingOptionsStrangleLivePositivePnlSupport,
     reconcileRollingOptionsStrangleLiveOpenPositions,
     runRollingOptionsStrangleLiveStrategyCycle,
     saveRollingOptionsStrangleLiveOpenPositions,
     saveRollingOptionsStrangleLiveProfileController,
     setRollingOptionsStrangleLiveManualRenkoSignal,
+    setRollingOptionsStrangleLiveManualBoxSignal,
+    updateRollingOptionsStrangleLiveBoxMovingPrice,
     updateRollingOptionsStrangleLiveNegativePnlSettings,
     updateRollingOptionsStrangleLiveRuleSettings
 } from "../controllers/rolling-options-strangle-live-controller";
@@ -415,6 +420,12 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle/renko/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await setRollingOptionsStrangleManualRenkoSignal(req, res, pRollingOptionsStrangleService);
     });
+    objRouter.post("/rollingoptions-strangle/box/moving-price", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleBoxMovingPrice(req, res, pRollingOptionsStrangleService);
+    });
+    objRouter.post("/rollingoptions-strangle/box/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await setRollingOptionsStrangleManualBoxSignal(req, res, pRollingOptionsStrangleService);
+    });
     objRouter.post("/rollingoptions-strangle/tradingview/ema-trend", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await setRollingOptionsStrangleTradingViewEmaTrend(req, res, pRollingOptionsStrangleService);
     });
@@ -534,6 +545,9 @@ export function createApiRouter(
     objRouter.post("/rollingoptions-strangle-live/strategy/cycle", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await runRollingOptionsStrangleLiveStrategyCycle(req, res, pRollingOptionsStrangleLiveService);
     });
+    objRouter.post("/rollingoptions-strangle-live/positive-pnl/open", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await openRollingOptionsStrangleLivePositivePnlSupport(req, res, pRollingOptionsStrangleLiveService);
+    });
     objRouter.post("/rollingoptions-strangle-live/kill-switch", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await executeRollingOptionsStrangleLiveKillSwitch(req, res, pRollingOptionsStrangleLiveService);
     });
@@ -560,6 +574,12 @@ export function createApiRouter(
     });
     objRouter.post("/rollingoptions-strangle-live/renko/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await setRollingOptionsStrangleLiveManualRenkoSignal(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/box/moving-price", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await updateRollingOptionsStrangleLiveBoxMovingPrice(req, res, pRollingOptionsStrangleLiveService);
+    });
+    objRouter.post("/rollingoptions-strangle-live/box/signal", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
+        await setRollingOptionsStrangleLiveManualBoxSignal(req, res, pRollingOptionsStrangleLiveService);
     });
     objRouter.post("/rollingoptions-strangle-live/open-positions", requireAuthApi, requireFreshPasswordApi, async (req, res) => {
         await saveRollingOptionsStrangleLiveOpenPositions(req, res);

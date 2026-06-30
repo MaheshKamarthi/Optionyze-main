@@ -43,6 +43,7 @@ import {
     getFreshWebSocketMarketSnapshot,
     getLiveOptionTicker
 } from "../rolling-options-pt-de/market-data";
+import { getDeltaTrailGap, getTrailedDeltaTarget } from "../../lib/delta-trailing";
 import { syncOptionsPnlWithClosedPositions } from "./options-pnl";
 import type {
     RollingOptionsPtDeConfig,
@@ -54,11 +55,6 @@ import type {
 
 const RE_DELTA_TOLERANCE = 0.05;
 const RENKO_MAX_WEBSOCKET_TICK_AGE_MS = 3000;
-const RE_ENTRY_DELAY_MS = 15000;
-
-function delayMs(pMs: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, Math.max(0, pMs)));
-}
 
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
@@ -572,6 +568,7 @@ function isReplacementConditionEnabled(pUiState: Record<string, unknown>, pKey: 
 
 export class RollingOptionsStrangleService {
     private readonly stateByUserId = new Map<string, RollingOptionsPtDeEngineState>();
+    private readonly boxStateByUserId = new Map<string, RollingOptionsPtDeEngineState["renko"]>();
 
     public constructor(private readonly runnerManager: RunnerManager) {}
 
@@ -756,6 +753,70 @@ export class RollingOptionsStrangleService {
         return objState;
     }
 
+    private getOrCreateBoxState(pUserId: string): RollingOptionsPtDeEngineState["renko"] {
+        const vUserId = String(pUserId || "").trim() || "demo-paper";
+        let objBoxState = this.boxStateByUserId.get(vUserId);
+        if (!objBoxState) {
+            objBoxState = {
+                anchor: null,
+                lastDir: 0,
+                lastColor: "",
+                lastPrice: null,
+                historyKey: "",
+                historySyncedAt: "",
+                historyCandleCount: 0
+            };
+            this.boxStateByUserId.set(vUserId, objBoxState);
+        }
+        return objBoxState;
+    }
+
+    private updateBoxState(
+        pBoxState: RollingOptionsPtDeEngineState["renko"],
+        pSnapshot: RollingOptionsPtDeMarketSnapshot,
+        pConfig: RollingOptionsPtDeConfig
+    ): Array<"R" | "G"> {
+        const vPrice = pConfig.renkoPriceSource === "spot_price"
+            ? pSnapshot.spotPrice
+            : (pConfig.renkoPriceSource === "best_bid"
+                ? pSnapshot.bestBidPrice
+                : (pConfig.renkoPriceSource === "best_ask"
+                    ? pSnapshot.bestAskPrice
+                    : pSnapshot.futuresPrice));
+        const vStep = Math.max(1, Number(pConfig.renkoStepPoints || 10));
+        const arrSignals: Array<"R" | "G"> = [];
+        if (!Number.isFinite(vPrice) || vPrice <= 0) {
+            return arrSignals;
+        }
+
+        pBoxState.lastPrice = vPrice;
+        if (pBoxState.anchor === null || !Number.isFinite(pBoxState.anchor)) {
+            pBoxState.anchor = Math.floor(vPrice / vStep) * vStep;
+            pBoxState.lastDir = 0;
+            pBoxState.lastColor = "";
+            return arrSignals;
+        }
+
+        let vLowerAnchor = pBoxState.anchor;
+        let vUpperAnchor = vLowerAnchor + vStep;
+        if (vPrice > vUpperAnchor) {
+            arrSignals.push("G");
+            pBoxState.lastColor = "G";
+            pBoxState.lastDir = 1;
+            vUpperAnchor = vPrice;
+            vLowerAnchor = vUpperAnchor - vStep;
+        }
+        else if (vPrice < vLowerAnchor) {
+            arrSignals.push("R");
+            pBoxState.lastColor = "R";
+            pBoxState.lastDir = -1;
+            vLowerAnchor = vPrice;
+            vUpperAnchor = vLowerAnchor + vStep;
+        }
+        pBoxState.anchor = vLowerAnchor;
+        return arrSignals;
+    }
+
     public async hydrate(): Promise<void> {
         const objRuntimeRows = await listRollingOptionsPtDeRuntime();
         for (const objRuntime of objRuntimeRows) {
@@ -796,6 +857,21 @@ export class RollingOptionsStrangleService {
             objState.renko.historyKey = String(objRuntime.state?.renkoHistoryKey || "");
             objState.renko.historySyncedAt = String(objRuntime.state?.renkoHistorySyncedAt || "");
             objState.renko.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.renkoHistoryCandleCount || 0)));
+            const objBoxState = this.getOrCreateBoxState(objRuntime.userId);
+            const vStoredBoxLowerAnchor = objRuntime.state?.boxLowerAnchor ?? objRuntime.state?.boxAnchor;
+            objBoxState.anchor = Number.isFinite(Number(vStoredBoxLowerAnchor))
+                ? Number(vStoredBoxLowerAnchor)
+                : null;
+            objBoxState.lastDir = Number(objRuntime.state?.boxLastDir || 0) as -1 | 0 | 1;
+            objBoxState.lastColor = String(objRuntime.state?.boxLastColor || "") as "" | "R" | "G";
+            objBoxState.lastPrice = objRuntime.state?.boxCalculationPrice !== null
+                && objRuntime.state?.boxCalculationPrice !== undefined
+                && Number.isFinite(Number(objRuntime.state.boxCalculationPrice))
+                ? Number(objRuntime.state?.boxCalculationPrice)
+                : null;
+            objBoxState.historyKey = String(objRuntime.state?.boxHistoryKey || "");
+            objBoxState.historySyncedAt = String(objRuntime.state?.boxHistorySyncedAt || "");
+            objBoxState.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.boxHistoryCandleCount || 0)));
             objState.market.lastSpotPrice = objRuntime.lastSpotPrice;
             objState.market.lastFuturesPrice = objRuntime.lastFuturesPrice;
             objState.market.lastSource = String(objRuntime.state?.marketSource || "simulated") === "public" ? "public" : "simulated";
@@ -1112,6 +1188,7 @@ export class RollingOptionsStrangleService {
         const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const vLastSignal = pOverrides.lastSignal
             || (pState.renko.lastColor === "R" ? "RED" : (pState.renko.lastColor === "G" ? "GREEN" : "IDLE"));
+        const objBoxState = this.getOrCreateBoxState(pUserId);
 
         return {
             userId: pUserId,
@@ -1141,6 +1218,17 @@ export class RollingOptionsStrangleService {
                 renkoHistoryKey: pState.renko.historyKey || "",
                 renkoHistorySyncedAt: pState.renko.historySyncedAt || "",
                 renkoHistoryCandleCount: pState.renko.historyCandleCount || 0,
+                boxLowerAnchor: objBoxState.anchor,
+                boxUpperAnchor: objBoxState.anchor !== null
+                    ? objBoxState.anchor + Math.max(1, Number(((pConfig as any).__uiState || {}).boxConditionPoints || 10))
+                    : null,
+                boxLastDir: objBoxState.lastDir,
+                boxLastColor: objBoxState.lastColor,
+                boxCalculationPrice: objBoxState.lastPrice ?? null,
+                boxHistoryKey: objBoxState.historyKey || "",
+                boxHistorySyncedAt: objBoxState.historySyncedAt || "",
+                boxHistoryCandleCount: objBoxState.historyCandleCount || 0,
+                boxConditionEnabled: Boolean(((pConfig as any).__uiState || {}).boxConditionEnabled),
                 tradingViewEmaEnabled: Boolean(((pConfig as any).__uiState || {}).tradingViewEmaEnabled),
                 tradingViewEmaSide: normalizeTradingViewEmaSide(((pConfig as any).__uiState || {}).tradingViewEmaSide),
                 tradingViewEmaTrend: pState.tradingViewEmaTrend || "FLAT",
@@ -1635,7 +1723,10 @@ export class RollingOptionsStrangleService {
                     deltaStopLoss: objLeg.stopLossDelta,
                     takeProfitDelta: objLeg.takeProfitDelta,
                     stopLossDelta: objLeg.stopLossDelta,
-                    trailSlGap: Number(Math.abs(objLeg.stopLossDelta - objLeg.entryDelta).toFixed(6)),
+                    trailSlGap: Number(getDeltaTrailGap(objLeg.entryDelta, objLeg.stopLossDelta).toFixed(6)),
+                    trailTpGap: Number(getDeltaTrailGap(objLeg.entryDelta, objLeg.takeProfitDelta).toFixed(6)),
+                    trailBestDelta: objLeg.entryDelta,
+                    trailTpPeakDelta: objLeg.entryDelta,
                     configuredTakeProfitPct: objLeg.configuredTakeProfitPct,
                     configuredStopLossPct: objLeg.configuredStopLossPct,
                     reEntryDelta: objRuleValues.reDelta,
@@ -2062,12 +2153,8 @@ export class RollingOptionsStrangleService {
                 continue;
             }
 
-            if (!pRenkoSignal) {
-                await delayMs(RE_ENTRY_DELAY_MS);
-            }
-
-            // Replacement legs must use the latest Action 1/2 configuration after
-            // the re-entry delay. The closed leg supplies only its rule set and side.
+            // Replacement legs use the latest Action 1/2 configuration.
+            // The closed leg supplies only its rule set and side.
             const objUiState = await this.loadUiState(pUserId);
             const objConfig = this.buildRuleSetConfig(objUiState, vRuleSet);
             if (!Boolean(objConfig.reEnter)) {
@@ -3197,6 +3284,60 @@ export class RollingOptionsStrangleService {
         }
     }
 
+    private async syncBoxFromHistoricalCandles(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pState: RollingOptionsPtDeEngineState,
+        pUiState: Record<string, unknown>
+    ): Promise<RollingOptionsPtDeConfig> {
+        const vBoxPoints = Math.max(1, Math.round(Number((pUiState as any).boxConditionPoints || 10)));
+        const objBoxConfig: RollingOptionsPtDeConfig = {
+            ...pConfig,
+            renkoStepPoints: vBoxPoints,
+            renkoManualPrice: null,
+            renkoManualPriceResetToken: 0
+        };
+        const objBoxState = this.getOrCreateBoxState(pUserId);
+        const vHistoryKey = [
+            objBoxConfig.contractName,
+            vBoxPoints,
+            objBoxConfig.renkoTimeframe || "1m",
+            objBoxConfig.renkoPriceSource
+        ].join("|");
+        if (objBoxState.historyKey === vHistoryKey && objBoxState.anchor !== null) {
+            return objBoxConfig;
+        }
+
+        const objHistory = await getHistoricalCandleCloses(
+            objBoxConfig.contractName,
+            objBoxConfig.renkoTimeframe || "1m",
+            700
+        );
+        if (objHistory.closes.length <= 0) {
+            return objBoxConfig;
+        }
+
+        objBoxState.anchor = null;
+        objBoxState.lastDir = 0;
+        objBoxState.lastColor = "";
+        objBoxState.historyKey = vHistoryKey;
+        objBoxState.historySyncedAt = objHistory.fetchedAt;
+        objBoxState.historyCandleCount = objHistory.candleCount;
+        for (const vClose of objHistory.closes) {
+            this.updateBoxState(objBoxState, {
+                symbol: objBoxConfig.symbol,
+                contractName: objBoxConfig.contractName,
+                spotPrice: vClose,
+                futuresPrice: vClose,
+                bestBidPrice: vClose,
+                bestAskPrice: vClose,
+                priceSource: "public",
+                ts: objHistory.fetchedAt
+            }, objBoxConfig);
+        }
+        return objBoxConfig;
+    }
+
     private getTargetOpenPnl(pUiState: Record<string, unknown>): number | null {
         const vTarget = normalizeNumber((pUiState as any).targetOpenPnl, 0);
         if (!Number.isFinite(vTarget) || vTarget === 0) {
@@ -3554,6 +3695,62 @@ export class RollingOptionsStrangleService {
                 }
             }
 
+            const bBoxConditionsEnabled = Boolean((objUiState as any).boxConditionEnabled);
+            const objBoxConfig = bBoxConditionsEnabled
+                ? await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState)
+                : null;
+            const objBoxState = this.getOrCreateBoxState(pUserId);
+            const vPreviousBoxColor = String(objBoxState.lastColor || "").trim().toUpperCase();
+            const objBoxSnapshot = objBoxConfig
+                ? (getFreshWebSocketMarketSnapshot(objBoxConfig, RENKO_MAX_WEBSOCKET_TICK_AGE_MS) || objSnapshot)
+                : null;
+            const objBoxSignals = objBoxConfig && objBoxSnapshot
+                ? this.updateBoxState(objBoxState, objBoxSnapshot, objBoxConfig)
+                : [];
+            if (objBoxSignals.length > 0) {
+                const vLastBoxSignal: "R" | "G" = objBoxSignals.at(-1) === "R" ? "R" : "G";
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "box_change_detected",
+                    severity: "info",
+                    title: "Box Change Detected",
+                    message: `Server detected ${objBoxSignals.length} box point(s).`,
+                    payload: {
+                        symbol: objConfig.symbol,
+                        reason: "box_points",
+                        boxColor: vLastBoxSignal,
+                        boxes: objBoxSignals.length
+                    }
+                });
+
+                if (Boolean((objUiState as any).boxColorChangeCloseEnabled)
+                    && (vPreviousBoxColor === "R" || vPreviousBoxColor === "G")
+                    && vPreviousBoxColor !== vLastBoxSignal) {
+                    const arrBoxCloseTargets = objCurrentOpenPositions.filter((objRow) => {
+                        const objMeta = (objRow.metadata || {}) as Record<string, unknown>;
+                        const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
+                        return objRow.status === "OPEN"
+                            && objRow.instrumentType === "OPTION"
+                            && !isPositivePnlSupportPosition(objRow)
+                            && !this.isReplacementOptionPosition(objRow)
+                            && vRuleColor === vPreviousBoxColor;
+                    });
+                    if (arrBoxCloseTargets.length > 0) {
+                        const arrClosedPositions = await this.closePositions(
+                            arrBoxCloseTargets,
+                            objConfig,
+                            `Box color changed from ${vPreviousBoxColor} to ${vLastBoxSignal}`
+                        );
+                        await this.reEnterClosedOptionPositions(
+                            pUserId,
+                            arrClosedPositions,
+                            `Box color changed from ${vPreviousBoxColor} to ${vLastBoxSignal}`
+                        );
+                        objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+                    }
+                }
+            }
+
             for (const vRenkoSignal of objRenkoSignals) {
                 if (!objState.running) {
                     break;
@@ -3613,8 +3810,10 @@ export class RollingOptionsStrangleService {
                     : (vRuleColor === "R"
                         ? clamp01(Number(objRuleConfig.redStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.redStopLossPct) / 100 : Number(objRuleConfig.redStopLossPct ?? 0.90))
                         : clamp01(Number(objRuleConfig.greenStopLossPct ?? 0.90) > 1 ? Number(objRuleConfig.greenStopLossPct) / 100 : Number(objRuleConfig.greenStopLossPct ?? 0.90)));
-                const vGreenTpMove = clamp01(Number(objRuleConfig.greenTakeProfitPct ?? 15) / 100);
-                const vRedTpMove = clamp01(Number(objRuleConfig.redTakeProfitPct ?? 15) / 100);
+                const vGreenTpRaw = Number(objRuleConfig.greenTakeProfitPct ?? 0.50);
+                const vRedTpRaw = Number(objRuleConfig.redTakeProfitPct ?? 0.50);
+                const vGreenTpMove = clamp01(vGreenTpRaw > 1 ? vGreenTpRaw / 100 : vGreenTpRaw);
+                const vRedTpMove = clamp01(vRedTpRaw > 1 ? vRedTpRaw / 100 : vRedTpRaw);
                 const vExistingSl = Number(objMeta.deltaStopLoss ?? objMeta.stopLossDelta ?? 0);
                 const objNextMeta = { ...objMeta } as Record<string, unknown>;
                 let bMetaChanged = false;
@@ -3641,11 +3840,9 @@ export class RollingOptionsStrangleService {
                         const vStoredTrailGap = Number(objNextMeta.trailSlGap);
                         const vTrailSlGap = Number.isFinite(vStoredTrailGap) && vStoredTrailGap >= 0
                             ? vStoredTrailGap
-                            : Math.abs((Number.isFinite(vExistingSl) && vExistingSl > 0 ? vExistingSl : vConfiguredSl) - vEntryDelta);
+                            : getDeltaTrailGap(vEntryDelta, Number.isFinite(vExistingSl) && vExistingSl > 0 ? vExistingSl : vConfiguredSl);
                         if (Number.isFinite(vTrailSlGap) && vTrailSlGap > 0) {
-                            const vCandidate = clamp01(vAction === "BUY"
-                                ? vBestDelta - vTrailSlGap
-                                : vBestDelta + vTrailSlGap);
+                            const vCandidate = getTrailedDeltaTarget(vAction, "stop-loss", vBestDelta, vTrailSlGap);
                             const vNextSl = vAction === "BUY"
                                 ? (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.max(vExistingSl, vCandidate) : vCandidate)
                                 : (Number.isFinite(vExistingSl) && vExistingSl > 0 ? Math.min(vExistingSl, vCandidate) : vCandidate);
@@ -3668,16 +3865,18 @@ export class RollingOptionsStrangleService {
                         }
                     }
 
-                    const vTpMove = vRuleColor === "G" ? vGreenTpMove : vRedTpMove;
-                    if (bTrailTpEnabled && Number.isFinite(vTpMove) && vTpMove > 0) {
+                    const vConfiguredTp = vRuleColor === "G" ? vGreenTpMove : vRedTpMove;
+                    if (bTrailTpEnabled && Number.isFinite(vConfiguredTp) && vConfiguredTp > 0) {
                         const vPrevTpBest = Number(objNextMeta.trailTpPeakDelta);
                         const vTpBestDelta = Number.isFinite(vPrevTpBest)
                             ? (vAction === "BUY" ? Math.max(vPrevTpBest, vCurrentDelta) : Math.min(vPrevTpBest, vCurrentDelta))
                             : (vAction === "BUY" ? Math.max(vEntryDelta, vCurrentDelta) : Math.min(vEntryDelta, vCurrentDelta));
                         const vExistingTp = Number(objMeta.deltaTakeProfit ?? objMeta.takeProfitDelta ?? 0);
-                        const vCandidate = vAction === "BUY"
-                            ? clamp01(vTpBestDelta + vTpMove)
-                            : clamp01(vTpBestDelta - vTpMove);
+                        const vStoredTpGap = Number(objNextMeta.trailTpGap);
+                        const vTrailTpGap = Number.isFinite(vStoredTpGap) && vStoredTpGap >= 0
+                            ? vStoredTpGap
+                            : getDeltaTrailGap(vEntryDelta, Number.isFinite(vExistingTp) && vExistingTp > 0 ? vExistingTp : vConfiguredTp);
+                        const vCandidate = getTrailedDeltaTarget(vAction, "take-profit", vTpBestDelta, vTrailTpGap);
                         const vNextTp = Number.isFinite(vExistingTp) && vExistingTp > 0
                             ? (vAction === "BUY" ? Math.max(vExistingTp, vCandidate) : Math.min(vExistingTp, vCandidate))
                             : vCandidate;
@@ -3691,6 +3890,10 @@ export class RollingOptionsStrangleService {
                         if (!Number.isFinite(vExistingTakeProfit) || Math.abs(vExistingTakeProfit - vNextTp) > 1e-9) {
                             objNextMeta.deltaTakeProfit = Number(vNextTp.toFixed(6));
                             objNextMeta.takeProfitDelta = Number(vNextTp.toFixed(6));
+                            bMetaChanged = true;
+                        }
+                        if (!Number.isFinite(vStoredTpGap) || Math.abs(vStoredTpGap - vTrailTpGap) > 1e-9) {
+                            objNextMeta.trailTpGap = Number(vTrailTpGap.toFixed(6));
                             bMetaChanged = true;
                         }
                     }
@@ -3811,6 +4014,14 @@ export class RollingOptionsStrangleService {
         objState.renko.historyKey = "";
         objState.renko.historySyncedAt = "";
         objState.renko.historyCandleCount = 0;
+        const objBoxState = this.getOrCreateBoxState(pUserId);
+        objBoxState.anchor = null;
+        objBoxState.lastDir = 0;
+        objBoxState.lastColor = "";
+        objBoxState.lastPrice = null;
+        objBoxState.historyKey = "";
+        objBoxState.historySyncedAt = "";
+        objBoxState.historyCandleCount = 0;
         objState.sourcePositiveCycleCountByPositionId.clear();
         await this.syncRuntime(pUserId, objConfig, objState, {
             status: "stopped",
@@ -3877,6 +4088,182 @@ export class RollingOptionsStrangleService {
             status: "success",
             message: `Manual Renko signal set to ${vColorCode === "R" ? "RED" : "GREEN"}.`,
             color: vColorCode
+        };
+    }
+
+    public async applyBoxMovingPrice(
+        pUserId: string,
+        pMovingPrice: number
+    ): Promise<{ status: "success" | "warning"; message: string; }> {
+        const vMovingPrice = Number(pMovingPrice);
+        if (!Number.isFinite(vMovingPrice) || vMovingPrice <= 0) {
+            return { status: "warning", message: "Enter a valid Box Moving Price." };
+        }
+
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!Boolean((objUiState as any).boxConditionEnabled)) {
+            return { status: "warning", message: "Enable Box Conditions before updating Moving Price." };
+        }
+
+        const objState = this.getOrCreateState(pUserId);
+        const objBoxConfig = await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState);
+        const objBoxState = this.getOrCreateBoxState(pUserId);
+        const vPreviousBoxColor = String(objBoxState.lastColor || "").trim().toUpperCase();
+        const objSnapshot: RollingOptionsPtDeMarketSnapshot = {
+            symbol: objBoxConfig.symbol,
+            contractName: objBoxConfig.contractName,
+            spotPrice: vMovingPrice,
+            futuresPrice: vMovingPrice,
+            bestBidPrice: vMovingPrice,
+            bestAskPrice: vMovingPrice,
+            priceSource: "simulated",
+            ts: new Date().toISOString()
+        };
+        const arrBoxSignals = this.updateBoxState(objBoxState, objSnapshot, objBoxConfig);
+        const vLastBoxSignal = arrBoxSignals.at(-1);
+        let vClosedCount = 0;
+
+        if (Boolean((objUiState as any).boxColorChangeCloseEnabled)
+            && vLastBoxSignal
+            && (vPreviousBoxColor === "R" || vPreviousBoxColor === "G")
+            && vPreviousBoxColor !== vLastBoxSignal) {
+            const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const arrTargets = arrOpenPositions.filter((objPosition) => {
+                const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+                const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
+                return objPosition.status === "OPEN"
+                    && objPosition.instrumentType === "OPTION"
+                    && !isPositivePnlSupportPosition(objPosition)
+                    && !this.isReplacementOptionPosition(objPosition)
+                    && vRuleColor === vPreviousBoxColor;
+            });
+            if (arrTargets.length > 0) {
+                const arrClosed = await this.closePositions(
+                    arrTargets,
+                    objConfig,
+                    `Box Moving Price changed color from ${vPreviousBoxColor} to ${vLastBoxSignal}`
+                );
+                vClosedCount = arrClosed.length;
+                await this.reEnterClosedOptionPositions(
+                    pUserId,
+                    arrClosed,
+                    `Box Moving Price changed color from ${vPreviousBoxColor} to ${vLastBoxSignal}`
+                );
+            }
+        }
+
+        await this.syncRuntime(pUserId, objConfig, objState, {
+            lastSignal: vLastBoxSignal ? `BOX_${vLastBoxSignal}` : "BOX_NO_CHANGE",
+            lastCycleAt: new Date().toISOString()
+        });
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "Box Moving Price Updated",
+            message: vLastBoxSignal
+                ? `Moving Price generated ${arrBoxSignals.length} box shift(s) and Box ${vLastBoxSignal}.`
+                : "Moving Price remained between the Box anchors.",
+            payload: {
+                price: vMovingPrice,
+                boxColor: vLastBoxSignal || objBoxState.lastColor || "",
+                shifts: arrBoxSignals.length,
+                closedCount: vClosedCount,
+                reason: "box_moving_price"
+            }
+        });
+        return {
+            status: "success",
+            message: vLastBoxSignal
+                ? `Box moved ${arrBoxSignals.length} point(s) to ${vLastBoxSignal}; closed ${vClosedCount} eligible leg(s).`
+                : "Moving Price is between the Box anchors; no Box change."
+        };
+    }
+
+    public async setManualBoxSignal(
+        pUserId: string,
+        pColorCode: "R" | "G",
+        pReferencePrice?: number | null
+    ): Promise<{ status: "success" | "warning"; message: string; }> {
+        const objConfig = await this.loadConfig(pUserId);
+        const objUiState = ((objConfig as any).__uiState || {}) as Record<string, unknown>;
+        if (!Boolean((objUiState as any).boxConditionEnabled)) {
+            return { status: "warning", message: "Enable Box Conditions before toggling the Box signal." };
+        }
+
+        const objState = this.getOrCreateState(pUserId);
+        await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState);
+        const objBoxState = this.getOrCreateBoxState(pUserId);
+        const vPreviousBoxColor = String(objBoxState.lastColor || "").trim().toUpperCase();
+        const vReferencePriceRaw = Number(pReferencePrice);
+        const vReferencePrice = Number.isFinite(vReferencePriceRaw) && vReferencePriceRaw > 0
+            ? vReferencePriceRaw
+            : Number(objBoxState.lastPrice);
+        if (!Number.isFinite(vReferencePrice) || vReferencePrice <= 0) {
+            return { status: "warning", message: "Enter a Moving Price or wait for a Box From price." };
+        }
+
+        const vColorCode: "R" | "G" = pColorCode === "G" ? "G" : "R";
+        const vBoxPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
+        objBoxState.lastPrice = vReferencePrice;
+        objBoxState.lastColor = vColorCode;
+        objBoxState.lastDir = vColorCode === "G" ? 1 : -1;
+        objBoxState.anchor = vColorCode === "G"
+            ? vReferencePrice - vBoxPoints
+            : vReferencePrice;
+
+        let vClosedCount = 0;
+        if (Boolean((objUiState as any).boxColorChangeCloseEnabled)
+            && (vPreviousBoxColor === "R" || vPreviousBoxColor === "G")
+            && vPreviousBoxColor !== vColorCode) {
+            const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const arrTargets = arrOpenPositions.filter((objPosition) => {
+                const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
+                const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
+                return objPosition.status === "OPEN"
+                    && objPosition.instrumentType === "OPTION"
+                    && !isPositivePnlSupportPosition(objPosition)
+                    && !this.isReplacementOptionPosition(objPosition)
+                    && vRuleColor === vPreviousBoxColor;
+            });
+            if (arrTargets.length > 0) {
+                const arrClosed = await this.closePositions(
+                    arrTargets,
+                    objConfig,
+                    `Manual Box signal changed from ${vPreviousBoxColor} to ${vColorCode}`
+                );
+                vClosedCount = arrClosed.length;
+                await this.reEnterClosedOptionPositions(
+                    pUserId,
+                    arrClosed,
+                    `Manual Box signal changed from ${vPreviousBoxColor} to ${vColorCode}`
+                );
+            }
+        }
+
+        await this.syncRuntime(pUserId, objConfig, objState, {
+            lastSignal: `MANUAL_BOX_${vColorCode}`,
+            lastCycleAt: new Date().toISOString()
+        });
+        await logRollingOptionsPtDeEvent({
+            userId: pUserId,
+            eventType: "manual_action",
+            severity: "info",
+            title: "Manual Box Signal",
+            message: `Manual Box signal changed to ${vColorCode === "G" ? "GREEN" : "RED"}.`,
+            payload: {
+                price: vReferencePrice,
+                boxColor: vColorCode,
+                lowerAnchor: objBoxState.anchor,
+                upperAnchor: Number(objBoxState.anchor) + vBoxPoints,
+                closedCount: vClosedCount,
+                reason: "manual_box_signal"
+            }
+        });
+        return {
+            status: "success",
+            message: `Box set to ${vColorCode}; closed ${vClosedCount} eligible leg(s).`
         };
     }
 

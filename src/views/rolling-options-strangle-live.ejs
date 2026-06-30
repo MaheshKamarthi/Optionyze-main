@@ -12,6 +12,160 @@
     <div class="app-layout rolling-demo-layout">
         <%- include('partials/app-header', { currentAccount }) %>
 
+        <section class="rolling-demo-section rolling-strangle-live-conditions-section">
+            <div class="app-panel rolling-demo-card rolling-strangle-live-open-conditions">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">Open Legs Conditions</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-replacement-grid">
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementBlockSameLeg">Block same leg</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementBlockSameLeg">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementBlockSameLeg" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementImmediateGuard" title="Skips a replacement when its entry delta would immediately trigger its TP or SL.">Skip instant TP/SL</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementImmediateGuard">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementImmediateGuard" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementUseRenkoColor">Use Renko color</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementUseRenkoColor">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementUseRenkoColor" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementWaitForRenkoPoint" title="Keeps replacement legs pending until the next newly generated Renko brick.">Wait for new Renko point</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementWaitForRenkoPoint">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementWaitForRenkoPoint" />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementUseEmaTrend">Use EMA trend</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementUseEmaTrend">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementUseEmaTrend" checked />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-panel rolling-demo-card rolling-strangle-live-closed-conditions">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">Closed Legs Conditions</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-replacement-grid">
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementCloseOrphan" title="Closes replacement options when no original/main legs remain open.">Close orphan repl.</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementCloseOrphan">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementCloseOrphan" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementCloseOriginalPositive" title="Closes a replacement when every original option leg in its rule set has positive PnL.">Close if originals +</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementCloseOriginalPositive">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementCloseOriginalPositive" checked />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveReplacementCloseEmaMismatch">Close repl. on EMA mismatch</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveReplacementCloseEmaMismatch">
+                                <input type="checkbox" id="chkRollingStrangleLiveReplacementCloseEmaMismatch" />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveCloseSupportOnSourceClose">Close support with source</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveCloseSupportOnSourceClose">
+                                <input type="checkbox" id="chkRollingStrangleLiveCloseSupportOnSourceClose" />
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveBoxColorClose" title="Closes eligible original option legs when the Box signal changes color.">Close on Box color change</label>
+                        <div class="rolling-demo-check-wrap">
+                            <label class="rolling-demo-check" for="chkRollingStrangleLiveBoxColorClose">
+                                <input type="checkbox" id="chkRollingStrangleLiveBoxColorClose" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-panel rolling-demo-card rolling-strangle-live-ema-settings">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <span class="rolling-demo-manual-title">EMA Settings</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-replacement-grid">
+                        <div class="rolling-demo-field">
+                            <label for="chkRollingStrangleLiveEma">EMA</label>
+                            <label class="rolling-demo-check">
+                                <input type="checkbox" id="chkRollingStrangleLiveEma" />
+                                <span>ON</span>
+                            </label>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="chkRollingStrangleLiveEmaSignal">EMA Signal</label>
+                            <label class="rolling-demo-check">
+                                <input type="checkbox" id="chkRollingStrangleLiveEmaSignal" />
+                                <span>ON</span>
+                            </label>
+                        </div>
+                        <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLiveEmaRenkoConfirm">EMA + Renko</label>
+                        <label class="rolling-demo-check">
+                            <input type="checkbox" id="chkRollingStrangleLiveEmaRenkoConfirm" />
+                            <span>ON</span>
+                        </label>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveEmaTimeframe">EMA timeframe</label>
+                        <select id="ddlRollingStrangleLiveEmaTimeframe">
+                            <option value="5s">5 sec</option>
+                            <option value="1m" selected>1 min</option>
+                            <option value="5m">5 min</option>
+                            <option value="15m">15 min</option>
+                            <option value="1h">1 hour</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="ddlRollingStrangleLiveEmaSource">EMA source</label>
+                        <select id="ddlRollingStrangleLiveEmaSource">
+                            <option value="candles" selected>Candles</option>
+                            <option value="renko">Renko Bricks</option>
+                        </select>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveEmaPeriod">EMA value</label>
+                        <input type="number" id="txtRollingStrangleLiveEmaPeriod" value="20" min="1" max="500" />
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section class="rolling-demo-hero">
             <div class="app-panel rolling-demo-card rolling-strangle-live-title-card">
                 <h1 class="rolling-demo-title">Rolling Option Strangle - Live</h1>
@@ -430,31 +584,64 @@
                         </div>
                     </div>
                 </div>
-                <div class="rolling-demo-subgrid rolling-strangle-live-manual-footer">
-                    <div class="rolling-demo-field rolling-strangle-live-renko-group">
-                        <label for="txtRollingStrangleLiveRenkoValue">Renko Control</label>
-                        <div class="rolling-strangle-live-renko-controls">
+            </div>
+        </section>
+
+        <section class="rolling-demo-section rolling-strangle-live-renko-feed-section">
+            <div class="app-panel rolling-demo-card rolling-strangle-live-renko-feed-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <h2>Delta Renko-Style Feed</h2>
+                        <label class="rolling-demo-switch">
+                            <input type="checkbox" id="chkRollingStrangleLiveRenkoFeed" checked />
+                            <span>Delta Renko Feed</span>
+                        </label>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveRenkoFeedStatus">ON</span>
+                        <button class="rolling-demo-signal idle" type="button" id="btnRollingStrangleLiveRenkoBox" title="Click to toggle manual Renko signal">-</button>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveRenkoFromPrice">From: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveRenkoAnchor">Anchor: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveEmaIndicator">EMA: OFF</span>
+                    </div>
+                    <div class="rolling-demo-card-tools rolling-strangle-live-renko-feed-tools">
+                        <div class="rolling-demo-field">
+                            <label for="txtRollingStrangleLiveRenkoValue">Point</label>
                             <input type="number" min="1" step="1" id="txtRollingStrangleLiveRenkoValue" value="10" />
-                            <button class="rolling-demo-btn rolling-strangle-live-renko-button" type="button" id="btnRollingStrangleLiveRenkoBox">R</button>
                         </div>
-                    </div>
-                    <div class="rolling-demo-field">
-                        <label for="ddlRollingStrangleLiveRenkoPriceSrc">Renko Source</label>
-                        <select id="ddlRollingStrangleLiveRenkoPriceSrc">
-                            <option value="mark_price" selected>Mark Price</option>
-                            <option value="spot_price">Spot Price</option>
-                            <option value="best_bid">Best Bid</option>
-                            <option value="best_ask">Best Ask</option>
-                        </select>
-                    </div>
-                    <div class="rolling-demo-field rolling-strangle-live-add-one-lot">
-                        <label for="chkRollingStrangleLiveAddOneLotFuture">Add 1 Lot Future</label>
-                        <div class="rolling-demo-check-wrap">
+                        <div class="rolling-demo-field">
+                            <label for="txtRollingStrangleLiveRenkoManualPrice">Anchor Price</label>
+                            <input type="number" id="txtRollingStrangleLiveRenkoManualPrice" min="0" step="any" placeholder="Live price" title="Optional manual Renko anchor. Changing this price resets the active anchor, direction, and color once; subsequent bricks continue from the selected live source." />
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="ddlRollingStrangleLiveRenkoTimeframe">Renko TF</label>
+                            <select id="ddlRollingStrangleLiveRenkoTimeframe">
+                                <option value="5s">5 sec</option>
+                                <option value="1m" selected>1 min</option>
+                                <option value="5m">5 min</option>
+                                <option value="15m">15 min</option>
+                                <option value="1h">1 hour</option>
+                            </select>
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="ddlRollingStrangleLiveRenkoPriceSrc">Source</label>
+                            <select id="ddlRollingStrangleLiveRenkoPriceSrc">
+                                <option value="mark_price" selected>Mark Price</option>
+                                <option value="spot_price">Spot Price</option>
+                                <option value="best_bid">Best Bid</option>
+                                <option value="best_ask">Best Ask</option>
+                            </select>
+                        </div>
+                        <div class="rolling-demo-field rolling-strangle-live-add-one-lot">
+                            <label for="chkRollingStrangleLiveAddOneLotFuture">Add 1 Lot Future</label>
                             <label class="rolling-demo-check" for="chkRollingStrangleLiveAddOneLotFuture">
                                 <input type="checkbox" id="chkRollingStrangleLiveAddOneLotFuture" />
                             </label>
                         </div>
                     </div>
+                </div>
+                <p class="app-copy">Renko state is driven by the server cycle using the selected live Delta price source and point size.</p>
+                <div class="rolling-demo-feed">
+                    <div class="rolling-demo-feed-item">The server evaluates Renko transitions while Auto Trader is running.</div>
+                    <div class="rolling-demo-feed-item">Mark Price, Spot Price, Best Bid, and Best Ask can drive the live Renko engine.</div>
                 </div>
             </div>
         </section>
@@ -462,35 +649,31 @@
         <section class="rolling-demo-section">
             <div class="app-panel rolling-demo-card rolling-demo-negative-pnl-settings">
                 <div class="rolling-demo-card-head">
-                    <h2>Negative PnL Option Leg</h2>
+                    <h2>Positive PnL Support Leg</h2>
                 </div>
                 <div class="rolling-demo-grid options">
                     <div class="rolling-demo-field">
-                        <label for="chkRollingStrangleLiveNegativePnlHedgeEnabled">Enable</label>
+                        <label for="chkRollingStrangleLiveNegativePnlHedgeEnabled">Enable support</label>
                         <div class="rolling-demo-check-wrap">
                             <label class="rolling-demo-check" for="chkRollingStrangleLiveNegativePnlHedgeEnabled">
-                                <input type="checkbox" id="chkRollingStrangleLiveNegativePnlHedgeEnabled" checked />
+                                <input type="checkbox" id="chkRollingStrangleLiveNegativePnlHedgeEnabled" />
                             </label>
                         </div>
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="chkRollingStrangleLiveNegativePnlPlaceOrders">Place Real Orders</label>
-                        <div class="rolling-demo-check-wrap">
-                            <label class="rolling-demo-check" for="chkRollingStrangleLiveNegativePnlPlaceOrders">
-                                <input type="checkbox" id="chkRollingStrangleLiveNegativePnlPlaceOrders" />
-                            </label>
-                        </div>
-                    </div>
-                    <div class="rolling-demo-field">
-                        <label for="ddlRollingStrangleLiveNegativePnlAction3">Action 3</label>
+                        <label for="ddlRollingStrangleLiveNegativePnlAction3">Support action</label>
                         <select id="ddlRollingStrangleLiveNegativePnlAction3">
                             <option value="buy" selected>Buy</option>
                             <option value="sell">Sell</option>
                         </select>
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtRollingStrangleLiveNegativePnlHedgeQty">Manual Hedge Qty</label>
+                        <label for="txtRollingStrangleLiveNegativePnlHedgeQty">Support Qty</label>
                         <input type="number" min="1" step="1" id="txtRollingStrangleLiveNegativePnlHedgeQty" value="10" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLivePositivePnlTriggerAmount">Trigger PnL</label>
+                        <input type="number" max="0" step="0.01" id="txtRollingStrangleLivePositivePnlTriggerAmount" value="0" />
                     </div>
                     <div class="rolling-demo-field">
                         <label for="txtRollingStrangleLiveNegativePnlMaxLegs">Max Legs</label>
@@ -509,6 +692,14 @@
                         </select>
                     </div>
                     <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLivePositivePnlExpiryDate">Select Expiry</label>
+                        <input type="date" id="txtRollingStrangleLivePositivePnlExpiryDate" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLivePositivePnlRefreshTime">Refresh Time</label>
+                        <input type="time" id="txtRollingStrangleLivePositivePnlRefreshTime" />
+                    </div>
+                    <div class="rolling-demo-field">
                         <label for="txtRollingStrangleLiveNegativePnlHedgeDelta">Target Delta</label>
                         <input type="number" min="0" max="2" step="0.01" id="txtRollingStrangleLiveNegativePnlHedgeDelta" value="0.53" />
                     </div>
@@ -521,12 +712,26 @@
                         <input type="number" min="0" max="100" step="0.01" id="txtRollingStrangleLiveNegativePnlSl" value="85" />
                     </div>
                     <div class="rolling-demo-field">
-                        <label for="txtRollingStrangleLiveNegativePnlRecoveryTarget">Recovery Target</label>
-                        <input type="number" step="0.01" id="txtRollingStrangleLiveNegativePnlRecoveryTarget" value="0" />
+                        <label for="chkRollingStrangleLivePositivePnlTrailSl">Trail SL</label>
+                        <label class="rolling-demo-check">
+                            <input type="checkbox" id="chkRollingStrangleLivePositivePnlTrailSl" />
+                            <span>ON</span>
+                        </label>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="chkRollingStrangleLivePositivePnlAdverseRenkoClose">Close on adverse Renko</label>
+                        <label class="rolling-demo-check">
+                            <input type="checkbox" id="chkRollingStrangleLivePositivePnlAdverseRenkoClose" />
+                            <span>ON</span>
+                        </label>
                     </div>
                     <div class="rolling-demo-field">
                         <label>&nbsp;</label>
                         <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateNegativePnl">Update</button>
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label>&nbsp;</label>
+                        <button class="rolling-demo-btn buy" type="button" id="btnRollingStrangleLiveOpenPositivePnl">Open Support</button>
                     </div>
                 </div>
             </div>
@@ -536,8 +741,12 @@
             <div class="app-panel rolling-demo-card">
                 <div class="rolling-demo-card-head rolling-strangle-live-open-head">
                     <h2>Open Positions</h2>
-                    <div class="rolling-strangle-live-open-signal" id="rollingStrangleLiveOpenRenkoSignal">-</div>
+                    <div class="rolling-strangle-live-open-signal idle" id="rollingStrangleLiveOpenRenkoSignal" title="Current Renko signal">-</div>
                     <div class="rolling-demo-card-tools">
+                        <div class="rolling-demo-market-price-readout">
+                            <label for="txtRollingStrangleLivePositivePnlMarketPrice">Market Price</label>
+                            <input type="text" id="txtRollingStrangleLivePositivePnlMarketPrice" value="-" readonly />
+                        </div>
                         <label class="rolling-demo-check" for="chkRollingStrangleLiveCloseAllLegsOnAnyClose" title="When enabled, closing a negative option leg will close all open legs">
                             <input type="checkbox" id="chkRollingStrangleLiveCloseAllLegsOnAnyClose" />
                             Close all on negative options
@@ -680,6 +889,38 @@
         </section>
 
         <section class="rolling-demo-section">
+            <div class="app-panel rolling-demo-card">
+                <div class="rolling-demo-card-head">
+                    <div class="rolling-demo-inline">
+                        <h2>Box Conditions</h2>
+                        <label class="rolling-demo-switch">
+                            <input type="checkbox" id="chkRollingStrangleLiveBoxConditionsEnabled" />
+                            <span>Enable</span>
+                        </label>
+                        <button class="rolling-demo-signal idle" type="button" id="rollingStrangleLiveBoxSignal" title="Click to toggle the manual Box signal">-</button>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveBoxFromPrice">From: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveBoxUpperAnchor">Upper: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingStrangleLiveBoxLowerAnchor">Lower: --</span>
+                    </div>
+                </div>
+                <div class="rolling-demo-grid options">
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveBoxPoints">Box Points</label>
+                        <input type="number" id="txtRollingStrangleLiveBoxPoints" value="10" min="1" step="1" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="txtRollingStrangleLiveBoxMovingPrice">Moving Price</label>
+                        <input type="number" id="txtRollingStrangleLiveBoxMovingPrice" min="0" step="any" placeholder="Enter price" />
+                    </div>
+                    <div class="rolling-demo-field">
+                        <label for="btnRollingStrangleLiveUpdateBoxMovingPrice">Box</label>
+                        <button class="rolling-demo-btn primary" type="button" id="btnRollingStrangleLiveUpdateBoxMovingPrice">Update</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rolling-demo-section rolling-strangle-live-log-section">
             <div class="rolling-demo-log-grid">
                 <div class="app-panel rolling-demo-card">
                     <div class="rolling-demo-card-head">

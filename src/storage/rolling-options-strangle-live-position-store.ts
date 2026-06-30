@@ -43,6 +43,7 @@ export interface RollingOptionsStrangleLivePositionMetadata {
     sourceImportId?: string;
     trailBestDelta?: number | null;
     trailSlGap?: number | null;
+    trailTpGap?: number | null;
     trailTpPeakDelta?: number | null;
 }
 
