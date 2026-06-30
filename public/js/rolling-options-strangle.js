@@ -990,6 +990,9 @@
             positivePnlAdverseRenkoCloseEnabled: Boolean(ids.positivePnlAdverseRenkoCloseEnabled?.checked),
             boxConditionPoints: parseNumberInput(ids.boxConditionPoints, 10),
             boxConditionEnabled: Boolean(ids.boxConditionEnabled?.checked),
+            boxConditionMovingPrice: Number(ids.boxConditionMovingPrice?.value) > 0
+                ? Number(ids.boxConditionMovingPrice.value)
+                : null,
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -1106,6 +1109,7 @@
         setFieldValue("positivePnlAdverseRenkoCloseEnabled", uiState.positivePnlAdverseRenkoCloseEnabled ?? uiState.negativePnlRenkoCloseOnly ?? false);
         setFieldValue("boxConditionPoints", uiState.boxConditionPoints ?? 10);
         setFieldValue("boxConditionEnabled", uiState.boxConditionEnabled ?? false);
+        setFieldValue("boxConditionMovingPrice", Number(uiState.boxConditionMovingPrice) > 0 ? uiState.boxConditionMovingPrice : "");
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -1194,7 +1198,24 @@
         const boxColorRaw = boxEnabled
             ? String(runtimeState?.state?.boxLastColor || "").trim().toUpperCase()
             : "";
-        const boxColor = boxColorRaw === "G" ? "G" : (boxColorRaw === "R" ? "R" : "");
+        const boxFromRaw = runtimeState?.state?.boxCalculationPrice;
+        const boxLowerRawValue = runtimeState?.state?.boxLowerAnchor;
+        const boxUpperRawValue = runtimeState?.state?.boxUpperAnchor;
+        const boxFromValue = Number(boxFromRaw);
+        const boxLowerValue = Number(boxLowerRawValue);
+        const boxUpperValue = Number(boxUpperRawValue);
+        const boxIsInside = boxEnabled
+            && boxFromRaw !== null && boxFromRaw !== undefined
+            && boxLowerRawValue !== null && boxLowerRawValue !== undefined
+            && boxUpperRawValue !== null && boxUpperRawValue !== undefined
+            && Number.isFinite(boxFromValue)
+            && Number.isFinite(boxLowerValue)
+            && Number.isFinite(boxUpperValue)
+            && boxFromValue >= boxLowerValue
+            && boxFromValue <= boxUpperValue;
+        const boxColor = boxIsInside
+            ? "N"
+            : (boxColorRaw === "G" ? "G" : (boxColorRaw === "R" ? "R" : ""));
         if (ids.boxConditionSignal) {
             ids.boxConditionSignal.textContent = boxColor || "-";
             ids.boxConditionSignal.classList.remove("idle", "green", "red");
@@ -2588,6 +2609,7 @@
         ids.targetOpenPnl,
         ids.boxConditionPoints,
         ids.boxConditionEnabled,
+        ids.boxConditionMovingPrice,
         ids.closedFromDate,
         ids.closedToDate
     ].forEach(function (objField) {

@@ -905,6 +905,9 @@
             renkoFeedEnabled: Boolean(ids.renkoFeedEnabled?.checked),
             boxConditionPoints: parseNumberInput(ids.boxConditionPoints, 10),
             boxConditionEnabled: Boolean(ids.boxConditionEnabled?.checked),
+            boxConditionMovingPrice: Number(ids.boxConditionMovingPrice?.value) > 0
+                ? Number(ids.boxConditionMovingPrice.value)
+                : null,
             targetOpenPnl: parseNumberInput(ids.targetOpenPnl, 0),
             payoffSlCheckpointPrices: normalizePayoffSlCheckpoints(gPayoffSlCheckpoints)
                 .filter(function (checkpoint) {
@@ -1059,6 +1062,7 @@
         setFieldValue(ids.renkoFeedEnabled, uiState.renkoFeedEnabled ?? true);
         setFieldValue(ids.boxConditionPoints, uiState.boxConditionPoints ?? 10);
         setFieldValue(ids.boxConditionEnabled, uiState.boxConditionEnabled ?? false);
+        setFieldValue(ids.boxConditionMovingPrice, Number(uiState.boxConditionMovingPrice) > 0 ? uiState.boxConditionMovingPrice : "");
         setFieldValue(ids.targetOpenPnl, uiState.targetOpenPnl ?? 0);
         setFieldValue(ids.closeAllLegsOnAnyClose, uiState.closeAllLegsOnAnyClose ?? false);
         setFieldValue(ids.skipRenkoEntryNoOpenOptions, uiState.skipRenkoEntryNoOpenOptions ?? false);
@@ -1268,7 +1272,24 @@
         }
         const bBoxEnabled = Boolean(objRuntime?.state?.boxConditionEnabled ?? ids.boxConditionEnabled?.checked);
         const vBoxRaw = bBoxEnabled ? String(objRuntime?.state?.boxLastColor || "").trim().toUpperCase() : "";
-        const vBoxColor = vBoxRaw === "G" ? "G" : (vBoxRaw === "R" ? "R" : "");
+        const vBoxFromRaw = objRuntime?.state?.boxCalculationPrice;
+        const vBoxLowerRaw = objRuntime?.state?.boxLowerAnchor;
+        const vBoxUpperRaw = objRuntime?.state?.boxUpperAnchor;
+        const vBoxFrom = Number(vBoxFromRaw);
+        const vBoxLower = Number(vBoxLowerRaw);
+        const vBoxUpper = Number(vBoxUpperRaw);
+        const bBoxInside = bBoxEnabled
+            && vBoxFromRaw !== null && vBoxFromRaw !== undefined
+            && vBoxLowerRaw !== null && vBoxLowerRaw !== undefined
+            && vBoxUpperRaw !== null && vBoxUpperRaw !== undefined
+            && Number.isFinite(vBoxFrom)
+            && Number.isFinite(vBoxLower)
+            && Number.isFinite(vBoxUpper)
+            && vBoxFrom >= vBoxLower
+            && vBoxFrom <= vBoxUpper;
+        const vBoxColor = bBoxInside
+            ? "N"
+            : (vBoxRaw === "G" ? "G" : (vBoxRaw === "R" ? "R" : ""));
         if (ids.boxConditionSignal) {
             ids.boxConditionSignal.textContent = vBoxColor || "-";
             ids.boxConditionSignal.classList.remove("idle", "green", "red");
@@ -2484,7 +2505,10 @@
             setStatus(ids.pageStatus, "Enable Box Conditions and enter a valid Moving Price.", "warning");
             return;
         }
-        void postJson("/api/rollingoptions-strangle-live/box/moving-price", { price: vPrice })
+        void flushProfileSave()
+            .then(function () {
+                return postJson("/api/rollingoptions-strangle-live/box/moving-price", { price: vPrice });
+            })
             .then(function (objResult) {
                 applyRuntimeStatus(objResult?.data || {});
                 setStatus(ids.pageStatus, objResult?.message || "Box Moving Price updated.", objResult?.status || "success");
@@ -2524,6 +2548,8 @@
     ids.boxConditionEnabled?.addEventListener("change", queueProfileSave);
     ids.boxConditionPoints?.addEventListener("change", queueProfileSave);
     ids.boxConditionPoints?.addEventListener("input", queueProfileSave);
+    ids.boxConditionMovingPrice?.addEventListener("change", queueProfileSave);
+    ids.boxConditionMovingPrice?.addEventListener("input", queueProfileSave);
     ids.boxColorChangeCloseEnabled?.addEventListener("change", queueProfileSave);
     ids.updateGreenRulesButton?.addEventListener("click", function () {
         void updateRuleSettings("G", 1).then(function (objResult) {
