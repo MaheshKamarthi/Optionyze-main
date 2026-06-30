@@ -3709,20 +3709,6 @@ export class RollingOptionsStrangleService {
                 : [];
             if (objBoxSignals.length > 0) {
                 const vLastBoxSignal: "R" | "G" = objBoxSignals.at(-1) === "R" ? "R" : "G";
-                await logRollingOptionsPtDeEvent({
-                    userId: pUserId,
-                    eventType: "box_change_detected",
-                    severity: "info",
-                    title: "Box Change Detected",
-                    message: `Server detected ${objBoxSignals.length} box point(s).`,
-                    payload: {
-                        symbol: objConfig.symbol,
-                        reason: "box_points",
-                        boxColor: vLastBoxSignal,
-                        boxes: objBoxSignals.length
-                    }
-                });
-
                 if (Boolean((objUiState as any).boxColorChangeCloseEnabled)
                     && (vPreviousBoxColor === "R" || vPreviousBoxColor === "G")
                     && vPreviousBoxColor !== vLastBoxSignal) {

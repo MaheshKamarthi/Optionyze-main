@@ -1997,7 +1997,8 @@ export async function setRollingOptionsStrangleLiveManualBoxSignal(
 
 export async function getRollingOptionsStrangleLiveEvents(req: Request, res: Response): Promise<void> {
     const vUserId = getAccountId(req);
-    const arrEvents = await listRollingOptionsEventsByStrategy(vUserId, gLiveStrategyCode, 100);
+    const arrEvents = (await listRollingOptionsEventsByStrategy(vUserId, gLiveStrategyCode, 100))
+        .filter((objEvent) => String(objEvent.eventType || "").trim() !== "box_change_detected");
     res.json({
         status: "success",
         data: arrEvents

@@ -1309,7 +1309,8 @@ export async function getRollingOptionsStrangleTempClosedPositions(req: Request,
 
 export async function getRollingOptionsStrangleEvents(req: Request, res: Response): Promise<void> {
     const vUserId = getUserIdFromReq(req);
-    const objRows = await listRollingOptionsEventsByStrategy(vUserId, gStrategyCode, 100);
+    const objRows = (await listRollingOptionsEventsByStrategy(vUserId, gStrategyCode, 100))
+        .filter((objEvent) => String(objEvent.eventType || "").trim() !== "box_change_detected");
     res.json({
         status: "success",
         data: objRows
