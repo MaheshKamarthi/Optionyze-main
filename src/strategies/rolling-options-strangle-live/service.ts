@@ -1403,6 +1403,23 @@ export class RollingOptionsStrangleLiveService {
     public async hydrate(): Promise<void> {
         const arrRuntimeRows = await listRollingOptionsStrangleLiveRuntime();
         for (const objRuntime of arrRuntimeRows) {
+            const objBoxState = this.getOrCreateBoxState(objRuntime.userId);
+            const vStoredBoxLowerAnchor = objRuntime.state?.boxLowerAnchor ?? objRuntime.state?.boxAnchor;
+            objBoxState.anchor = vStoredBoxLowerAnchor !== null
+                && vStoredBoxLowerAnchor !== undefined
+                && Number.isFinite(Number(vStoredBoxLowerAnchor))
+                ? Number(vStoredBoxLowerAnchor)
+                : null;
+            objBoxState.lastDir = Number(objRuntime.state?.boxLastDir || 0) as -1 | 0 | 1;
+            objBoxState.lastColor = String(objRuntime.state?.boxLastColor || "") as "" | "R" | "G";
+            objBoxState.lastPrice = objRuntime.state?.boxCalculationPrice !== null
+                && objRuntime.state?.boxCalculationPrice !== undefined
+                && Number.isFinite(Number(objRuntime.state.boxCalculationPrice))
+                ? Number(objRuntime.state.boxCalculationPrice)
+                : null;
+            objBoxState.historyKey = String(objRuntime.state?.boxHistoryKey || "");
+            objBoxState.historySyncedAt = String(objRuntime.state?.boxHistorySyncedAt || "");
+            objBoxState.historyCandleCount = Math.max(0, Math.floor(Number(objRuntime.state?.boxHistoryCandleCount || 0)));
             const arrPendingReplacement = Array.isArray(objRuntime.state?.pendingReplacementPositions)
                 ? objRuntime.state.pendingReplacementPositions as RollingOptionsStrangleLiveImportedPositionRecord[]
                 : [];
