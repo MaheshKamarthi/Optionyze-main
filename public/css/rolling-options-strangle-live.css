@@ -298,6 +298,14 @@
 .rolling-strangle-live-open-signal.green { background: #16a34a; }
 .rolling-strangle-live-open-signal.red { background: #dc2626; }
 
+.rolling-strangle-live-update-green-1 {
+    grid-column: 10;
+}
+
+.rolling-strangle-live-red-opt-qty {
+    grid-column: 1;
+}
+
 .rolling-strangle-live-payoff {
     margin-top: 16px;
 }
