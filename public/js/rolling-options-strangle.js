@@ -79,6 +79,7 @@
         emaTimeframe: document.getElementById("ddlRollingDemoEmaTimeframe"),
         emaSource: document.getElementById("ddlRollingDemoEmaSource"),
         emaPeriod: document.getElementById("txtRollingDemoEmaPeriod"),
+        emaManualValue: document.getElementById("txtRollingDemoEmaManualValue"),
         emaIndicator: document.getElementById("rollingDemoEmaIndicator"),
         tradingViewEmaEnabled: document.getElementById("chkRollingDemoTradingViewEma"),
         tradingViewEmaSide: document.getElementById("ddlRollingDemoTradingViewEmaSide"),
@@ -955,6 +956,7 @@
             emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
             emaSource: String(ids.emaSource?.value || "candles"),
             emaPeriod: parseNumberInput(ids.emaPeriod, 20),
+            emaManualValue: Number(ids.emaManualValue?.value) > 0 ? Number(ids.emaManualValue.value) : null,
             tradingViewEmaEnabled: Boolean(ids.tradingViewEmaEnabled?.checked),
             tradingViewEmaSide: String(ids.tradingViewEmaSide?.value || "both"),
             demoBalance: parseNumberInput(ids.demoBalance, 10000),
@@ -1085,6 +1087,7 @@
         setFieldValue("emaTimeframe", uiState.emaTimeframe ?? "1m");
         setFieldValue("emaSource", uiState.emaSource ?? "candles");
         setFieldValue("emaPeriod", uiState.emaPeriod ?? 20);
+        setFieldValue("emaManualValue", Number(uiState.emaManualValue) > 0 ? uiState.emaManualValue : "");
         setFieldValue("tradingViewEmaEnabled", uiState.tradingViewEmaEnabled ?? false);
         setFieldValue("tradingViewEmaSide", uiState.tradingViewEmaSide ?? "both");
         setFieldValue("demoBalance", uiState.demoBalance);
@@ -2332,7 +2335,7 @@
             price: vMovingPrice
         });
     });
-    function useBoxAnchorAsMovingPrice(anchorKey) {
+    function triggerBoxAnchorColor(anchorKey, color) {
         if (!ids.boxConditionEnabled?.checked) {
             setStatus("Enable Box Conditions before selecting a Box anchor.", "warning");
             return;
@@ -2342,20 +2345,19 @@
             setStatus("The selected Box anchor is not available yet.", "warning");
             return;
         }
-        if (ids.boxConditionMovingPrice) {
-            ids.boxConditionMovingPrice.value = String(vAnchor);
-        }
-        queueProfileSave();
-        void runServerAction(`${apiBase}/box/moving-price`, { price: vAnchor });
+        void runServerAction(`${apiBase}/box/signal`, {
+            color: color,
+            price: null
+        });
     }
     function bindBoxAnchorControl(element, anchorKey) {
         element?.addEventListener("click", function () {
-            useBoxAnchorAsMovingPrice(anchorKey);
+            triggerBoxAnchorColor(anchorKey, anchorKey === "boxUpperAnchor" ? "G" : "R");
         });
         element?.addEventListener("keydown", function (event) {
             if (event.key !== "Enter" && event.key !== " ") return;
             event.preventDefault();
-            useBoxAnchorAsMovingPrice(anchorKey);
+            triggerBoxAnchorColor(anchorKey, anchorKey === "boxUpperAnchor" ? "G" : "R");
         });
     }
     bindBoxAnchorControl(ids.boxConditionLowerAnchor, "boxLowerAnchor");
@@ -2617,6 +2619,7 @@
         ids.emaTimeframe,
         ids.emaSource,
         ids.emaPeriod,
+        ids.emaManualValue,
         ids.tradingViewEmaEnabled,
         ids.tradingViewEmaSide,
         ids.demoBalance,

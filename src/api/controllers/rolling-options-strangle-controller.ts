@@ -316,6 +316,9 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
     objUiState.renkoManualPriceResetToken = Number((objUiState as any).renkoManualPriceResetToken) || 0;
     objUiState.emaTimeframe = normalizeEmaTimeframe((objUiState as any).emaTimeframe);
     objUiState.emaPeriod = normalizeEmaPeriod((objUiState as any).emaPeriod);
+    objUiState.emaManualValue = Number((objUiState as any).emaManualValue) > 0
+        ? Number((objUiState as any).emaManualValue)
+        : null;
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {

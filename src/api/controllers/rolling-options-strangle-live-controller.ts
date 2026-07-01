@@ -786,6 +786,9 @@ function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record
     if (!Number.isFinite(Number(objUiState.redSlPct2))) {
         objUiState.redSlPct2 = normalizeLiveNumber(objUiState.redSlPct, 85);
     }
+    objUiState.emaManualValue = Number(objUiState.emaManualValue) > 0
+        ? Number(objUiState.emaManualValue)
+        : null;
     return sanitizeLiveUiState(objUiState);
 }
 

@@ -1522,14 +1522,15 @@ export class RollingOptionsStrangleLiveService {
             } else {
                 objEma = await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
             }
-            pState.ema.value = objEma.value;
+            const vManualValue = Number((pUiState as any).emaManualValue);
+            pState.ema.value = Number.isFinite(vManualValue) && vManualValue > 0 ? vManualValue : objEma.value;
             pState.ema.close = objEma.close;
-            pState.ema.trend = objEma.value !== null && objEma.close !== null
-                ? (objEma.close > objEma.value ? "UP" : (objEma.close < objEma.value ? "DOWN" : "FLAT"))
+            pState.ema.trend = pState.ema.value !== null && objEma.close !== null
+                ? (objEma.close > pState.ema.value ? "UP" : (objEma.close < pState.ema.value ? "DOWN" : "FLAT"))
                 : "FLAT";
             pState.ema.candleCount = objEma.candleCount;
             pState.ema.calculatedAt = objEma.calculatedAt;
-            pState.ema.error = objEma.value === null ? `Need at least ${vPeriod} EMA data points.` : "";
+            pState.ema.error = pState.ema.value === null ? `Need at least ${vPeriod} EMA data points.` : "";
         } catch (objError) {
             pState.ema.trend = "FLAT";
             pState.ema.error = objError instanceof Error ? objError.message : String(objError);

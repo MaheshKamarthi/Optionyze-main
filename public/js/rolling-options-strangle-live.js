@@ -27,6 +27,7 @@
         emaTimeframe: document.getElementById("ddlRollingStrangleLiveEmaTimeframe"),
         emaSource: document.getElementById("ddlRollingStrangleLiveEmaSource"),
         emaPeriod: document.getElementById("txtRollingStrangleLiveEmaPeriod"),
+        emaManualValue: document.getElementById("txtRollingStrangleLiveEmaManualValue"),
         oneLotValue: document.getElementById("rollingStrangleLiveOneLotValue"),
         totalMarginValue: document.getElementById("rollingStrangleLiveTotalMarginValue"),
         blockedMarginValue: document.getElementById("rollingStrangleLiveBlockedMarginValue"),
@@ -834,6 +835,7 @@
             emaTimeframe: String(ids.emaTimeframe?.value || "1m"),
             emaSource: String(ids.emaSource?.value || "candles"),
             emaPeriod: parseNumberInput(ids.emaPeriod, 20),
+            emaManualValue: Number(ids.emaManualValue?.value) > 0 ? Number(ids.emaManualValue.value) : null,
             action1: String(ids.optionAction?.value || "sell"),
             legSide1: String(ids.optionLegSide?.value || "ce"),
             expiryMode1: String(ids.optionExpiryMode?.value || "1"),
@@ -972,6 +974,7 @@
         setFieldValue(ids.emaTimeframe, uiState.emaTimeframe ?? "1m");
         setFieldValue(ids.emaSource, uiState.emaSource ?? "candles");
         setFieldValue(ids.emaPeriod, uiState.emaPeriod ?? 20);
+        setFieldValue(ids.emaManualValue, Number(uiState.emaManualValue) > 0 ? uiState.emaManualValue : "");
         setFieldValue(ids.optionAction, uiState.action1);
         setFieldValue(ids.optionLegSide, uiState.legSide1);
         setFieldValue(ids.optionExpiryMode, uiState.expiryMode1);
@@ -2200,6 +2203,7 @@
     ids.emaTimeframe?.addEventListener("change", queueProfileSave);
     ids.emaSource?.addEventListener("change", queueProfileSave);
     ids.emaPeriod?.addEventListener("input", queueProfileSave);
+    ids.emaManualValue?.addEventListener("input", queueProfileSave);
     ids.negativePnlHedgeEnabled?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlPlaceOrders?.addEventListener("change", refreshNegativePnlHedgePreview);
     ids.negativePnlAction3?.addEventListener("change", refreshNegativePnlHedgePreview);
@@ -2500,7 +2504,7 @@
                 setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Box Moving Price.", "danger");
             });
     });
-    function useBoxAnchorAsMovingPrice(pAnchorKey) {
+    function triggerBoxAnchorColor(pAnchorKey, pColor) {
         if (!ids.boxConditionEnabled?.checked) {
             setStatus(ids.pageStatus, "Enable Box Conditions before selecting a Box anchor.", "warning");
             return;
@@ -2510,17 +2514,13 @@
             setStatus(ids.pageStatus, "The selected Box anchor is not available yet.", "warning");
             return;
         }
-        if (ids.boxConditionMovingPrice) {
-            ids.boxConditionMovingPrice.value = String(vPrice);
-        }
-        queueProfileSave();
         void flushProfileSave()
             .then(function () {
-                return postJson("/api/rollingoptions-strangle-live/box/moving-price", { price: vPrice });
+                return postJson("/api/rollingoptions-strangle-live/box/signal", { color: pColor });
             })
             .then(function (objResult) {
                 applyRuntimeStatus(objResult?.data || {});
-                setStatus(ids.pageStatus, objResult?.message || "Box starting value updated.", objResult?.status || "success");
+                setStatus(ids.pageStatus, objResult?.message || `Box changed to ${pColor}.`, objResult?.status || "success");
             })
             .catch(function (objError) {
                 setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to use the Box anchor.", "danger");
@@ -2528,12 +2528,12 @@
     }
     function bindBoxAnchorControl(pElement, pAnchorKey) {
         pElement?.addEventListener("click", function () {
-            useBoxAnchorAsMovingPrice(pAnchorKey);
+            triggerBoxAnchorColor(pAnchorKey, pAnchorKey === "boxUpperAnchor" ? "G" : "R");
         });
         pElement?.addEventListener("keydown", function (objEvent) {
             if (objEvent.key !== "Enter" && objEvent.key !== " ") return;
             objEvent.preventDefault();
-            useBoxAnchorAsMovingPrice(pAnchorKey);
+            triggerBoxAnchorColor(pAnchorKey, pAnchorKey === "boxUpperAnchor" ? "G" : "R");
         });
     }
     bindBoxAnchorControl(ids.boxConditionLowerAnchor, "boxLowerAnchor");

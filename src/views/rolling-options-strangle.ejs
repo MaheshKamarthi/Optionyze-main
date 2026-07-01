@@ -846,8 +846,8 @@
                         </label>
                         <button class="rolling-demo-signal idle" type="button" id="rollingDemoBoxSignal" title="Click to toggle the manual Box signal">-</button>
                         <span class="rolling-demo-badge secondary" id="rollingDemoBoxFromPrice">From: --</span>
-                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxUpperAnchor" role="button" tabindex="0" title="Use the upper anchor as the Box starting value">Upper: --</span>
-                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxLowerAnchor" role="button" tabindex="0" title="Use the lower anchor as the Box starting value">Lower: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxUpperAnchor" role="button" tabindex="0" title="Trigger the GREEN Box direction">Upper: --</span>
+                        <span class="rolling-demo-badge secondary" id="rollingDemoBoxLowerAnchor" role="button" tabindex="0" title="Trigger the RED Box direction">Lower: --</span>
                     </div>
                 </div>
                 <div class="rolling-demo-grid options">
@@ -957,6 +957,10 @@
                         <div class="rolling-demo-field">
                             <label for="txtRollingDemoEmaPeriod">EMA Value</label>
                             <input type="number" id="txtRollingDemoEmaPeriod" value="20" min="1" max="500" />
+                        </div>
+                        <div class="rolling-demo-field">
+                            <label for="txtRollingDemoEmaManualValue">Manual EMA</label>
+                            <input type="number" id="txtRollingDemoEmaManualValue" min="0" step="any" placeholder="Auto" />
                         </div>
                     </div>
                 </div>
