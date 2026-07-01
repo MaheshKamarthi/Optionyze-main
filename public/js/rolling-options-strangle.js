@@ -997,6 +997,9 @@
             boxConditionMovingPrice: Number(ids.boxConditionMovingPrice?.value) > 0
                 ? Number(ids.boxConditionMovingPrice.value)
                 : null,
+            boxConditionAnchorPrice: Number(ids.boxConditionAnchorPrice?.value) > 0
+                ? Number(ids.boxConditionAnchorPrice.value)
+                : null,
             telegramAlertTypes: ids.telegramEventCheckboxes
                 .filter(function (objCheckbox) { return objCheckbox.checked; })
                 .map(function (objCheckbox) { return String(objCheckbox.value || "").trim(); })
@@ -1116,6 +1119,7 @@
         setFieldValue("boxConditionPoints", uiState.boxConditionPoints ?? 10);
         setFieldValue("boxConditionEnabled", uiState.boxConditionEnabled ?? false);
         setFieldValue("boxConditionMovingPrice", Number(uiState.boxConditionMovingPrice) > 0 ? uiState.boxConditionMovingPrice : "");
+        setFieldValue("boxConditionAnchorPrice", Number(uiState.boxConditionAnchorPrice) > 0 ? uiState.boxConditionAnchorPrice : "");
         setFieldValue("closedFromDate", uiState.closedFromDate);
         setFieldValue("closedToDate", uiState.closedToDate);
         const objSelectedTelegramTypes = Array.isArray(uiState.telegramAlertTypes)
@@ -1236,13 +1240,6 @@
                 && Number.isFinite(boxLower)
                 ? `Lower: ${formatNumericValue(boxLower, 2)}`
                 : "Lower: --";
-            if (ids.boxConditionAnchorPrice
-                && document.activeElement !== ids.boxConditionAnchorPrice
-                && boxLowerRaw !== null
-                && boxLowerRaw !== undefined
-                && Number.isFinite(boxLower)) {
-                ids.boxConditionAnchorPrice.value = String(boxLower);
-            }
         }
 
         if (ids.tradingViewEmaTrend) {
@@ -2547,6 +2544,7 @@
         ids.boxConditionPoints,
         ids.boxConditionEnabled,
         ids.boxConditionMovingPrice,
+        ids.boxConditionAnchorPrice,
         ids.closedFromDate,
         ids.closedToDate
     ].forEach(function (objField) {

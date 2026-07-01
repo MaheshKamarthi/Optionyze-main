@@ -360,6 +360,9 @@ async function loadMergedUiState(pUserId: string): Promise<Record<string, unknow
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     objUiState.boxColorChangeOpenEnabled = Boolean((objUiState as any).boxColorChangeOpenEnabled);
+    objUiState.boxConditionAnchorPrice = Number(objUiState.boxConditionAnchorPrice) > 0
+        ? Number(objUiState.boxConditionAnchorPrice)
+        : null;
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {
@@ -437,6 +440,7 @@ function getDefaultUiState(): Record<string, unknown> {
         closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
         boxColorChangeOpenEnabled: false,
+        boxConditionAnchorPrice: null,
         positivePnlSupportEnabled: true,
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: 10,
@@ -614,6 +618,7 @@ export class RollingOptionsStrangleService {
             closeSupportLegOnSourceClose: false,
             skipRenkoEntryNoOpenOptions: false,
             boxColorChangeOpenEnabled: false,
+            boxConditionAnchorPrice: null,
             trailGreenTp1Enabled: true,
             trailGreenSl1Enabled: true,
             trailRedTp1Enabled: true,
@@ -4148,6 +4153,9 @@ export class RollingOptionsStrangleService {
         if (!Boolean((objUiState as any).boxConditionEnabled)) {
             return { status: "warning", message: "Enable Box Conditions before updating Moving Price." };
         }
+        await patchRollingOptionsPtDeProfileUiState(pUserId, {
+            boxConditionAnchorPrice: bHasAnchorPrice ? vAnchorPrice : null
+        });
 
         const objState = this.getOrCreateState(pUserId);
         const objBoxConfig = await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState);
