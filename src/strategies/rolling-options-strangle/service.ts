@@ -2655,7 +2655,8 @@ export class RollingOptionsStrangleService {
     private async handleRenkoOptionEntry(
         pUserId: string,
         pConfig: RollingOptionsPtDeConfig,
-        pColorCode: "R" | "G"
+        pColorCode: "R" | "G",
+        pTrigger: "Renko" | "Box" = "Renko"
     ): Promise<void> {
         const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
         const objSummary = getOpenPositionsSummary(objOpenPositions);
@@ -2675,8 +2676,8 @@ export class RollingOptionsStrangleService {
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
-                title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because Skip entry (0 open opts) is enabled and no option leg is running.`,
+                title: `${pTrigger} ${vColorLabel} Skipped`,
+                message: `Skipped ${vColorLabel} ${pTrigger} option entry because Skip entry (0 open opts) is enabled and no option leg is running.`,
                 payload: {
                     symbol: pConfig.symbol,
                     reason: "renko_option_skipped_no_open_option_leg_switch",
@@ -2719,8 +2720,8 @@ export class RollingOptionsStrangleService {
                 userId: pUserId,
                 eventType: "manual_action",
                 severity: "info",
-                title: `Renko ${vColorLabel} Skipped`,
-                message: `Skipped ${vColorLabel} Renko option entry because an option position is already open for the enabled rule set(s).`,
+                title: `${pTrigger} ${vColorLabel} Skipped`,
+                message: `Skipped ${vColorLabel} ${pTrigger} option entry because an option position is already open for the enabled rule set(s).`,
                 payload: {
                     symbol: pConfig.symbol,
                     reason: "renko_option_skipped_option_already_open",
@@ -2741,8 +2742,8 @@ export class RollingOptionsStrangleService {
                     userId: pUserId,
                     eventType: "manual_action",
                     severity: "info",
-                    title: `Renko ${vColorLabel} Skipped`,
-                    message: `Skipped ${vColorLabel} Renko option entry for Action 1 because qty resolved to 0.`,
+                    title: `${pTrigger} ${vColorLabel} Skipped`,
+                    message: `Skipped ${vColorLabel} ${pTrigger} option entry for Action 1 because qty resolved to 0.`,
                     payload: {
                         symbol: pConfig.symbol,
                         reason: "renko_option_skipped_zero_qty_action_1"
@@ -2754,7 +2755,7 @@ export class RollingOptionsStrangleService {
                     pUserId,
                     objConfig1,
                     vQty,
-                    pColorCode === "R" ? "Renko RED option entry (Action 1)" : "Renko GREEN option entry (Action 1)",
+                    `${pTrigger} ${vColorLabel} option entry (Action 1)`,
                     pColorCode,
                     true,
                     1,
@@ -2772,8 +2773,8 @@ export class RollingOptionsStrangleService {
                     userId: pUserId,
                     eventType: "manual_action",
                     severity: "info",
-                    title: `Renko ${vColorLabel} Skipped`,
-                    message: `Skipped ${vColorLabel} Renko option entry for Action 2 because qty resolved to 0.`,
+                    title: `${pTrigger} ${vColorLabel} Skipped`,
+                    message: `Skipped ${vColorLabel} ${pTrigger} option entry for Action 2 because qty resolved to 0.`,
                     payload: {
                         symbol: pConfig.symbol,
                         reason: "renko_option_skipped_zero_qty_action_2"
@@ -2785,7 +2786,7 @@ export class RollingOptionsStrangleService {
                     pUserId,
                     objConfig2,
                     vQty,
-                    pColorCode === "R" ? "Renko RED option entry (Action 2)" : "Renko GREEN option entry (Action 2)",
+                    `${pTrigger} ${vColorLabel} option entry (Action 2)`,
                     pColorCode,
                     true,
                     2,
@@ -2859,11 +2860,7 @@ export class RollingOptionsStrangleService {
             return;
         }
 
-        if (pNextColor === "G") {
-            await this.handleRenkoGreenFlow(pUserId, pConfig);
-            return;
-        }
-        await this.handleRenkoRedFlow(pUserId, pConfig);
+        await this.handleRenkoOptionEntry(pUserId, pConfig, pNextColor, "Box");
     }
 
     private async handleOptionTrigger(
