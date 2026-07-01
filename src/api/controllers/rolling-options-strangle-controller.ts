@@ -2336,7 +2336,8 @@ export async function updateRollingOptionsStrangleBoxMovingPrice(
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vPrice = Number(req.body?.price);
-    const objResult = await pService.applyBoxMovingPrice(vUserId, vPrice);
+    const vAnchorPrice = Number(req.body?.anchorPrice);
+    const objResult = await pService.applyBoxMovingPrice(vUserId, vPrice, vAnchorPrice);
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }

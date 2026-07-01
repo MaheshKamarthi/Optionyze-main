@@ -111,6 +111,7 @@
         boxConditionPoints: document.getElementById("txtRollingDemoBoxPoints"),
         boxConditionEnabled: document.getElementById("chkRollingDemoBoxConditionsEnabled"),
         boxConditionMovingPrice: document.getElementById("txtRollingDemoBoxMovingPrice"),
+        boxConditionAnchorPrice: document.getElementById("txtRollingDemoBoxAnchorPrice"),
         updateBoxMovingPriceButton: document.getElementById("btnRollingDemoUpdateBoxMovingPrice"),
         boxConditionSignal: document.getElementById("rollingDemoBoxSignal"),
         boxConditionFromPrice: document.getElementById("rollingDemoBoxFromPrice"),
@@ -1235,6 +1236,13 @@
                 && Number.isFinite(boxLower)
                 ? `Lower: ${formatNumericValue(boxLower, 2)}`
                 : "Lower: --";
+            if (ids.boxConditionAnchorPrice
+                && document.activeElement !== ids.boxConditionAnchorPrice
+                && boxLowerRaw !== null
+                && boxLowerRaw !== undefined
+                && Number.isFinite(boxLower)) {
+                ids.boxConditionAnchorPrice.value = String(boxLower);
+            }
         }
 
         if (ids.tradingViewEmaTrend) {
@@ -2265,12 +2273,16 @@
     });
     ids.updateBoxMovingPriceButton?.addEventListener("click", function () {
         const vMovingPrice = Number(ids.boxConditionMovingPrice?.value);
-        if (!ids.boxConditionEnabled?.checked || !Number.isFinite(vMovingPrice) || vMovingPrice <= 0) {
-            setStatus("Enable Box Conditions and enter a valid Moving Price.", "warning");
+        const vAnchorPrice = Number(ids.boxConditionAnchorPrice?.value);
+        const bHasMovingPrice = Number.isFinite(vMovingPrice) && vMovingPrice > 0;
+        const bHasAnchorPrice = Number.isFinite(vAnchorPrice) && vAnchorPrice > 0;
+        if (!ids.boxConditionEnabled?.checked || (!bHasMovingPrice && !bHasAnchorPrice)) {
+            setStatus("Enable Box Conditions and enter a valid Moving Price or Anchor Price.", "warning");
             return;
         }
         void runServerAction(`${apiBase}/box/moving-price`, {
-            price: vMovingPrice
+            price: bHasMovingPrice ? vMovingPrice : null,
+            anchorPrice: bHasAnchorPrice ? vAnchorPrice : null
         });
     });
     function triggerBoxAnchorColor(anchorKey, color) {

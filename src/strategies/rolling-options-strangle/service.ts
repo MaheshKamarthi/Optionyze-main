@@ -4132,11 +4132,15 @@ export class RollingOptionsStrangleService {
 
     public async applyBoxMovingPrice(
         pUserId: string,
-        pMovingPrice: number
+        pMovingPrice: number,
+        pAnchorPrice?: number | null
     ): Promise<{ status: "success" | "warning"; message: string; }> {
         const vMovingPrice = Number(pMovingPrice);
-        if (!Number.isFinite(vMovingPrice) || vMovingPrice <= 0) {
-            return { status: "warning", message: "Enter a valid Box Moving Price." };
+        const vAnchorPrice = Number(pAnchorPrice);
+        const bHasMovingPrice = Number.isFinite(vMovingPrice) && vMovingPrice > 0;
+        const bHasAnchorPrice = Number.isFinite(vAnchorPrice) && vAnchorPrice > 0;
+        if (!bHasMovingPrice && !bHasAnchorPrice) {
+            return { status: "warning", message: "Enter a valid Box Moving Price or Anchor Price." };
         }
 
         const objConfig = await this.loadConfig(pUserId);
@@ -4149,10 +4153,17 @@ export class RollingOptionsStrangleService {
         const objBoxConfig = await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState);
         const objBoxState = this.getOrCreateBoxState(pUserId);
         const vBoxPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
-        objBoxState.lastPrice = vMovingPrice;
-        objBoxState.anchor = objBoxState.lastColor === "G"
-            ? vMovingPrice - vBoxPoints
-            : vMovingPrice;
+        if (bHasMovingPrice) {
+            objBoxState.lastPrice = vMovingPrice;
+        }
+        if (bHasAnchorPrice) {
+            objBoxState.anchor = vAnchorPrice;
+        }
+        else {
+            objBoxState.anchor = objBoxState.lastColor === "G"
+                ? vMovingPrice - vBoxPoints
+                : vMovingPrice;
+        }
 
         await this.syncRuntime(pUserId, objConfig, objState, {
             lastSignal: "BOX_PRICE_UPDATED",
@@ -4162,10 +4173,11 @@ export class RollingOptionsStrangleService {
             userId: pUserId,
             eventType: "manual_action",
             severity: "info",
-            title: "Box Moving Price Updated",
-            message: "Moving Price and Box anchors updated without changing the current color.",
+            title: "Box Prices Updated",
+            message: "Moving Price and/or Box anchor updated without changing the current color.",
             payload: {
-                price: vMovingPrice,
+                price: objBoxState.lastPrice,
+                anchorPrice: objBoxState.anchor,
                 boxColor: objBoxState.lastColor || "",
                 shifts: 0,
                 closedCount: 0,
@@ -4174,7 +4186,7 @@ export class RollingOptionsStrangleService {
         });
         return {
             status: "success",
-            message: `Moving Price updated; Box remains ${objBoxState.lastColor || "unset"}.`
+            message: `Box price updated; Box remains ${objBoxState.lastColor || "unset"}.`
         };
     }
 
