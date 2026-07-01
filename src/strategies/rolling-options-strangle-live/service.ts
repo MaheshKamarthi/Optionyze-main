@@ -1375,12 +1375,11 @@ export class RollingOptionsStrangleLiveService {
         const vPrice = Number(pMovingPrice);
         if (!Number.isFinite(vPrice) || vPrice <= 0) return { status: "warning", message: "Enter a valid Box Moving Price." };
         const objBox = this.getOrCreateBoxState(pUserId);
-        const vPrevious = String(objBox.lastColor || "").toUpperCase();
-        const arrSignals = this.updateBoxState(objBox, vPrice, Number((objUiState as any).boxConditionPoints || 10));
-        const vSignal = arrSignals.at(-1);
-        const vClosed = vSignal ? await this.closeOnBoxColorChange(pUserId, vPrevious, vSignal, objUiState) : 0;
+        const vPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
+        objBox.lastPrice = vPrice;
+        objBox.anchor = objBox.lastColor === "G" ? vPrice - vPoints : vPrice;
         await this.syncRuntime(pUserId, objConfig, this.getOrCreateState(pUserId));
-        return { status: "success", message: vSignal ? `Box moved to ${vSignal}; closed ${vClosed} eligible leg(s).` : "Moving Price is between the Box anchors; no Box change." };
+        return { status: "success", message: `Moving Price updated; Box remains ${objBox.lastColor || "unset"}.` };
     }
 
     public async setManualBoxSignal(pUserId: string, pColor: "R" | "G"): Promise<{ status: "success" | "warning"; message: string }> {
@@ -3213,7 +3212,14 @@ export class RollingOptionsStrangleLiveService {
                     : (objConfig.renkoPriceSource === "best_bid"
                         ? objSnapshot.bestBidPrice
                         : (objConfig.renkoPriceSource === "best_ask" ? objSnapshot.bestAskPrice : objSnapshot.futuresPrice));
-                const arrBoxSignals = this.updateBoxState(objBoxState, vBoxPrice, Number((objUiState as any).boxConditionPoints || 10));
+                const vBoxPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
+                const vBoxPointsKey = `box-points:${vBoxPoints}`;
+                if (objBoxState.historyKey && objBoxState.historyKey !== vBoxPointsKey) {
+                    objBoxState.lastPrice = vBoxPrice;
+                    objBoxState.anchor = objBoxState.lastColor === "G" ? vBoxPrice - vBoxPoints : vBoxPrice;
+                }
+                objBoxState.historyKey = vBoxPointsKey;
+                const arrBoxSignals = this.updateBoxState(objBoxState, vBoxPrice, vBoxPoints);
                 const vBoxSignal = arrBoxSignals.at(-1);
                 if (vBoxSignal) {
                     await this.closeOnBoxColorChange(pUserId, vPreviousBoxColor, vBoxSignal, objUiState);

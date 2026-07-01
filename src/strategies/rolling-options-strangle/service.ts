@@ -3339,6 +3339,8 @@ export class RollingOptionsStrangleService {
             return objBoxConfig;
         }
 
+        const vPreservedColor = objBoxState.lastColor;
+        const vPreservedDir = objBoxState.lastDir;
         const objHistory = await getHistoricalCandleCloses(
             objBoxConfig.contractName,
             objBoxConfig.renkoTimeframe || "1m",
@@ -3365,6 +3367,10 @@ export class RollingOptionsStrangleService {
                 priceSource: "public",
                 ts: objHistory.fetchedAt
             }, objBoxConfig);
+        }
+        if (vPreservedColor === "R" || vPreservedColor === "G") {
+            objBoxState.lastColor = vPreservedColor;
+            objBoxState.lastDir = vPreservedDir;
         }
         return objBoxConfig;
     }
@@ -4133,61 +4139,14 @@ export class RollingOptionsStrangleService {
         const objState = this.getOrCreateState(pUserId);
         const objBoxConfig = await this.syncBoxFromHistoricalCandles(pUserId, objConfig, objState, objUiState);
         const objBoxState = this.getOrCreateBoxState(pUserId);
-        const vPreviousBoxColor = String(objBoxState.lastColor || "").trim().toUpperCase();
-        const objSnapshot: RollingOptionsPtDeMarketSnapshot = {
-            symbol: objBoxConfig.symbol,
-            contractName: objBoxConfig.contractName,
-            spotPrice: vMovingPrice,
-            futuresPrice: vMovingPrice,
-            bestBidPrice: vMovingPrice,
-            bestAskPrice: vMovingPrice,
-            priceSource: "simulated",
-            ts: new Date().toISOString()
-        };
-        const arrBoxSignals = this.updateBoxState(objBoxState, objSnapshot, objBoxConfig);
-        const vLastBoxSignal = arrBoxSignals.at(-1);
-        let vClosedCount = 0;
-
-        if (Boolean((objUiState as any).boxColorChangeCloseEnabled)
-            && vLastBoxSignal
-            && (vPreviousBoxColor === "R" || vPreviousBoxColor === "G")
-            && vPreviousBoxColor !== vLastBoxSignal) {
-            const arrOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
-            const arrTargets = arrOpenPositions.filter((objPosition) => {
-                const objMeta = (objPosition.metadata || {}) as Record<string, unknown>;
-                const vRuleColor = String(objMeta.ruleColor || "").trim().toUpperCase();
-                return objPosition.status === "OPEN"
-                    && objPosition.instrumentType === "OPTION"
-                    && !isPositivePnlSupportPosition(objPosition)
-                    && !this.isReplacementOptionPosition(objPosition)
-                    && vRuleColor === vPreviousBoxColor;
-            });
-            if (arrTargets.length > 0) {
-                const arrClosed = await this.closePositions(
-                    arrTargets,
-                    objConfig,
-                    `Box Moving Price changed color from ${vPreviousBoxColor} to ${vLastBoxSignal}`
-                );
-                vClosedCount = arrClosed.length;
-                await this.reEnterClosedOptionPositions(
-                    pUserId,
-                    arrClosed,
-                    `Box Moving Price changed color from ${vPreviousBoxColor} to ${vLastBoxSignal}`
-                );
-            }
-        }
-        if (vLastBoxSignal) {
-            await this.handleBoxColorChangeOpen(
-                pUserId,
-                objConfig,
-                objUiState,
-                vPreviousBoxColor,
-                vLastBoxSignal
-            );
-        }
+        const vBoxPoints = Math.max(1, Number((objUiState as any).boxConditionPoints || 10));
+        objBoxState.lastPrice = vMovingPrice;
+        objBoxState.anchor = objBoxState.lastColor === "G"
+            ? vMovingPrice - vBoxPoints
+            : vMovingPrice;
 
         await this.syncRuntime(pUserId, objConfig, objState, {
-            lastSignal: vLastBoxSignal ? `BOX_${vLastBoxSignal}` : "BOX_NO_CHANGE",
+            lastSignal: "BOX_PRICE_UPDATED",
             lastCycleAt: new Date().toISOString()
         });
         await logRollingOptionsPtDeEvent({
@@ -4195,22 +4154,18 @@ export class RollingOptionsStrangleService {
             eventType: "manual_action",
             severity: "info",
             title: "Box Moving Price Updated",
-            message: vLastBoxSignal
-                ? `Moving Price generated ${arrBoxSignals.length} box shift(s) and Box ${vLastBoxSignal}.`
-                : "Moving Price remained between the Box anchors.",
+            message: "Moving Price and Box anchors updated without changing the current color.",
             payload: {
                 price: vMovingPrice,
-                boxColor: vLastBoxSignal || objBoxState.lastColor || "",
-                shifts: arrBoxSignals.length,
-                closedCount: vClosedCount,
+                boxColor: objBoxState.lastColor || "",
+                shifts: 0,
+                closedCount: 0,
                 reason: "box_moving_price"
             }
         });
         return {
             status: "success",
-            message: vLastBoxSignal
-                ? `Box moved ${arrBoxSignals.length} point(s) to ${vLastBoxSignal}; closed ${vClosedCount} eligible leg(s).`
-                : "Moving Price is between the Box anchors; no Box change."
+            message: `Moving Price updated; Box remains ${objBoxState.lastColor || "unset"}.`
         };
     }
 
