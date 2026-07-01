@@ -1272,24 +1272,7 @@
         }
         const bBoxEnabled = Boolean(objRuntime?.state?.boxConditionEnabled ?? ids.boxConditionEnabled?.checked);
         const vBoxRaw = bBoxEnabled ? String(objRuntime?.state?.boxLastColor || "").trim().toUpperCase() : "";
-        const vBoxFromRaw = objRuntime?.state?.boxCalculationPrice;
-        const vBoxLowerRaw = objRuntime?.state?.boxLowerAnchor;
-        const vBoxUpperRaw = objRuntime?.state?.boxUpperAnchor;
-        const vBoxFrom = Number(vBoxFromRaw);
-        const vBoxLower = Number(vBoxLowerRaw);
-        const vBoxUpper = Number(vBoxUpperRaw);
-        const bBoxInside = bBoxEnabled
-            && vBoxFromRaw !== null && vBoxFromRaw !== undefined
-            && vBoxLowerRaw !== null && vBoxLowerRaw !== undefined
-            && vBoxUpperRaw !== null && vBoxUpperRaw !== undefined
-            && Number.isFinite(vBoxFrom)
-            && Number.isFinite(vBoxLower)
-            && Number.isFinite(vBoxUpper)
-            && vBoxFrom >= vBoxLower
-            && vBoxFrom <= vBoxUpper;
-        const vBoxColor = bBoxInside
-            ? "N"
-            : (vBoxRaw === "G" ? "G" : (vBoxRaw === "R" ? "R" : ""));
+        const vBoxColor = vBoxRaw === "G" ? "G" : (vBoxRaw === "R" ? "R" : "");
         if (ids.boxConditionSignal) {
             ids.boxConditionSignal.textContent = vBoxColor || "-";
             ids.boxConditionSignal.classList.remove("idle", "green", "red");

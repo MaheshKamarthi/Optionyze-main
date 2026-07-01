@@ -1201,24 +1201,7 @@
         const boxColorRaw = boxEnabled
             ? String(runtimeState?.state?.boxLastColor || "").trim().toUpperCase()
             : "";
-        const boxFromRaw = runtimeState?.state?.boxCalculationPrice;
-        const boxLowerRawValue = runtimeState?.state?.boxLowerAnchor;
-        const boxUpperRawValue = runtimeState?.state?.boxUpperAnchor;
-        const boxFromValue = Number(boxFromRaw);
-        const boxLowerValue = Number(boxLowerRawValue);
-        const boxUpperValue = Number(boxUpperRawValue);
-        const boxIsInside = boxEnabled
-            && boxFromRaw !== null && boxFromRaw !== undefined
-            && boxLowerRawValue !== null && boxLowerRawValue !== undefined
-            && boxUpperRawValue !== null && boxUpperRawValue !== undefined
-            && Number.isFinite(boxFromValue)
-            && Number.isFinite(boxLowerValue)
-            && Number.isFinite(boxUpperValue)
-            && boxFromValue >= boxLowerValue
-            && boxFromValue <= boxUpperValue;
-        const boxColor = boxIsInside
-            ? "N"
-            : (boxColorRaw === "G" ? "G" : (boxColorRaw === "R" ? "R" : ""));
+        const boxColor = boxColorRaw === "G" ? "G" : (boxColorRaw === "R" ? "R" : "");
         if (ids.boxConditionSignal) {
             ids.boxConditionSignal.textContent = boxColor || "-";
             ids.boxConditionSignal.classList.remove("idle", "green", "red");
@@ -2356,9 +2339,10 @@
         }
         const vCurrentColor = String(gLatestRuntimeState?.state?.boxLastColor || "").trim().toUpperCase();
         const vNextColor = vCurrentColor === "R" ? "G" : "R";
+        const vMovingPrice = Number(ids.boxConditionMovingPrice?.value);
         void runServerAction(`${apiBase}/box/signal`, {
             color: vNextColor,
-            price: null
+            price: Number.isFinite(vMovingPrice) && vMovingPrice > 0 ? vMovingPrice : null
         });
     });
 

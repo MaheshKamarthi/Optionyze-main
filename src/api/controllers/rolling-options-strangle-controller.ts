@@ -2345,7 +2345,12 @@ export async function setRollingOptionsStrangleManualBoxSignal(
 ): Promise<void> {
     const vUserId = getUserIdFromReq(req);
     const vColorCode: "R" | "G" = String(req.body?.color || "").trim().toUpperCase() === "G" ? "G" : "R";
-    const objResult = await pService.setManualBoxSignal(vUserId, vColorCode, null);
+    const vPrice = Number(req.body?.price);
+    const objResult = await pService.setManualBoxSignal(
+        vUserId,
+        vColorCode,
+        Number.isFinite(vPrice) && vPrice > 0 ? vPrice : null
+    );
     const objRuntime = await loadEffectiveRuntimeState(vUserId);
     res.json({ status: objResult.status, message: objResult.message, data: objRuntime });
 }
