@@ -359,6 +359,7 @@ async function loadMergedUiState(pUserId: string): Promise<Record<string, unknow
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
+    objUiState.boxColorChangeOpenEnabled = Boolean((objUiState as any).boxColorChangeOpenEnabled);
     const vExpiryMode = String(objUiState.expiryMode1 || "1");
     const vExpiryMode2 = String(objUiState.expiryMode2 || "1");
     return {
@@ -435,6 +436,7 @@ function getDefaultUiState(): Record<string, unknown> {
         closeAllLegsOnAnyClose: false,
         closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
+        boxColorChangeOpenEnabled: false,
         positivePnlSupportEnabled: true,
         positivePnlSupportAction: "buy",
         positivePnlSupportQty: 10,
@@ -611,6 +613,7 @@ export class RollingOptionsStrangleService {
             closeAllLegsOnAnyClose: false,
             closeSupportLegOnSourceClose: false,
             skipRenkoEntryNoOpenOptions: false,
+            boxColorChangeOpenEnabled: false,
             trailGreenTp1Enabled: true,
             trailGreenSl1Enabled: true,
             trailRedTp1Enabled: true,
@@ -1478,10 +1481,10 @@ export class RollingOptionsStrangleService {
         pMetadataOverrides: Record<string, unknown>
     ): Promise<boolean> {
         const objUiState = ((pConfig as any).__uiState || {}) as Record<string, unknown>;
-        if (!isReplacementConditionEnabled(objUiState, "replacementUseEmaTrendEnabled")) {
-            return true;
-        }
-        if (!Boolean((objUiState as any).emaRenkoConfirmEnabled)) {
+        const bEmaSignalSyncEnabled = Boolean((objUiState as any).emaSignalEnabled);
+        const bEmaRenkoConfirmEnabled = Boolean((objUiState as any).emaRenkoConfirmEnabled);
+        const bReplacementEmaEnabled = isReplacementConditionEnabled(objUiState, "replacementUseEmaTrendEnabled");
+        if (!bEmaSignalSyncEnabled && (!bReplacementEmaEnabled || !bEmaRenkoConfirmEnabled)) {
             return true;
         }
         if (Boolean((pMetadataOverrides as any).positivePnlSupport)) {
@@ -1493,23 +1496,30 @@ export class RollingOptionsStrangleService {
         const vEmaTrend = objState.ema.trend;
         const vRenkoColor = String(objState.renko.lastColor || "").trim().toUpperCase();
         const vExpectedEmaTrend = pColorCode === "G" ? "UP" : "DOWN";
-        const bAllowed = vEmaTrend === vExpectedEmaTrend && vRenkoColor === pColorCode;
+        const bEmaMatches = vEmaTrend === vExpectedEmaTrend;
+        const bRenkoMatches = !bEmaRenkoConfirmEnabled || vRenkoColor === pColorCode;
+        const bAllowed = bEmaMatches && bRenkoMatches;
         if (bAllowed) {
             return true;
         }
 
+        const vRequiredConfirmation = bEmaRenkoConfirmEnabled ? "EMA and Renko" : "EMA";
         await logRollingOptionsPtDeEvent({
             userId: pUserId,
             eventType: "manual_action",
             severity: "info",
             title: "Option Entry Skipped",
-            message: `Skipped ${pReason} because EMA and Renko confirmation did not match ${pColorCode === "G" ? "GREEN" : "RED"}.`,
+            message: `Skipped ${pReason} because ${vRequiredConfirmation} did not match ${pColorCode === "G" ? "GREEN" : "RED"}.`,
             payload: {
                 symbol: pConfig.symbol,
-                reason: "ema_renko_confirmation_mismatch",
+                reason: bEmaRenkoConfirmEnabled
+                    ? "ema_renko_confirmation_mismatch"
+                    : "ema_signal_sync_mismatch",
                 requestedColor: pColorCode,
                 emaTrend: vEmaTrend,
-                renkoColor: vRenkoColor || "NONE"
+                renkoColor: vRenkoColor || "NONE",
+                emaSignalSyncEnabled: bEmaSignalSyncEnabled,
+                emaRenkoConfirmEnabled: bEmaRenkoConfirmEnabled
             }
         });
         return false;
@@ -2824,6 +2834,26 @@ export class RollingOptionsStrangleService {
         await this.openGreenRenkoFuturePosition(pUserId, pConfig, "Renko GREEN future entry");
     }
 
+    private async handleBoxColorChangeOpen(
+        pUserId: string,
+        pConfig: RollingOptionsPtDeConfig,
+        pUiState: Record<string, unknown>,
+        pPreviousColor: string,
+        pNextColor: "R" | "G"
+    ): Promise<void> {
+        if (!Boolean((pUiState as any).boxColorChangeOpenEnabled)
+            || (pPreviousColor !== "R" && pPreviousColor !== "G")
+            || pPreviousColor === pNextColor) {
+            return;
+        }
+
+        if (pNextColor === "G") {
+            await this.handleRenkoGreenFlow(pUserId, pConfig);
+            return;
+        }
+        await this.handleRenkoRedFlow(pUserId, pConfig);
+    }
+
     private async handleOptionTrigger(
         pUserId: string,
         _pConfig: RollingOptionsPtDeConfig,
@@ -3735,6 +3765,13 @@ export class RollingOptionsStrangleService {
                         objCurrentOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
                     }
                 }
+                await this.handleBoxColorChangeOpen(
+                    pUserId,
+                    objConfig,
+                    objUiState,
+                    vPreviousBoxColor,
+                    vLastBoxSignal
+                );
             }
 
             for (const vRenkoSignal of objRenkoSignals) {
@@ -4138,6 +4175,15 @@ export class RollingOptionsStrangleService {
                 );
             }
         }
+        if (vLastBoxSignal) {
+            await this.handleBoxColorChangeOpen(
+                pUserId,
+                objConfig,
+                objUiState,
+                vPreviousBoxColor,
+                vLastBoxSignal
+            );
+        }
 
         await this.syncRuntime(pUserId, objConfig, objState, {
             lastSignal: vLastBoxSignal ? `BOX_${vLastBoxSignal}` : "BOX_NO_CHANGE",
@@ -4227,6 +4273,13 @@ export class RollingOptionsStrangleService {
                 );
             }
         }
+        await this.handleBoxColorChangeOpen(
+            pUserId,
+            objConfig,
+            objUiState,
+            vPreviousBoxColor,
+            vColorCode
+        );
 
         await this.syncRuntime(pUserId, objConfig, objState, {
             lastSignal: `MANUAL_BOX_${vColorCode}`,

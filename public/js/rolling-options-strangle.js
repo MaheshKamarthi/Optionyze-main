@@ -11,6 +11,7 @@
         replacementCloseOrphanEnabled: document.getElementById("chkRollingDemoReplacementCloseOrphan"),
         replacementCloseWhenOriginalPositiveEnabled: document.getElementById("chkRollingDemoReplacementCloseOriginalPositive"),
         replacementCloseEmaMismatchEnabled: document.getElementById("chkRollingDemoReplacementCloseEmaMismatch"),
+        boxColorChangeOpenEnabled: document.getElementById("chkRollingDemoBoxColorChangeOpen"),
         boxColorChangeCloseEnabled: document.getElementById("chkRollingDemoBoxColorClose"),
         closeSupportLegOnSourceClose: document.getElementById("chkRollingDemoCloseSupportOnSourceClose"),
         replacementUseRenkoColorEnabled: document.getElementById("chkRollingDemoReplacementUseRenkoColor"),
@@ -902,6 +903,7 @@
             replacementCloseOrphanEnabled: ids.replacementCloseOrphanEnabled ? Boolean(ids.replacementCloseOrphanEnabled.checked) : true,
             replacementCloseWhenOriginalPositiveEnabled: ids.replacementCloseWhenOriginalPositiveEnabled ? Boolean(ids.replacementCloseWhenOriginalPositiveEnabled.checked) : true,
             replacementCloseEmaMismatchEnabled: ids.replacementCloseEmaMismatchEnabled ? Boolean(ids.replacementCloseEmaMismatchEnabled.checked) : false,
+            boxColorChangeOpenEnabled: Boolean(ids.boxColorChangeOpenEnabled?.checked),
             boxColorChangeCloseEnabled: Boolean(ids.boxColorChangeCloseEnabled?.checked),
             closeSupportLegOnSourceClose: ids.closeSupportLegOnSourceClose ? Boolean(ids.closeSupportLegOnSourceClose.checked) : false,
             replacementUseRenkoColorEnabled: ids.replacementUseRenkoColorEnabled ? Boolean(ids.replacementUseRenkoColorEnabled.checked) : true,
@@ -1034,6 +1036,7 @@
         setFieldValue("replacementCloseOrphanEnabled", uiState.replacementCloseOrphanEnabled ?? true);
         setFieldValue("replacementCloseWhenOriginalPositiveEnabled", uiState.replacementCloseWhenOriginalPositiveEnabled ?? true);
         setFieldValue("replacementCloseEmaMismatchEnabled", uiState.replacementCloseEmaMismatchEnabled ?? false);
+        setFieldValue("boxColorChangeOpenEnabled", uiState.boxColorChangeOpenEnabled ?? false);
         setFieldValue("boxColorChangeCloseEnabled", uiState.boxColorChangeCloseEnabled ?? false);
         setFieldValue("closeSupportLegOnSourceClose", uiState.closeSupportLegOnSourceClose ?? false);
         setFieldValue("replacementUseRenkoColorEnabled", uiState.replacementUseRenkoColorEnabled ?? true);
@@ -2563,6 +2566,7 @@
         ids.replacementCloseOrphanEnabled,
         ids.replacementCloseWhenOriginalPositiveEnabled,
         ids.replacementCloseEmaMismatchEnabled,
+        ids.boxColorChangeOpenEnabled,
         ids.boxColorChangeCloseEnabled,
         ids.closeSupportLegOnSourceClose,
         ids.replacementUseRenkoColorEnabled,
