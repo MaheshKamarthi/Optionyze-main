@@ -2236,6 +2236,10 @@ export class RollingOptionsStrangleService {
         pUserId: string,
         pRenkoSignal: "R" | "G"
     ): Promise<RollingOptionsPtDePositionRecord[]> {
+        const objUiState = await this.loadUiState(pUserId);
+        if (!isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled")) {
+            return [];
+        }
         const arrTempClosedPositions = await listRollingOptionsStrangleTempClosedPositions(pUserId);
         const arrPendingPositions = arrTempClosedPositions.filter((objPosition) => {
             return (objPosition.metadata as any)?.replacementPendingRenko === true;
@@ -2794,10 +2798,18 @@ export class RollingOptionsStrangleService {
     }
 
     private async handleRenkoRedFlow(pUserId: string, pConfig: RollingOptionsPtDeConfig): Promise<void> {
+        const objUiState = await this.loadUiState(pUserId);
+        if (!isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled")) {
+            return;
+        }
         await this.handleRenkoOptionEntry(pUserId, pConfig, "R");
     }
 
     private async handleRenkoGreenFlow(pUserId: string, pConfig: RollingOptionsPtDeConfig): Promise<void> {
+        const objUiState = await this.loadUiState(pUserId);
+        if (!isReplacementConditionEnabled(objUiState, "replacementUseRenkoColorEnabled")) {
+            return;
+        }
         await this.handleRenkoOptionEntry(pUserId, pConfig, "G");
         const objSummary = getOpenPositionsSummary(await listRollingOptionsPtDeOpenPositions(pUserId));
 

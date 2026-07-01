@@ -180,7 +180,6 @@
     let gPayoffProjectionDays = 0;
     let gPayoffCustomSpotPrice = NaN;
     let gRenkoManualPriceResetToken = 0;
-    let gSelectedLinkOutPositionId = "";
     const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-events";
     const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-green-skipped-events";
 
@@ -1552,53 +1551,9 @@
         queueProfileSave();
     }
 
-    function getPositionById(positionId, rows = gLatestOpenPositions) {
-        const normalizedPositionId = String(positionId || "").trim();
-        if (!normalizedPositionId || !Array.isArray(rows)) {
-            return null;
-        }
-        return rows.find(function (row) {
-            return String(row?.positionId || "").trim() === normalizedPositionId;
-        }) || null;
-    }
-
-    function getPositionLinkLabel(row) {
-        if (!row) {
-            return "-";
-        }
-        const action = String(row.action || "").trim().toUpperCase();
-        const side = String(row.optionSide || "").trim().toUpperCase();
-        const contract = String(row.contractName || row.symbol || "").trim();
-        return [action, side, contract].filter(Boolean).join(" ") || String(row.positionId || "-");
-    }
-
-    function getLinkedLeaderId(row) {
-        return String(row?.metadata?.linkedLeaderPositionId || "").trim();
-    }
-
-    function renderLinkControls(row, rows) {
-        const positionId = String(row.positionId || "").trim();
-        const linkedLeaderId = getLinkedLeaderId(row);
-        const leaderRow = getPositionById(linkedLeaderId, rows);
-        const isSelectedLeader = positionId && gSelectedLinkOutPositionId === positionId;
-        const leaderLabel = leaderRow ? getPositionLinkLabel(leaderRow) : "";
-        const linkStatus = linkedLeaderId
-            ? `Follows ${escapeHtml(leaderLabel || "missing leg")}`
-            : (isSelectedLeader ? "Leader selected" : "No leader");
-        const unlinkButton = linkedLeaderId
-            ? `<button class="rolling-demo-link-clear" type="button" data-follower-position-id="${escapeHtml(positionId)}" title="Remove follower link" aria-label="Remove follower link">x</button>`
-            : "";
-
-        return `
-            <div class="rolling-demo-link-cell">
-                <div class="rolling-demo-link-pins">
-                    <button class="rolling-demo-link-pin out ${isSelectedLeader ? "active" : ""}" type="button" data-position-id="${escapeHtml(positionId)}" title="Use this leg as Link Out leader" aria-label="Use this leg as Link Out leader">Out</button>
-                    <button class="rolling-demo-link-pin in" type="button" data-position-id="${escapeHtml(positionId)}" title="Connect selected Link Out leader into this leg" aria-label="Connect selected Link Out leader into this leg">In</button>
-                    ${unlinkButton}
-                </div>
-                <div class="rolling-demo-link-status" title="${escapeHtml(linkStatus)}">${linkStatus}</div>
-            </div>
-        `;
+    function getPositionOpenComment(row) {
+        const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+        return String(row?.openedReason || metadata.openedReason || metadata.reason || metadata.source || "-").trim() || "-";
     }
 
     function renderOpenPositions(rows) {
@@ -1609,7 +1564,6 @@
         if (!Array.isArray(rows) || rows.length === 0) {
             gLatestOpenPositions = [];
             gPreviousOpenPositionLtps = new Map();
-            gSelectedLinkOutPositionId = "";
             ids.openPositionsBody.innerHTML = "<tr><td colspan=\"18\" class=\"rolling-demo-empty\">No open paper positions found for this user.</td></tr>";
             if (ids.openCount) {
                 ids.openCount.textContent = "0";
@@ -1626,9 +1580,6 @@
 
         gLatestOpenPositions = rows;
         const displayRows = rows;
-        if (gSelectedLinkOutPositionId && !getPositionById(gSelectedLinkOutPositionId, rows)) {
-            gSelectedLinkOutPositionId = "";
-        }
         if (ids.openCount) {
             ids.openCount.textContent = String(rows.length);
         }
@@ -1693,7 +1644,7 @@
                     <td>${escapeHtml(formatDisplayDateTime(row.openedAt))}</td>
                     <td>${escapeHtml(formatDisplayDateTime(row.closedAt))}</td>
                     <td>${escapeHtml(row.status || "-")}</td>
-                    <td>${isPreviewLeg ? escapeHtml(`Manual adjustment qty ${row.metadata?.manualHedgeQty || row.qty}`) : renderLinkControls(row, rows)}</td>
+                    <td>${escapeHtml(isPreviewLeg ? `Manual adjustment qty ${row.metadata?.manualHedgeQty || row.qty}` : getPositionOpenComment(row))}</td>
                     <td>
                         ${isPreviewLeg ? `<span class="rolling-demo-suggested-leg-note">Placing paper adjustment</span>` : `
                         <button class="rolling-demo-icon-btn primary rolling-demo-close-open-position" type="button" data-position-id="${escapeHtml(positionId)}" title="Close this open position" aria-label="Close this open position">
@@ -2174,19 +2125,6 @@
         });
     }
 
-    async function updateOpenPositionLink(followerPositionId, leaderPositionId) {
-        const normalizedFollowerId = String(followerPositionId || "").trim();
-        const normalizedLeaderId = String(leaderPositionId || "").trim();
-        if (!normalizedFollowerId) {
-            return;
-        }
-
-        await runServerAction(`${apiBase}/open-positions/link`, {
-            followerPositionId: normalizedFollowerId,
-            leaderPositionId: normalizedLeaderId
-        });
-    }
-
     async function toggleManualRenkoSignal() {
         if (!ids.renkoFeedEnabled?.checked) {
             return;
@@ -2382,38 +2320,6 @@
 
     ids.openPositionsBody?.addEventListener("click", function (objEvent) {
         const objTarget = objEvent.target instanceof Element ? objEvent.target : null;
-        const objLinkOutButton = objTarget?.closest(".rolling-demo-link-pin.out");
-        if (objLinkOutButton instanceof HTMLButtonElement) {
-            const vPositionId = String(objLinkOutButton.dataset.positionId || "").trim();
-            gSelectedLinkOutPositionId = gSelectedLinkOutPositionId === vPositionId ? "" : vPositionId;
-            renderOpenPositions(gLatestOpenPositions);
-            return;
-        }
-
-        const objLinkInButton = objTarget?.closest(".rolling-demo-link-pin.in");
-        if (objLinkInButton instanceof HTMLButtonElement) {
-            const vFollowerPositionId = String(objLinkInButton.dataset.positionId || "").trim();
-            if (!gSelectedLinkOutPositionId) {
-                setStatus("Choose a Link Out leg first, then click Link In on the follower leg.", "warning");
-                return;
-            }
-            if (gSelectedLinkOutPositionId === vFollowerPositionId) {
-                setStatus("A leg cannot follow itself.", "warning");
-                return;
-            }
-            const vLeaderPositionId = gSelectedLinkOutPositionId;
-            gSelectedLinkOutPositionId = "";
-            void updateOpenPositionLink(vFollowerPositionId, vLeaderPositionId);
-            return;
-        }
-
-        const objLinkClearButton = objTarget?.closest(".rolling-demo-link-clear");
-        if (objLinkClearButton instanceof HTMLButtonElement) {
-            const vFollowerPositionId = String(objLinkClearButton.dataset.followerPositionId || "").trim();
-            void updateOpenPositionLink(vFollowerPositionId, "");
-            return;
-        }
-
         const objCloseButton = objTarget?.closest(".rolling-demo-close-open-position");
         if (objCloseButton instanceof HTMLButtonElement) {
             const vClosePositionId = String(objCloseButton.dataset.positionId || "").trim();
