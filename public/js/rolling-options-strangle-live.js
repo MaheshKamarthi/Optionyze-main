@@ -2500,6 +2500,44 @@
                 setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to update Box Moving Price.", "danger");
             });
     });
+    function useBoxAnchorAsMovingPrice(pAnchorKey) {
+        if (!ids.boxConditionEnabled?.checked) {
+            setStatus(ids.pageStatus, "Enable Box Conditions before selecting a Box anchor.", "warning");
+            return;
+        }
+        const vPrice = Number(gLatestRuntimeState?.state?.[pAnchorKey]);
+        if (!Number.isFinite(vPrice) || vPrice <= 0) {
+            setStatus(ids.pageStatus, "The selected Box anchor is not available yet.", "warning");
+            return;
+        }
+        if (ids.boxConditionMovingPrice) {
+            ids.boxConditionMovingPrice.value = String(vPrice);
+        }
+        queueProfileSave();
+        void flushProfileSave()
+            .then(function () {
+                return postJson("/api/rollingoptions-strangle-live/box/moving-price", { price: vPrice });
+            })
+            .then(function (objResult) {
+                applyRuntimeStatus(objResult?.data || {});
+                setStatus(ids.pageStatus, objResult?.message || "Box starting value updated.", objResult?.status || "success");
+            })
+            .catch(function (objError) {
+                setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to use the Box anchor.", "danger");
+            });
+    }
+    function bindBoxAnchorControl(pElement, pAnchorKey) {
+        pElement?.addEventListener("click", function () {
+            useBoxAnchorAsMovingPrice(pAnchorKey);
+        });
+        pElement?.addEventListener("keydown", function (objEvent) {
+            if (objEvent.key !== "Enter" && objEvent.key !== " ") return;
+            objEvent.preventDefault();
+            useBoxAnchorAsMovingPrice(pAnchorKey);
+        });
+    }
+    bindBoxAnchorControl(ids.boxConditionLowerAnchor, "boxLowerAnchor");
+    bindBoxAnchorControl(ids.boxConditionUpperAnchor, "boxUpperAnchor");
     ids.boxConditionSignal?.addEventListener("click", function () {
         if (!ids.boxConditionEnabled?.checked) {
             setStatus(ids.pageStatus, "Enable Box Conditions before toggling the Box signal.", "warning");

@@ -2332,6 +2332,34 @@
             price: vMovingPrice
         });
     });
+    function useBoxAnchorAsMovingPrice(anchorKey) {
+        if (!ids.boxConditionEnabled?.checked) {
+            setStatus("Enable Box Conditions before selecting a Box anchor.", "warning");
+            return;
+        }
+        const vAnchor = Number(gLatestRuntimeState?.state?.[anchorKey]);
+        if (!Number.isFinite(vAnchor) || vAnchor <= 0) {
+            setStatus("The selected Box anchor is not available yet.", "warning");
+            return;
+        }
+        if (ids.boxConditionMovingPrice) {
+            ids.boxConditionMovingPrice.value = String(vAnchor);
+        }
+        queueProfileSave();
+        void runServerAction(`${apiBase}/box/moving-price`, { price: vAnchor });
+    }
+    function bindBoxAnchorControl(element, anchorKey) {
+        element?.addEventListener("click", function () {
+            useBoxAnchorAsMovingPrice(anchorKey);
+        });
+        element?.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            useBoxAnchorAsMovingPrice(anchorKey);
+        });
+    }
+    bindBoxAnchorControl(ids.boxConditionLowerAnchor, "boxLowerAnchor");
+    bindBoxAnchorControl(ids.boxConditionUpperAnchor, "boxUpperAnchor");
     ids.boxConditionSignal?.addEventListener("click", function () {
         if (!ids.boxConditionEnabled?.checked) {
             setStatus("Enable Box Conditions before toggling the Box signal.", "warning");
