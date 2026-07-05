@@ -6,7 +6,7 @@
     <title><%= pageTitle %></title>
     <link rel="stylesheet" href="/css/app-shell.css" />
     <link rel="stylesheet" href="/css/account-menu.css" />
-    <link rel="stylesheet" href="/css/rolling-options-strangle.css?v=20260625-market-price-pill" />
+    <link rel="stylesheet" href="/css/rolling-options-strangle.css?v=20260705-exec-status" />
 </head>
 <body class="app-page" data-rolling-api-base="/api/rollingoptions-strangle">
     <div class="app-layout rolling-demo-layout">
@@ -29,6 +29,8 @@
                 </div>
             </div>
         </section>
+
+        <div class="rolling-live-status" id="rollingDemoPageStatus" role="status" aria-live="polite"></div>
 
         <section class="rolling-demo-section">
             <div class="app-panel rolling-demo-card">
@@ -1053,6 +1055,6 @@
     </div>
     <script src="/js/open-position-payoff-graph.js"></script>
     <script src="/js/rolling-options-strangle-shared.js"></script>
-    <script src="/js/rolling-options-strangle.js?v=20260625-support-close-source-switch"></script>
+    <script src="/js/rolling-options-strangle.js?v=20260705-exec-status"></script>
 </body>
 </html>

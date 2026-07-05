@@ -1270,6 +1270,8 @@ export class RollingOptionsStrangleLiveService {
                 close: null,
                 candleCount: 0,
                 calculatedAt: "",
+                manualSeedValue: null,
+                manualSeedConfigKey: "",
                 error: ""
             },
             renko: {
@@ -1455,6 +1457,8 @@ export class RollingOptionsStrangleLiveService {
             objState.ema.close = Number.isFinite(Number(objRuntime.state?.emaClose)) ? Number(objRuntime.state?.emaClose) : null;
             objState.ema.candleCount = Math.max(0, Math.floor(Number(objRuntime.state?.emaCandleCount || 0)));
             objState.ema.calculatedAt = String(objRuntime.state?.emaCalculatedAt || "");
+            objState.ema.manualSeedValue = Number(objRuntime.state?.emaManualSeedValue) > 0 ? Number(objRuntime.state?.emaManualSeedValue) : null;
+            objState.ema.manualSeedConfigKey = String(objRuntime.state?.emaManualSeedConfigKey || "");
             objState.ema.error = String(objRuntime.state?.emaError || "");
             objState.market.lastSpotPrice = objRuntime.lastSpotPrice;
             objState.market.lastFuturesPrice = objRuntime.lastFuturesPrice;
@@ -1499,6 +1503,8 @@ export class RollingOptionsStrangleLiveService {
             pState.ema.trend = "FLAT";
             pState.ema.candleCount = 0;
             pState.ema.calculatedAt = "";
+            pState.ema.manualSeedValue = null;
+            pState.ema.manualSeedConfigKey = "";
             pState.ema.error = "";
             return;
         }
@@ -1522,7 +1528,21 @@ export class RollingOptionsStrangleLiveService {
                 objEma = await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
             }
             const vManualValue = Number((pUiState as any).emaManualValue);
-            pState.ema.value = Number.isFinite(vManualValue) && vManualValue > 0 ? vManualValue : objEma.value;
+            const bManual = Number.isFinite(vManualValue) && vManualValue > 0;
+            const vManualConfigKey = `${vSource}|${vTimeframe}|${vPeriod}|${vManualValue}`;
+            if (!bManual) {
+                pState.ema.value = objEma.value;
+                pState.ema.manualSeedValue = null;
+                pState.ema.manualSeedConfigKey = "";
+            } else if (pState.ema.manualSeedConfigKey !== vManualConfigKey || pState.ema.manualSeedValue !== vManualValue) {
+                pState.ema.value = vManualValue;
+                pState.ema.manualSeedValue = vManualValue;
+                pState.ema.manualSeedConfigKey = vManualConfigKey;
+            } else if (objEma.close !== null && objEma.calculatedAt && objEma.calculatedAt !== pState.ema.calculatedAt) {
+                const vMultiplier = 2 / (vPeriod + 1);
+                pState.ema.value = Number((((objEma.close - (pState.ema.value ?? vManualValue)) * vMultiplier)
+                    + (pState.ema.value ?? vManualValue)).toFixed(8));
+            }
             pState.ema.close = objEma.close;
             pState.ema.trend = pState.ema.value !== null && objEma.close !== null
                 ? (objEma.close > pState.ema.value ? "UP" : (objEma.close < pState.ema.value ? "DOWN" : "FLAT"))
@@ -2855,6 +2875,8 @@ export class RollingOptionsStrangleLiveService {
                 emaClose: pState.ema.close,
                 emaCandleCount: pState.ema.candleCount,
                 emaCalculatedAt: pState.ema.calculatedAt,
+                emaManualSeedValue: pState.ema.manualSeedValue,
+                emaManualSeedConfigKey: pState.ema.manualSeedConfigKey,
                 emaError: pState.ema.error,
                 pendingReplacementPositions: this.pendingReplacementByUserId.get(pUserId) || [],
                 marketSource: pState.market.lastSource,

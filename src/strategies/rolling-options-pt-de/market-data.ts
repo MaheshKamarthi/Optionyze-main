@@ -172,9 +172,10 @@ export async function getCandleEma(
     });
     const objPayload = await fetchJson<DeltaApiResponse<DeltaCandleRow[]>>("/history/candles", objParams);
     const arrRows = Array.isArray(objPayload.result) ? objPayload.result : [];
-    const arrCloses = arrRows
+    const arrSortedRows = arrRows
         .slice()
-        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0))
+        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0));
+    const arrCloses = arrSortedRows
         .map((pRow) => parseNumber(pRow.close, NaN))
         .filter((pClose) => Number.isFinite(pClose) && pClose > 0);
     const vValue = calculateEmaFromCloses(arrCloses, vPeriod);
@@ -183,7 +184,9 @@ export async function getCandleEma(
         value: vValue,
         close: vClose,
         candleCount: arrCloses.length,
-        calculatedAt: new Date().toISOString()
+        calculatedAt: Number(arrSortedRows[arrSortedRows.length - 1]?.time) > 0
+            ? new Date(Number(arrSortedRows[arrSortedRows.length - 1].time) * 1000).toISOString()
+            : ""
     };
 }
 
@@ -204,16 +207,19 @@ export async function getHistoricalCandleCloses(
     });
     const objPayload = await fetchJson<DeltaApiResponse<DeltaCandleRow[]>>("/history/candles", objParams);
     const arrRows = Array.isArray(objPayload.result) ? objPayload.result : [];
-    const arrCloses = arrRows
+    const arrSortedRows = arrRows
         .slice()
-        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0))
+        .sort((pA, pB) => Number(pA.time || 0) - Number(pB.time || 0));
+    const arrCloses = arrSortedRows
         .map((pRow) => parseNumber(pRow.close, NaN))
         .filter((pClose) => Number.isFinite(pClose) && pClose > 0)
         .slice(-vLookbackBars);
     return {
         closes: arrCloses,
         candleCount: arrCloses.length,
-        fetchedAt: new Date().toISOString()
+        fetchedAt: Number(arrSortedRows[arrSortedRows.length - 1]?.time) > 0
+            ? new Date(Number(arrSortedRows[arrSortedRows.length - 1].time) * 1000).toISOString()
+            : ""
     };
 }
 

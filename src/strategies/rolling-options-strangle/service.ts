@@ -735,6 +735,8 @@ export class RollingOptionsStrangleService {
                 close: null,
                 candleCount: 0,
                 calculatedAt: "",
+                manualSeedValue: null,
+                manualSeedConfigKey: "",
                 error: ""
             },
             renko: {
@@ -850,6 +852,8 @@ export class RollingOptionsStrangleService {
                 close: Number.isFinite(Number(objRuntime.state?.emaClose)) ? Number(objRuntime.state?.emaClose) : null,
                 candleCount: Math.max(0, Math.floor(Number(objRuntime.state?.emaCandleCount || 0))),
                 calculatedAt: String(objRuntime.state?.emaCalculatedAt || ""),
+                manualSeedValue: Number(objRuntime.state?.emaManualSeedValue) > 0 ? Number(objRuntime.state?.emaManualSeedValue) : null,
+                manualSeedConfigKey: String(objRuntime.state?.emaManualSeedConfigKey || ""),
                 error: String(objRuntime.state?.emaError || "")
             };
             objState.renko.anchor = Number.isFinite(Number(objRuntime.state?.renkoAnchor))
@@ -1252,6 +1256,8 @@ export class RollingOptionsStrangleService {
                 emaClose: pState.ema.close,
                 emaCandleCount: pState.ema.candleCount,
                 emaCalculatedAt: pState.ema.calculatedAt,
+                emaManualSeedValue: pState.ema.manualSeedValue,
+                emaManualSeedConfigKey: pState.ema.manualSeedConfigKey,
                 emaError: pState.ema.error,
                 marketSource: pState.market.lastSource,
                 openPositions: objOpenPositions.length
@@ -3219,6 +3225,8 @@ export class RollingOptionsStrangleService {
             pState.ema.signalTrend = "FLAT";
             pState.ema.candleCount = 0;
             pState.ema.calculatedAt = "";
+            pState.ema.manualSeedValue = null;
+            pState.ema.manualSeedConfigKey = "";
             pState.ema.error = "";
             return;
         }
@@ -3228,7 +3236,21 @@ export class RollingOptionsStrangleService {
                 ? await this.getRenkoBrickEma(pConfig, vPeriod)
                 : await getCandleEma(pConfig.contractName, vTimeframe, vPeriod);
             const vManualValue = Number((pUiState as any).emaManualValue);
-            pState.ema.value = Number.isFinite(vManualValue) && vManualValue > 0 ? vManualValue : objEma.value;
+            const bManual = Number.isFinite(vManualValue) && vManualValue > 0;
+            const vManualConfigKey = `${vSource}|${vTimeframe}|${vPeriod}|${vManualValue}`;
+            if (!bManual) {
+                pState.ema.value = objEma.value;
+                pState.ema.manualSeedValue = null;
+                pState.ema.manualSeedConfigKey = "";
+            } else if (pState.ema.manualSeedConfigKey !== vManualConfigKey || pState.ema.manualSeedValue !== vManualValue) {
+                pState.ema.value = vManualValue;
+                pState.ema.manualSeedValue = vManualValue;
+                pState.ema.manualSeedConfigKey = vManualConfigKey;
+            } else if (objEma.close !== null && objEma.calculatedAt && objEma.calculatedAt !== pState.ema.calculatedAt) {
+                const vMultiplier = 2 / (vPeriod + 1);
+                pState.ema.value = Number((((objEma.close - (pState.ema.value ?? vManualValue)) * vMultiplier)
+                    + (pState.ema.value ?? vManualValue)).toFixed(8));
+            }
             pState.ema.close = objEma.close;
             pState.ema.trend = pState.ema.value !== null && objEma.close !== null
                 ? (objEma.close > pState.ema.value ? "UP" : (objEma.close < pState.ema.value ? "DOWN" : "FLAT"))

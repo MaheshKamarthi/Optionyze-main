@@ -2078,8 +2078,11 @@
         return objResult;
     }
 
-    async function runServerAction(url, payload) {
+    async function runServerAction(url, payload, pendingMessage) {
         setStatus("", "");
+        if (pendingMessage) {
+            setStatus(pendingMessage, "warning");
+        }
         try {
             await flushProfileSave();
             const objResult = await postJson(url, payload);
@@ -2392,7 +2395,17 @@
     });
 
     ids.execStrategyButton?.addEventListener("click", function () {
-        void runServerAction(`${apiBase}/strategy/execute`);
+        const objButton = ids.execStrategyButton;
+        if (!(objButton instanceof HTMLButtonElement) || objButton.disabled) {
+            return;
+        }
+        const vOriginalText = objButton.textContent;
+        objButton.disabled = true;
+        objButton.textContent = "Executing...";
+        void runServerAction(`${apiBase}/strategy/execute`, undefined, "Executing paper strategy...").finally(function () {
+            objButton.disabled = false;
+            objButton.textContent = vOriginalText;
+        });
     });
 
     ids.updateGreenRulesButton?.addEventListener("click", function () {

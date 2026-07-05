@@ -81,6 +81,8 @@ export interface RollingOptionsPtDeEmaState {
     close: number | null;
     candleCount: number;
     calculatedAt: string;
+    manualSeedValue?: number | null;
+    manualSeedConfigKey?: string;
     error: string;
 }
 
