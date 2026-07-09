@@ -145,8 +145,6 @@
         telegramAlertsEnabled: document.getElementById("chkRollingDemoTelegramAlertsEnabled"),
         telegramEventCheckboxes: Array.from(document.querySelectorAll(".rolling-demo-telegram-event")),
         eventLog: document.getElementById("rollingDemoEventLog"),
-        hideRenkoEvents: document.getElementById("chkRollingDemoHideRenkoEvents"),
-        hideRenkoGreenSkippedEvents: document.getElementById("chkRollingDemoHideRenkoGreenSkippedEvents"),
         refreshEventsButton: document.getElementById("btnRollingDemoRefreshEvents"),
         clearEventsButton: document.getElementById("btnRollingDemoClearEvents")
     };
@@ -182,29 +180,6 @@
     let gPayoffProjectionDays = 0;
     let gPayoffCustomSpotPrice = NaN;
     let gRenkoManualPriceResetToken = 0;
-    const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-events";
-    const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle:hide-renko-green-skipped-events";
-
-    function readBooleanPreference(storageKey) {
-        return typeof shared.readBooleanPreference === "function"
-            ? shared.readBooleanPreference(storageKey)
-            : false;
-    }
-
-    function writeBooleanPreference(storageKey, value) {
-        if (typeof shared.writeBooleanPreference === "function") {
-            shared.writeBooleanPreference(storageKey, value);
-        }
-    }
-
-    function getVisibleEvents(rows) {
-        return typeof shared.getVisibleEvents === "function"
-            ? shared.getVisibleEvents(rows, {
-                hideRenkoEvents: ids.hideRenkoEvents?.checked,
-                hideRenkoSkippedEvents: ids.hideRenkoGreenSkippedEvents?.checked
-            })
-            : (Array.isArray(rows) ? rows : []);
-    }
     let gLastTargetOpenPnl = null;
     let gIsClosedPositionsVisible = false;
     let gIsEventLogVisible = false;
@@ -1770,7 +1745,7 @@
         }
 
         gLatestEvents = Array.isArray(rows) ? rows : [];
-        const arrRows = getVisibleEvents(gLatestEvents);
+        const arrRows = Array.isArray(gLatestEvents) ? gLatestEvents : [];
         if (!arrRows.length) {
             ids.eventLog.innerHTML = "<div class=\"rolling-demo-event-empty\">No server activity has been logged yet.</div>";
             return;
@@ -2360,21 +2335,6 @@
     ids.refreshEventsButton?.addEventListener("click", function () {
         void loadEvents();
     });
-    if (ids.hideRenkoEvents instanceof HTMLInputElement) {
-        ids.hideRenkoEvents.checked = readBooleanPreference(gHideRenkoEventsStorageKey);
-        ids.hideRenkoEvents.addEventListener("change", function () {
-            writeBooleanPreference(gHideRenkoEventsStorageKey, ids.hideRenkoEvents.checked);
-            renderEvents(gLatestEvents);
-        });
-    }
-    if (ids.hideRenkoGreenSkippedEvents instanceof HTMLInputElement) {
-        ids.hideRenkoGreenSkippedEvents.checked = readBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey);
-        ids.hideRenkoGreenSkippedEvents.addEventListener("change", function () {
-            writeBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey, ids.hideRenkoGreenSkippedEvents.checked);
-            renderEvents(gLatestEvents);
-        });
-    }
-
     ids.clearEventsButton?.addEventListener("click", function () {
         void runServerAction(`${apiBase}/events/clear`);
     });
