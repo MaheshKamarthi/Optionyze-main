@@ -147,8 +147,6 @@
         closedNextPageButton: document.getElementById("btnRollingStrangleLiveClosedNextPage"),
         closedPageInfo: document.getElementById("rollingStrangleLiveClosedPositionsPageInfo"),
         closedPageNumbers: document.getElementById("rollingStrangleLiveClosedPageNumbers"),
-        hideRenkoEvents: document.getElementById("chkRollingStrangleLiveHideRenkoEvents"),
-        hideRenkoGreenSkippedEvents: document.getElementById("chkRollingStrangleLiveHideRenkoGreenSkippedEvents"),
         refreshEventsButton: document.getElementById("btnRollingStrangleLiveRefreshEvents"),
         clearEventsButton: document.getElementById("btnRollingStrangleLiveClearEvents"),
         eventLog: document.getElementById("rollingStrangleLiveEventLog"),
@@ -195,30 +193,6 @@
     const gFutureBrokeragePct = 0.05;
     const gOptionBrokeragePct = 0.01;
     const gBrokerageGstMultiplier = 1.18;
-    const gHideRenkoEventsStorageKey = "optionyze:rolling-options-strangle-live:hide-renko-events";
-    const gHideRenkoGreenSkippedEventsStorageKey = "optionyze:rolling-options-strangle-live:hide-renko-green-skipped-events";
-
-    function readBooleanPreference(storageKey) {
-        return typeof shared.readBooleanPreference === "function"
-            ? shared.readBooleanPreference(storageKey)
-            : false;
-    }
-
-    function writeBooleanPreference(storageKey, value) {
-        if (typeof shared.writeBooleanPreference === "function") {
-            shared.writeBooleanPreference(storageKey, value);
-        }
-    }
-
-    function getVisibleEvents(rows) {
-        return typeof shared.getVisibleEvents === "function"
-            ? shared.getVisibleEvents(rows, {
-                hideRenkoEvents: ids.hideRenkoEvents?.checked,
-                hideRenkoSkippedEvents: ids.hideRenkoGreenSkippedEvents?.checked
-            })
-            : (Array.isArray(rows) ? rows : []);
-    }
-
     function formatDateInputValue(dateValue) {
         return typeof shared.formatDateInputValue === "function"
             ? shared.formatDateInputValue(dateValue)
@@ -1933,7 +1907,7 @@
         }
 
         gLatestEvents = Array.isArray(rows) ? rows : [];
-        const arrRows = getVisibleEvents(gLatestEvents);
+        const arrRows = Array.isArray(gLatestEvents) ? gLatestEvents : [];
         if (!arrRows.length) {
             ids.eventLog.innerHTML = "<div class=\"rolling-demo-event-empty\">No live activity has been logged yet.</div>";
             return;
@@ -2460,20 +2434,6 @@
             setStatus(ids.pageStatus, objError instanceof Error ? objError.message : "Unable to refresh activity log.", "danger");
         });
     });
-    if (ids.hideRenkoEvents instanceof HTMLInputElement) {
-        ids.hideRenkoEvents.checked = readBooleanPreference(gHideRenkoEventsStorageKey);
-        ids.hideRenkoEvents.addEventListener("change", function () {
-            writeBooleanPreference(gHideRenkoEventsStorageKey, ids.hideRenkoEvents.checked);
-            renderEvents(gLatestEvents);
-        });
-    }
-    if (ids.hideRenkoGreenSkippedEvents instanceof HTMLInputElement) {
-        ids.hideRenkoGreenSkippedEvents.checked = readBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey);
-        ids.hideRenkoGreenSkippedEvents.addEventListener("change", function () {
-            writeBooleanPreference(gHideRenkoGreenSkippedEventsStorageKey, ids.hideRenkoGreenSkippedEvents.checked);
-            renderEvents(gLatestEvents);
-        });
-    }
     ids.clearEventsButton?.addEventListener("click", function () {
         void postJson("/api/rollingoptions-strangle-live/events/clear", {}).then(function (objResult) {
             renderEvents([]);
