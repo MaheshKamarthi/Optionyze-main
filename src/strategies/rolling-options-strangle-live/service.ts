@@ -83,7 +83,8 @@ function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe 
 }
 
 function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimeframe {
-    return normalizeEmaTimeframe(pValue);
+    const vValue = String(pValue || "").trim().toLowerCase();
+    return vValue === "1d" ? "1d" : normalizeEmaTimeframe(vValue);
 }
 
 function normalizeEmaSource(pValue: unknown): "candles" | "renko" {

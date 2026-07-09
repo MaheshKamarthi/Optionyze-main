@@ -171,8 +171,11 @@ function normalizeEmaTimeframe(pValue: unknown): "5s" | "1m" | "5m" | "15m" | "1
     return "1m";
 }
 
-function normalizeRenkoTimeframe(pValue: unknown): "5s" | "1m" | "5m" | "15m" | "1h" {
+function normalizeRenkoTimeframe(pValue: unknown): "5s" | "1m" | "5m" | "15m" | "1h" | "1d" {
     const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "1d") {
+        return "1d";
+    }
     if (vValue === "5s") {
         return "5s";
     }

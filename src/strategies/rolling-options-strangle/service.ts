@@ -74,6 +74,9 @@ function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe 
 
 function normalizeRenkoTimeframe(pValue: unknown): RollingOptionsPtDeRenkoTimeframe {
     const vValue = String(pValue || "").trim().toLowerCase();
+    if (vValue === "1d") {
+        return "1d";
+    }
     if (vValue === "5s") {
         return "5s";
     }

@@ -68,7 +68,7 @@ export interface RollingOptionsPtDeMarketSnapshot {
 }
 
 export type RollingOptionsPtDeEmaTimeframe = "5s" | "1m" | "5m" | "15m" | "1h";
-export type RollingOptionsPtDeRenkoTimeframe = RollingOptionsPtDeEmaTimeframe;
+export type RollingOptionsPtDeRenkoTimeframe = RollingOptionsPtDeEmaTimeframe | "1d";
 
 export interface RollingOptionsPtDeEmaState {
     enabled: boolean;
