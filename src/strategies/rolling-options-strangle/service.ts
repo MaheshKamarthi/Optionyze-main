@@ -61,6 +61,11 @@ function normalizeNumber(pValue: unknown, pFallback: number): number {
     return Number.isFinite(vNumber) ? vNumber : pFallback;
 }
 
+function normalizeMaxOpenLegs(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.max(0, Math.min(500, vValue)) : 0;
+}
+
 function normalizeEmaTimeframe(pValue: unknown): RollingOptionsPtDeEmaTimeframe {
     const vValue = String(pValue || "").trim().toLowerCase();
     if (vValue === "5s") {
@@ -361,6 +366,7 @@ async function loadMergedUiState(pUserId: string): Promise<Record<string, unknow
         objUiState.redSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
+    objUiState.maxOpenLegs = normalizeMaxOpenLegs((objUiState as any).maxOpenLegs);
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     objUiState.boxColorChangeOpenEnabled = Boolean((objUiState as any).boxColorChangeOpenEnabled);
     objUiState.boxConditionAnchorPrice = Number(objUiState.boxConditionAnchorPrice) > 0
@@ -439,6 +445,7 @@ function getDefaultUiState(): Record<string, unknown> {
         tradingViewEmaEnabled: false,
         tradingViewEmaSide: "both",
         demoBalance: 10000,
+        maxOpenLegs: 0,
         closeAllLegsOnAnyClose: false,
         closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
@@ -1706,6 +1713,33 @@ export class RollingOptionsStrangleService {
 
         if (objPlannedLegs.length === 0) {
             return [];
+        }
+
+        const objUiStateForMaxLegs = ((pConfig as any).__uiState || await this.loadUiState(pUserId)) as Record<string, unknown>;
+        const vMaxOpenLegs = normalizeMaxOpenLegs((objUiStateForMaxLegs as any).maxOpenLegs);
+        if (vMaxOpenLegs > 0) {
+            const objOpenPositions = await listRollingOptionsPtDeOpenPositions(pUserId);
+            const vCurrentOpenOptionLegs = objOpenPositions.filter((objPosition) => {
+                return objPosition.status === "OPEN" && objPosition.instrumentType === "OPTION";
+            }).length;
+            const vRemainingSlots = Math.max(0, vMaxOpenLegs - vCurrentOpenOptionLegs);
+            if (vRemainingSlots <= 0) {
+                await logRollingOptionsPtDeEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "info",
+                    title: "Option Entry Skipped",
+                    message: `Skipped ${pReason} because Max Legs is ${vMaxOpenLegs} and ${vCurrentOpenOptionLegs} option leg${vCurrentOpenOptionLegs === 1 ? "" : "s"} are already open.`,
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "max_open_legs_reached",
+                        maxOpenLegs: vMaxOpenLegs,
+                        openOptionLegs: vCurrentOpenOptionLegs
+                    }
+                });
+                return [];
+            }
+            objPlannedLegs.splice(vRemainingSlots);
         }
 
         const vAdditionalMargin = objPlannedLegs.reduce((sum, objLeg) => {

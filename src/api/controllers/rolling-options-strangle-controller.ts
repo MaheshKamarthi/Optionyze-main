@@ -110,6 +110,7 @@ function getDefaultUiState(): Record<string, unknown> {
         tradingViewEmaEnabled: false,
         tradingViewEmaSide: "both",
         demoBalance: 10000,
+        maxOpenLegs: 0,
         closeAllLegsOnAnyClose: false,
         closeSupportLegOnSourceClose: false,
         skipRenkoEntryNoOpenOptions: false,
@@ -158,6 +159,11 @@ function getLotSizeForSymbol(pSymbol: string): number {
 function normalizeNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
     return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function normalizeMaxOpenLegs(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.max(0, Math.min(500, vValue)) : 0;
 }
 
 function normalizeEmaTimeframe(pValue: unknown): "5s" | "1m" | "5m" | "15m" | "1h" {
@@ -307,6 +313,7 @@ async function getMergedUiState(pUserId: string): Promise<Record<string, unknown
         objUiState.redSlPct = Math.max(0, Math.min(100, vLegacy <= 2 ? vLegacy * 100 : vLegacy));
     }
     objUiState.demoBalance = Math.max(0, normalizeNumber(objUiState.demoBalance, 10000));
+    objUiState.maxOpenLegs = normalizeMaxOpenLegs((objUiState as any).maxOpenLegs);
     objUiState.skipRenkoEntryNoOpenOptions = Boolean((objUiState as any).skipRenkoEntryNoOpenOptions);
     objUiState.emaEnabled = Boolean((objUiState as any).emaEnabled);
     objUiState.emaSignalEnabled = Boolean((objUiState as any).emaSignalEnabled);

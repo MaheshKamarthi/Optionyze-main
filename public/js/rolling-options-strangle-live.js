@@ -133,6 +133,7 @@
         killSwitchButton: document.getElementById("btnRollingStrangleLiveKillSwitch"),
         closeAllLegsOnAnyClose: document.getElementById("chkRollingStrangleLiveCloseAllLegsOnAnyClose"),
         skipRenkoEntryNoOpenOptions: document.getElementById("chkRollingStrangleLiveSkipRenkoEntryNoOpenOptions"),
+        maxOpenLegs: document.getElementById("txtRollingStrangleLiveMaxOpenLegs"),
         openOptionButton2: document.getElementById("btnRollingStrangleLiveOpenOption2"),
         exitOptionButton2: document.getElementById("btnRollingStrangleLiveExitOption2"),
         openPositionsBody: document.getElementById("rollingStrangleLiveOpenPositionsBody"),
@@ -922,6 +923,7 @@
             payoffCustomSpotPrice: Number.isFinite(normalizePayoffCustomSpotPrice(gPayoffCustomSpotPrice))
                 ? normalizePayoffCustomSpotPrice(gPayoffCustomSpotPrice)
                 : null,
+            maxOpenLegs: Math.max(0, Math.floor(parseNumberInput(ids.maxOpenLegs, 0))),
             closeAllLegsOnAnyClose: Boolean(ids.closeAllLegsOnAnyClose?.checked),
             skipRenkoEntryNoOpenOptions: Boolean(ids.skipRenkoEntryNoOpenOptions?.checked),
             closedFromDate: String(ids.closedFromDate?.value || ""),
@@ -1067,6 +1069,7 @@
         setFieldValue(ids.boxConditionEnabled, uiState.boxConditionEnabled ?? false);
         setFieldValue(ids.boxConditionMovingPrice, Number(uiState.boxConditionMovingPrice) > 0 ? uiState.boxConditionMovingPrice : "");
         setFieldValue(ids.targetOpenPnl, uiState.targetOpenPnl ?? 0);
+        setFieldValue(ids.maxOpenLegs, uiState.maxOpenLegs ?? 0);
         setFieldValue(ids.closeAllLegsOnAnyClose, uiState.closeAllLegsOnAnyClose ?? false);
         setFieldValue(ids.skipRenkoEntryNoOpenOptions, uiState.skipRenkoEntryNoOpenOptions ?? false);
         setFieldValue(ids.closedFromDate, uiState.closedFromDate);
@@ -2224,6 +2227,7 @@
     ids.targetOpenPnl?.addEventListener("input", queueProfileSave);
     ids.closeAllLegsOnAnyClose?.addEventListener("change", queueProfileSave);
     ids.skipRenkoEntryNoOpenOptions?.addEventListener("change", queueProfileSave);
+    ids.maxOpenLegs?.addEventListener("input", queueProfileSave);
     ids.renkoValue?.addEventListener("input", function () {
         queueProfileSave();
         if (gRenkoKickTimer) {

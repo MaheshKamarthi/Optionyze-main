@@ -664,6 +664,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "mark_price",
         targetOpenPnl: 0,
+        maxOpenLegs: 0,
         negativePnlHedgeEnabled: true,
         negativePnlPlaceOrders: false,
         negativePnlAction3: "buy",
@@ -698,6 +699,11 @@ function getDefaultLiveUiState(): Record<string, unknown> {
 function normalizeLiveNumber(pValue: unknown, pFallback: number): number {
     const vNumber = Number(pValue);
     return Number.isFinite(vNumber) ? vNumber : pFallback;
+}
+
+function normalizeMaxOpenLegs(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.max(0, Math.min(500, vValue)) : 0;
 }
 
 function getOptionEntryPriceForAction(
@@ -789,6 +795,7 @@ function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record
     objUiState.emaManualValue = Number(objUiState.emaManualValue) > 0
         ? Number(objUiState.emaManualValue)
         : null;
+    objUiState.maxOpenLegs = normalizeMaxOpenLegs((objUiState as any).maxOpenLegs);
     return sanitizeLiveUiState(objUiState);
 }
 

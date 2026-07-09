@@ -162,6 +162,11 @@ function normalizeLiveNumber(pValue: unknown, pFallback: number): number {
     return Number.isFinite(vNumber) ? vNumber : pFallback;
 }
 
+function normalizeMaxOpenLegs(pValue: unknown): number {
+    const vValue = Math.floor(Number(pValue || 0));
+    return Number.isFinite(vValue) ? Math.max(0, Math.min(500, vValue)) : 0;
+}
+
 function getContractNameForSymbol(pSymbol: string): string {
     return String(pSymbol || "").trim().toUpperCase() === "ETH" ? "ETHUSD" : "BTCUSD";
 }
@@ -291,6 +296,7 @@ function getDefaultLiveUiState(): Record<string, unknown> {
         renkoFeedPts: 10,
         renkoFeedPriceSrc: "mark_price",
         targetOpenPnl: 0,
+        maxOpenLegs: 0,
         negativePnlHedgeEnabled: true,
         negativePnlPlaceOrders: false,
         negativePnlAction3: "buy",
@@ -391,6 +397,7 @@ function normalizeLiveUiState(pUiState?: Record<string, unknown> | null): Record
     if (!Number.isFinite(Number(objUiState.redSlPct2))) {
         objUiState.redSlPct2 = normalizeLiveNumber(objUiState.redSlPct, 85);
     }
+    objUiState.maxOpenLegs = normalizeMaxOpenLegs((objUiState as any).maxOpenLegs);
     return sanitizeLiveUiState(objUiState);
 }
 
@@ -1218,6 +1225,7 @@ export class RollingOptionsStrangleLiveService {
             trailRedSl2Enabled: true,
             closeAllLegsOnAnyClose: false,
             skipRenkoEntryNoOpenOptions: false,
+            maxOpenLegs: 0,
             ...(objProfile?.uiState || {})
         } as Record<string, unknown>;
     }
@@ -1970,6 +1978,36 @@ export class RollingOptionsStrangleLiveService {
                     productBestAsk: objContract.bestAsk
                 }
             });
+        }
+
+        if (arrResolvedEntries.length <= 0) {
+            return [];
+        }
+
+        const objProfile = await loadRollingOptionsStrangleLiveProfile(pUserId);
+        const objUiState = getMergedLiveUiState(objProfile);
+        const vMaxOpenLegs = normalizeMaxOpenLegs((objUiState as any).maxOpenLegs);
+        if (vMaxOpenLegs > 0) {
+            const arrExistingPositions = await listRollingOptionsStrangleLiveImportedPositions(pUserId);
+            const vCurrentOpenOptionLegs = arrExistingPositions.filter((objPosition) => isOptionContract(objPosition.contractName)).length;
+            const vRemainingSlots = Math.max(0, vMaxOpenLegs - vCurrentOpenOptionLegs);
+            if (vRemainingSlots <= 0) {
+                await logRollingOptionsStrangleLiveEvent({
+                    userId: pUserId,
+                    eventType: "manual_action",
+                    severity: "info",
+                    title: "Option Entry Skipped",
+                    message: `Skipped ${pReason} because Max Legs is ${vMaxOpenLegs} and ${vCurrentOpenOptionLegs} option leg${vCurrentOpenOptionLegs === 1 ? "" : "s"} are already open.`,
+                    payload: {
+                        symbol: pConfig.symbol,
+                        reason: "max_open_legs_reached",
+                        maxOpenLegs: vMaxOpenLegs,
+                        openOptionLegs: vCurrentOpenOptionLegs
+                    }
+                });
+                return [];
+            }
+            arrResolvedEntries.splice(vRemainingSlots);
         }
 
         for (const objEntry of arrResolvedEntries) {

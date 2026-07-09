@@ -752,6 +752,10 @@
                             <label for="txtRollingStrangleLivePositivePnlMarketPrice">Market Price</label>
                             <input type="text" id="txtRollingStrangleLivePositivePnlMarketPrice" value="-" readonly />
                         </div>
+                        <div class="rolling-demo-market-price-readout">
+                            <label for="txtRollingStrangleLiveMaxOpenLegs">Max Legs</label>
+                            <input type="number" id="txtRollingStrangleLiveMaxOpenLegs" value="0" min="0" step="1" title="0 means no max open-leg cap" />
+                        </div>
                         <label class="rolling-demo-check" for="chkRollingStrangleLiveCloseAllLegsOnAnyClose" title="When enabled, closing a negative option leg will close all open legs">
                             <input type="checkbox" id="chkRollingStrangleLiveCloseAllLegsOnAnyClose" />
                             Close all on negative options
